@@ -1,0 +1,20 @@
+# docker-compose.yml
+version: '3.8'
+services:
+  postgres:
+    image: postgres:15
+    container_name: dorm_postgres
+    ports:
+      - "5432:5432"
+    environment:
+      - POSTGRES_USER=dorm_user
+      - POSTGRES_PASSWORD=dorm_password
+      - POSTGRES_DB=dormitory_db
+    volumes:
+      - ./db_data:/var/lib/postgresql/data
+
+  redis:
+    image: redis:7
+    container_name: dorm_redis
+    ports:
+      - "6379:6379"
