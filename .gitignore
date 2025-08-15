@@ -75,6 +75,9 @@ jspm_packages/
 .env.development.local
 .env.test.local
 .env.production.local
+.env.dev
+.env.staging
+.env.prod
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -106,3 +109,13 @@ db_data/
 gradle-app.setting
 !gradle-wrapper.jar
 !gradle-wrapper.properties
+
+# Spring Boot
+*.jar
+*.war
+*.ear
+*.class
+
+# Application specific
+application-local.properties
+application-local.yml
