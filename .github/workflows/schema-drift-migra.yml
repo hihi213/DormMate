@@ -1,0 +1,137 @@
+name: Schema Drift (migra)
+
+on:
+  # 필요시 pull_request 이벤트도 켜서 PR마다 검사하도록 할 수 있음
+  workflow_dispatch:
+  # pull_request:
+  #   branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+
+    # ✅ expected(의도된 스키마) 생성을 위한 Postgres 서비스
+    #   - 이 컨테이너에 레포의 마이그레이션을 적용해서 "기대 스키마"를 만든 뒤
+    #   - 실제 DB(actual)와 migra로 비교합니다.
+    services:
+      pg:
+        image: postgres:15
+        env:
+          POSTGRES_USER: dorm_user
+          POSTGRES_PASSWORD: dorm_password
+          POSTGRES_DB: dormitory_expected
+        ports:
+          - 5433:5432   # 호스트:컨테이너 → localhost:5433
+        # 컨테이너 준비될 때까지 healthcheck로 대기
+        options: >-
+          --health-cmd="pg_isready -U dorm_user -d dormitory_expected"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+
+    env:
+      # 🔧 필요시 스키마 범위를 제한하려면 (기본: public)
+      MIGRA_SCHEMA: "public"
+      # 권한/GRANT까지 비교하고 싶으면 true로 (기본: false)
+      MIGRA_WITH_PRIVILEGES: "false"
+      # DROP 등 파괴적 변경까지 SQL에 포함하려면 true로 (CI 판정에는 보통 불필요)
+      MIGRA_UNSAFE: "false"
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      # ✅ Flyway CLI 설치 (바이너리 사용 → 네트워킹 간단)
+      - name: Install Flyway CLI
+        run: |
+          curl -L https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/10.17.0/flyway-commandline-10.17.0-linux-x64.tar.gz -o /tmp/flyway.tar.gz
+          tar -xzf /tmp/flyway.tar.gz -C /tmp
+          sudo mv /tmp/flyway-10.17.0/flyway /usr/local/bin/flyway
+          flyway -v
+
+      # ✅ 레포의 마이그레이션 → expected DB에 적용 (기대 스키마 생성)
+      #    - 확장(citext, btree_gist 등)은 마이그 파일에 포함되어 있어야 함
+      - name: Migrate expected schema (repo → expected DB)
+        env:
+          FLYWAY_URL: jdbc:postgresql://localhost:5433/dormitory_expected
+          FLYWAY_USER: dorm_user
+          FLYWAY_PASSWORD: dorm_password
+        run: |
+          flyway \
+            -url="${FLYWAY_URL}" \
+            -user="${FLYWAY_USER}" \
+            -password="${FLYWAY_PASSWORD}" \
+            -locations=filesystem:backend/src/main/resources/db/migration \
+            migrate
+
+      # ✅ 실제 DB의 마이그 상태 검증 (체크섬/버전 일치 여부)
+      #    - 레포 마이그 파일과 실제 DB가 "Flyway 관점"에서 정합한지 확인
+      - name: Flyway validate on ACTUAL DB
+        env:
+          FLYWAY_URL: jdbc:postgresql://${{ secrets.DB_HOST }}:${{ secrets.DB_PORT }}/${{ secrets.DB_NAME }}
+          FLYWAY_USER: ${{ secrets.DB_USER }}
+          FLYWAY_PASSWORD: ${{ secrets.DB_PASSWORD }}
+        run: |
+          flyway -url="$FLYWAY_URL" -user="$FLYWAY_USER" -password="$FLYWAY_PASSWORD" \
+                 -locations=filesystem:backend/src/main/resources/db/migration \
+                 validate
+
+      # ✅ Python + migra 설치
+      - name: Setup Python & install migra
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install migra
+        run: |
+          pip install --upgrade pip
+          pip install migra psycopg2-binary
+
+      # ✅ migra 실행 (actual → expected)
+      #    - FROM=actual(실제 DB), TO=expected(의도된 스키마)
+      #    - 결과 SQL이 비어있지 않으면 "스키마 드리프트"로 판단 → 실패 처리
+      - name: Run migra (actual → expected)
+        env:
+          ACT_URL: postgresql://${{ secrets.DB_USER }}:${{ secrets.DB_PASSWORD }}@${{ secrets.DB_HOST }}:${{ secrets.DB_PORT }}/${{ secrets.DB_NAME }}
+          EXP_URL: postgresql://dorm_user:dorm_password@localhost:5433/dormitory_expected
+        run: |
+          mkdir -p artifacts
+
+          MIGRA_FLAGS=""
+          # 스키마 범위 제한
+          if [ -n "${MIGRA_SCHEMA}" ]; then
+            MIGRA_FLAGS="$MIGRA_FLAGS --schema=${MIGRA_SCHEMA}"
+          fi
+          # 권한 비교 포함
+          if [ "${MIGRA_WITH_PRIVILEGES}" = "true" ]; then
+            MIGRA_FLAGS="$MIGRA_FLAGS --with-privileges"
+          fi
+          # 파괴적 변경 포함 (DROP 등) - 보통 CI 판정에는 불필요
+          if [ "${MIGRA_UNSAFE}" = "true" ]; then
+            MIGRA_FLAGS="$MIGRA_FLAGS --unsafe"
+          fi
+
+          # 실제 실행
+          echo ">>> migra flags: ${MIGRA_FLAGS}"
+          migra ${MIGRA_FLAGS} "$ACT_URL" "$EXP_URL" > artifacts/migra.sql || true
+
+          echo "---- migra result (first 200 lines) ----"
+          sed -n '1,200p' artifacts/migra.sql || true
+          echo "----------------------------------------"
+
+          if [ -s artifacts/migra.sql ]; then
+            echo "❌ Schema drift detected (see artifacts/migra.sql)"
+            exit 1
+          else
+            echo "✅ No drift"
+          fi
+
+      # 항상 결과물 보존 (성공/실패 불문)
+      - name: Upload artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: migra-output
+          path: artifacts/*
