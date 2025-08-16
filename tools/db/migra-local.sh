@@ -22,7 +22,7 @@ set -euo pipefail
 : "${MIGRA_UNSAFE:=false}"
 
 # ----- expected DB(로컬 컨테이너) 설정 -----
-PG_IMAGE="postgres:15"
+PG_IMAGE="postgres:16-alpine"
 EXP_HOST="localhost"
 EXP_PORT="5433"
 EXP_DB="dormitory_expected"

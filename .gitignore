@@ -259,3 +259,53 @@ coverage/
 .DocumentRevisions-V100
 .TemporaryItems
 .apdisk
+
+# --- PostgreSQL 16 업그레이드 관련 ---
+
+# PostgreSQL 16 데이터 백업 (PostgreSQL 15에서 업그레이드)
+db_data_postgres15_backup/
+db_data_postgres15_*/
+
+# Docker 볼륨 데이터
+pgdata/
+pgadmin-data/
+
+# Flyway 마이그레이션 실행 로그
+flyway-*.log
+migra-*.log
+
+# 스키마 드리프트 감지 결과
+artifacts/migra.sql
+artifacts/schema.*.sql
+
+# PostgreSQL 16 특화 설정
+postgresql.conf.backup
+pg_hba.conf.backup
+
+# --- 개발 환경 최적화 ---
+
+# 로컬 개발 설정
+.env.local
+.env.development
+.env.test
+
+# 캐시 및 임시 파일
+.cache/
+.temp/
+tmp/
+
+# 로그 파일 (개발용)
+*.log
+logs/
+log/
+
+# 백업 파일
+*.backup
+*.bak
+*.old
+*.orig
+
+# 임시 데이터베이스 파일
+*.db
+*.sqlite
+*.sqlite3
