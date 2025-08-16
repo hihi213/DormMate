@@ -1,6 +1,5 @@
 -- ======================================================================
 -- V1__init.sql (Unified Latest)
--- DormMate 초기 스키마 + 최신 패치 + 시드 데이터 (v1.1.1 통합본)
 -- 이 파일 하나로 새 DB를 최신 상태로 세팅합니다.
 -- ======================================================================
 
@@ -473,38 +472,3 @@ SELECT b.*,
          WHERE bl.book_id = b.book_id AND bl.return_date IS NULL
        ) AS is_available
 FROM books b;
-
--- ======================================================================
--- 시드 데이터 (idempotent)
--- ======================================================================
-
--- Roles
-INSERT INTO roles (role_name, description) VALUES
-  ('ADMIN',   '시스템 관리자'),
-  ('STAFF',   '기숙사 운영 담당자'),
-  ('STUDENT', '일반 입주자')
-ON CONFLICT (role_name) DO NOTHING;
-
--- Machine Statuses
-INSERT INTO machine_statuses (status_code, description) VALUES
-  ('AVAILABLE',    '사용 가능'),
-  ('IN_USE',       '사용 중'),
-  ('OUT_OF_ORDER', '고장'),
-  ('MAINTENANCE',  '점검 중')
-ON CONFLICT (status_code) DO NOTHING;
-
--- Notification Types
-INSERT INTO notification_types (type_code, description, is_user_configurable) VALUES
-  ('MACHINE_DONE',         '세탁/건조 완료 알림',            true),
-  ('LAUNDRY_ENDING_SOON',  '세탁 종료 임박 알림',            true),
-  ('MACHINE_REPORTED',     '기기 고장 신고 접수',            true),
-  ('BOOK_DUE',             '도서 반납 예정 알림',            true),
-  ('STUDY_RESERVATION_REM','스터디룸 예약 리마인더',         true),
-  ('SYSTEM_ALERT',         '시스템 공지',                    false)
-ON CONFLICT (type_code) DO NOTHING;
-
--- System Settings (예시)
-INSERT INTO system_settings (setting_key, setting_value) VALUES
-  ('DEFAULT_LAUNDRY_DURATION', '60'),
-  ('MAX_BOOK_LOAN_DAYS',       '14')
-ON CONFLICT (setting_key) DO NOTHING;
