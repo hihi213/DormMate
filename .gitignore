@@ -119,3 +119,16 @@ gradle-app.setting
 # Application specific
 application-local.properties
 application-local.yml
+
+# 빌드/캐시
+backend/build/
+client/node_modules/
+artifacts/
+
+# 로컬 DB 데이터
+db_data/
+
+# IDE/OS
+.idea/
+.vscode/
+.DS_Store
