@@ -1,3 +1,4 @@
+
 # Dependencies
 node_modules/
 */node_modules/
@@ -224,6 +225,9 @@ $RECYCLE.BIN/
 *.backup
 *.bak
 !**/db/migration/*.sql
+
+# 데이터베이스 설정 파일 (비밀번호 포함)
+tools/db/Readme
 
 # 환경별 설정 파일
 application-*.properties
