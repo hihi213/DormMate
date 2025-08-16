@@ -81,7 +81,8 @@ bash tools/db/migra-local.sh
 * **포함된 확장**: `citext`, `btree_gist` (V1__init.sql에 정의됨)
 * **기본 스키마**: `public`
 * **개발 환경 DB**: `${DB_HOST:-localhost}:${DB_PORT:-5432}/${DB_NAME:-dormitory_db}`
-* **Expected DB**: `localhost:5433/dormitory_expected` (컨테이너)
+* **Expected DB**: `localhost:5433/dormitory_expected` (PostgreSQL 16 컨테이너)
+* **현재 DB 버전**: PostgreSQL 16.10
 
 ---
 
