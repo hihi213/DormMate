@@ -18,3 +18,103 @@ services:
     container_name: dorm_redis
     ports:
       - "6379:6379"
+
+  # --- 새로운 서비스들 ---
+  
+  # PostgreSQL 16 (최신 버전)
+  db:
+    image: postgres:16-alpine
+    container_name: app-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-dormitory_db}
+      POSTGRES_USER: ${POSTGRES_USER:-dorm_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dorm_password}
+      TZ: Asia/Seoul
+    ports:
+      - "5433:5432"  # 기존 postgres와 포트 충돌 방지
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dorm_user} -d ${POSTGRES_DB:-dormitory_db} || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
+  # pgAdmin (데이터베이스 관리 도구)
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: app-pgadmin
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@local}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      TZ: Asia/Seoul
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+
+  # Flyway 마이그레이션 자동화
+  migrate:
+    image: flyway/flyway:10
+    container_name: app-flyway
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - "-url=jdbc:postgresql://db:5432/${POSTGRES_DB:-dormitory_db}"
+      - "-user=${POSTGRES_USER:-dorm_user}"
+      - "-password=${POSTGRES_PASSWORD:-dorm_password}"
+      - "-baselineOnMigrate=true"
+      - "migrate"
+    volumes:
+      # 현재 프로젝트의 마이그레이션 경로
+      - ./backend/src/main/resources/db/migration:/flyway/sql:ro
+    environment:
+      TZ: Asia/Seoul
+    restart: "no"
+
+  # --- (옵션) 백엔드 API ---
+  # backend:
+  #   build:
+  #     context: ./backend
+  #     dockerfile: Dockerfile
+  #   container_name: dorm-backend
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   env_file:
+  #     - ./.env
+  #   environment:
+  #     DATABASE_URL: postgres://${POSTGRES_USER:-dorm_user}:${POSTGRES_PASSWORD:-dorm_password}@db:5433/${POSTGRES_DB:-dormitory_db}
+  #     TZ: Asia/Seoul
+  #   ports:
+  #     - "8080:8080"
+  #   volumes:
+  #     - ./backend:/usr/src/app
+  #     - /usr/src/app/node_modules
+
+  # --- (옵션) 프론트엔드 ---
+  # frontend:
+  #   build:
+  #     context: ./client
+  #     dockerfile: Dockerfile
+  #   container_name: dorm-frontend
+  #   env_file:
+  #     - ./.env
+  #   environment:
+  #     VITE_API_BASE: ${VITE_API_BASE:-http://localhost:8080}
+  #     TZ: Asia/Seoul
+  #   ports:
+  #     - "5173:5173"
+  #   volumes:
+  #     - ./client:/usr/src/app
+  #     - /usr/src/app/node_modules
+  #   depends_on:
+  #     - backend
+
+volumes:
+  pgdata:
+  pgadmin-data:
