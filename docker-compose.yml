@@ -1,20 +1,64 @@
 # docker-compose.yml
-version: '3.8'
 services:
-  postgres:
-    image: postgres:15
+  db:
+    image: postgres:16-alpine
     container_name: dorm_postgres
     ports:
       - "5432:5432"
     environment:
-      - POSTGRES_USER=dorm_user
-      - POSTGRES_PASSWORD=dorm_password
-      - POSTGRES_DB=dormitory_db
+      POSTGRES_DB: dormitory_db
+      POSTGRES_USER: dorm_user
+      POSTGRES_PASSWORD: dorm_password
+      TZ: Asia/Seoul
     volumes:
       - ./db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dorm_user -d dormitory_db || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
 
   redis:
     image: redis:7
     container_name: dorm_redis
     ports:
       - "6379:6379"
+
+  # pgAdmin (데이터베이스 관리 도구)
+  pgadmin:
+    image: dpage/pgadmin4:8
+    container_name: dorm_pgadmin
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      TZ: Asia/Seoul
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin-data:/var/lib/pgadmin
+
+  # Flyway 마이그레이션 자동화
+  migrate:
+    image: flyway/flyway:10
+    container_name: dorm_flyway
+    depends_on:
+      db:
+        condition: service_healthy
+    command:
+      - "-url=jdbc:postgresql://db:5432/dormitory_db"
+      - "-user=dorm_user"
+      - "-password=dorm_password"
+      - "-baselineOnMigrate=true"
+      - "migrate"
+    volumes:
+      # 현재 프로젝트의 마이그레이션 경로
+      - ./backend/src/main/resources/db/migration:/flyway/sql:ro
+    environment:
+      TZ: Asia/Seoul
+    restart: "no"
+
+volumes:
+  pgadmin-data:

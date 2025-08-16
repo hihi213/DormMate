@@ -1,3 +1,4 @@
+
 # Dependencies
 node_modules/
 */node_modules/
@@ -31,6 +32,7 @@ Thumbs.db
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+pnpm-debug.log*
 
 # Runtime data
 pids
@@ -71,10 +73,9 @@ jspm_packages/
 
 # dotenv environment variables file
 .env
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
+.env.*
+!.env.example
+!.env.sample
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -94,15 +95,217 @@ public
 .out
 .storybook-out
 
+# Vite / Turbo / Others
+.vite/
+.turbo/
+.svelte-kit/
+.pnp/
+.pnp.js
+.pnpm-store/
+
 # Temporary folders
 tmp/
 temp/
+.tmp/
 
 # Database
 db_data/
+pgdata/
+docker-data/
 
 # Gradle
 .gradle/
 gradle-app.setting
 !gradle-wrapper.jar
 !gradle-wrapper.properties
+
+# Spring Boot
+*.jar
+*.war
+*.ear
+*.class
+
+# Application specific
+application-local.properties
+application-local.yml
+
+# 빌드/캐시
+backend/build/
+client/node_modules/
+artifacts/
+
+# Frontend artifacts
+*.map
+*.local
+*.orig
+
+# Mac zips etc
+*.zip
+
+# --- 새로 추가된 항목들 ---
+
+# Docker 관련
+.dockerignore
+docker-compose.override.yml
+docker-compose.*.yml
+!docker-compose.yml
+
+# 가상환경
+venv/
+env/
+.venv/
+.env/
+ENV/
+
+# Python 관련
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# Java 관련
+*.class
+*.jar
+*.war
+*.ear
+*.nar
+hs_err_pid*
+replay_pid*
+
+# IDE 설정 파일
+*.sublime-project
+*.sublime-workspace
+.project
+.classpath
+.settings/
+
+# OS 특화 파일
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# 압축 파일
+*.7z
+*.dmg
+*.iso
+*.tar
+*.gz
+*.rar
+*.bz2
+
+# 로그 및 임시 파일
+*.tmp
+*.temp
+*.bak
+*.backup
+*.old
+*.orig
+*.rej
+*.swp
+*.swo
+*~
+
+# 데이터베이스 덤프 및 백업
+*.sql
+*.dump
+*.backup
+*.bak
+!**/db/migration/*.sql
+
+# 데이터베이스 설정 파일 (비밀번호 포함)
+tools/db/Readme
+
+# 환경별 설정 파일
+application-*.properties
+application-*.yml
+!application.properties
+!application-dev.properties
+!application-prod.properties
+
+# 테스트 결과
+test-results/
+test-output/
+coverage/
+.nyc_output/
+
+# 로컬 개발 도구
+.vscode/settings.json
+.vscode/launch.json
+.vscode/tasks.json
+.idea/workspace.xml
+.idea/tasks.xml
+.idea/usage.statistics.xml
+.idea/dictionaries/
+.idea/shelf/
+
+# 시스템 파일
+.fseventsd
+.Spotlight-V100
+.Trashes
+.DocumentRevisions-V100
+.TemporaryItems
+.apdisk
+
+# --- PostgreSQL 16 업그레이드 관련 ---
+
+# PostgreSQL 16 데이터 백업 (PostgreSQL 15에서 업그레이드)
+db_data_postgres15_backup/
+db_data_postgres15_*/
+
+# Docker 볼륨 데이터
+pgdata/
+pgadmin-data/
+
+# Flyway 마이그레이션 실행 로그
+flyway-*.log
+migra-*.log
+
+# 스키마 드리프트 감지 결과
+artifacts/migra.sql
+artifacts/schema.*.sql
+
+# PostgreSQL 16 특화 설정
+postgresql.conf.backup
+pg_hba.conf.backup
+
+# --- 개발 환경 최적화 ---
+
+# 로컬 개발 설정
+.env.local
+.env.development
+.env.test
+
+# 캐시 및 임시 파일
+.cache/
+.temp/
+tmp/
+
+# 로그 파일 (개발용)
+*.log
+logs/
+log/
+
+# 백업 파일
+*.backup
+*.bak
+*.old
+*.orig
+
+# 임시 데이터베이스 파일
+*.db
+*.sqlite
+*.sqlite3
