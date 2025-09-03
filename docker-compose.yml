@@ -9,7 +9,7 @@ services:
       POSTGRES_DB: dormitory_db
       POSTGRES_USER: dorm_user
       POSTGRES_PASSWORD: dorm_password
-      TZ: Asia/Seoul
+      TZ: Asia/Seoul #컨테이너 내부의 시간대가 한국 표준시로 고정
     volumes:
       - ./db_data:/var/lib/postgresql/data
     healthcheck:
@@ -34,7 +34,7 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
-      TZ: Asia/Seoul
+      TZ: UTC
     ports:
       - "5050:80"
     volumes:
@@ -57,8 +57,8 @@ services:
       # 현재 프로젝트의 마이그레이션 경로
       - ./backend/src/main/resources/db/migration:/flyway/sql:ro
     environment:
-      TZ: Asia/Seoul
-    restart: "no"
+      TZ: UTC
+    restart: "unless-stopped"
 
 volumes:
   pgadmin-data:

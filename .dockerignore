@@ -1,9 +1,51 @@
 # 도커 이미지에 굳이 안 들어가도 되는 것
+
+# 프로젝트 문서
+*.md
+README.md
+ReadMe.md
+LICENSE
+
+# 개발 도구
+.git/
+.gitignore
+.editorconfig
+Makefile
+*.md
+
+# 빌드 아티팩트
 artifacts/
 tools/
 db_data/
-.git/
-.gitignore
-README.md
-Makefile
-*.md
+db_data_postgres15_backup/
+
+# 개발 환경
+venv/
+.env*
+secrets/
+
+# IDE 설정
+.idea/
+.vscode/
+*.iml
+
+# OS 파일
+.DS_Store
+Thumbs.db
+
+# 로그 및 캐시
+*.log
+.cache/
+.tmp/
+tmp/
+
+# 테스트 결과
+coverage/
+test-results/
+test-output/
+
+# 백업 파일
+*.bak
+*.backup
+*.old
+*.orig
