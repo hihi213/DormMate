@@ -1,3 +1,22 @@
+# Environment files
+.env*
+!.env.example
+!.env.local.example
+
+# Secrets directory
+secrets/
+
+# Node modules
+client/node_modules/
+
+# Build artifacts
+backend/build/
+**/dist/
+
+# IDE
+.idea/
+.vscode/
+
 
 # Dependencies
 node_modules/
@@ -309,3 +328,63 @@ log/
 *.db
 *.sqlite
 *.sqlite3
+
+# --- 추가 무시 항목 (프로젝트 맞춤) ---
+
+# Frontend caches
+client/.vite/
+client/.cache/
+
+# Java/Gradle extra
+backend/out/
+
+# Editor history
+.history/
+
+# --- 추가 권장 항목 ---
+
+# Spring Boot 특화
+backend/.mvn/
+backend/mvnw
+backend/mvnw.cmd
+
+# Node.js 특화
+client/.npm/
+client/.yarn/
+client/.pnpm-store/
+
+# 로컬 설정 파일
+*.local
+*.local.*
+
+# 임시 파일
+.tmp/
+tmp/
+temp/
+
+# 백업 파일
+*.bak
+*.backup
+*.old
+*.orig
+
+# 로그 파일
+logs/
+*.log.*
+
+# 환경별 설정 (로컬 개발용)
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE 워크스페이스
+*.code-workspace
+
+# macOS 특화
+.AppleDouble
+.LSOverride
+
+# Windows 특화
+*.lnk
+*.url

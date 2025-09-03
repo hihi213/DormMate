@@ -1,0 +1,47 @@
+root = true
+
+# Global defaults
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 2
+
+# Java (Spring Boot) — conventional 4-space indent
+[*.{java}]
+indent_size = 4
+
+# Gradle (Groovy/Kotlin) build scripts
+[*.{gradle,kts}]
+indent_size = 2
+
+# TypeScript / JavaScript (Vite React)
+[*.{ts,tsx,js,jsx}]
+indent_size = 2
+
+# JSON / YAML
+[*.{json,yml,yaml}]
+indent_size = 2
+
+# SQL migrations
+[*.sql]
+indent_size = 2
+
+# Markdown — keep intentional trailing spaces
+[*.md]
+trim_trailing_whitespace = false
+insert_final_newline = true
+
+# Shell scripts
+[*.{sh,bash,zsh}]
+indent_size = 2
+
+# Windows batch files — preserve CRLF
+[*.bat]
+end_of_line = crlf
+indent_style = tab
+indent_size = 4
+
+
