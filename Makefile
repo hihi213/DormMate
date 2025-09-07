@@ -20,8 +20,10 @@ DB_USER := dorm_user
 
 help:
 	@echo "사용 가능한 타깃:"
-	@echo "  up           - 필수 도커 서비스(db, redis, pgadmin) 기동"
-	@echo "  down         - 모든 도커 서비스 중지/정리"
+	@echo "  up           - 필수 도커 서비스(db, redis, pgadmin) 기동 (개발용)"
+	@echo "  up-prod      - 운영용 도커 서비스(db, redis) 기동 (포트 노출 없음)"
+	@echo "  down         - 모든 도커 서비스 중지/정리 (개발용)"
+	@echo "  down-prod    - 운영용 도커 서비스 중지/정리"
 	@echo "  ps           - 도커 서비스 상태"
 	@echo "  logs         - 데이터베이스 로그 팔로우"
 	@echo "  db-up        - DB(건강 체크 포함)만 기동"
@@ -48,9 +50,13 @@ help:
 # 인프라 기동/중지/상태/로그
 up:
 	docker compose up -d db redis pgadmin
+up-prod:
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis
 
 down:
 	docker compose down -v
+down-prod:
+	docker compose -f docker-compose.yml -f docker-compose.prod.yml down -v
 
 ps:
 	docker compose ps

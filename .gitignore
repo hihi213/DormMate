@@ -165,9 +165,11 @@ artifacts/
 
 # Docker 관련
 .dockerignore
-docker-compose.override.yml
-docker-compose.*.yml
-!docker-compose.yml
+# docker-compose.override.yml는 개발용이므로 커밋에 포함
+# docker-compose.*.yml
+# !docker-compose.yml
+# !docker-compose.override.yml
+# !docker-compose.prod.yml
 
 # 가상환경
 venv/
