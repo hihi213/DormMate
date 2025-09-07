@@ -1,30 +1,29 @@
-# docker-compose.yml
+# docker-compose.yml - 기본/공통 설정
+# 모든 환경(개발/운영)에서 공통으로 사용되는 서비스 정의
+
 services:
+  # PostgreSQL Database
   db:
     image: postgres:16-alpine
     container_name: dorm_postgres
-    ports:
-      - "5432:5432"
     environment:
-      POSTGRES_DB: dormitory_db
-      POSTGRES_USER: dorm_user
-      POSTGRES_PASSWORD: dorm_password
-      TZ: Asia/Seoul #컨테이너 내부의 시간대가 한국 표준시로 고정
+      POSTGRES_DB: ${POSTGRES_DB:-dormitory_db}
+      POSTGRES_USER: ${POSTGRES_USER:-dorm_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dorm_password}
     volumes:
       - ./db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U dorm_user -d dormitory_db || exit 1"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dorm_user} -d ${POSTGRES_DB:-dormitory_db} || exit 1"]
       interval: 5s
       timeout: 3s
       retries: 15
 
+  # Redis Cache
   redis:
     image: redis:7
     container_name: dorm_redis
-    ports:
-      - "6379:6379"
 
-  # pgAdmin (데이터베이스 관리 도구)
+  # pgAdmin Database Management
   pgadmin:
     image: dpage/pgadmin4:8
     container_name: dorm_pgadmin
@@ -34,13 +33,10 @@ services:
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@example.com}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
-      TZ: UTC
-    ports:
-      - "5050:80"
     volumes:
       - pgadmin-data:/var/lib/pgadmin
 
-  # Flyway 마이그레이션 자동화
+  # Flyway Database Migration
   migrate:
     image: flyway/flyway:10
     container_name: dorm_flyway
@@ -48,16 +44,13 @@ services:
       db:
         condition: service_healthy
     command:
-      - "-url=jdbc:postgresql://db:5432/dormitory_db"
-      - "-user=dorm_user"
-      - "-password=dorm_password"
+      - "-url=jdbc:postgresql://db:5432/${POSTGRES_DB:-dormitory_db}"
+      - "-user=${POSTGRES_USER:-dorm_user}"
+      - "-password=${POSTGRES_PASSWORD:-dorm_password}"
       - "-baselineOnMigrate=true"
       - "migrate"
     volumes:
-      # 현재 프로젝트의 마이그레이션 경로
       - ./backend/src/main/resources/db/migration:/flyway/sql:ro
-    environment:
-      TZ: UTC
     restart: "unless-stopped"
 
 volumes:

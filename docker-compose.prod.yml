@@ -1,0 +1,30 @@
+# docker-compose.prod.yml - 운영 환경 특화 설정
+# docker-compose -f docker-compose.yml -f docker-compose.prod.yml up 으로 실행
+
+services:
+  # PostgreSQL - 운영용 보안 강화
+  db:
+    restart: unless-stopped
+    environment:
+      TZ: UTC # 운영환경에서는 UTC 사용
+    # 포트 노출 없음 (내부 네트워크만 사용)
+    # 보안을 위해 외부 포트 노출 제거
+
+  # Redis - 운영용 보안 강화
+  redis:
+    restart: unless-stopped
+    # 포트 노출 없음 (내부 네트워크만 사용)
+    # 보안을 위해 외부 포트 노출 제거
+
+  # pgAdmin - 운영용에서는 제거하거나 제한적 접근
+  pgadmin:
+    # 운영환경에서는 pgAdmin 비활성화
+    # 필요시 별도 보안 설정으로 활성화
+    profiles:
+      - disabled
+
+  # Flyway - 운영용 안정성 강화
+  migrate:
+    restart: "no" # 마이그레이션은 한 번만 실행
+    environment:
+      TZ: UTC
