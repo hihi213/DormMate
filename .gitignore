@@ -307,6 +307,8 @@ pg_hba.conf.backup
 .env.local
 .env.development
 .env.test
+.envrc
+.direnv/
 
 # 캐시 및 임시 파일
 .cache/
@@ -362,6 +364,20 @@ client/.pnpm-store/
 tmp/
 temp/
 
+# 스크립트 관련 임시/로그
+scripts/*.log
+scripts/.env
+scripts/local/
+
+# 클라이언트 빌드/캐시(보강)
+client/dist/
+client/.vite/
+client/.cache/
+client/.turbo/
+
+# 백엔드 Gradle 캐시(보강)
+backend/.gradle/
+
 # 백업 파일
 *.bak
 *.backup
@@ -388,3 +404,7 @@ logs/
 # Windows 특화
 *.lnk
 *.url
+
+# --- 보안/비공개 문서(절대 커밋 금지) ---
+# 개인 계획/기능 정리 문서
+/nogitReadME.md
