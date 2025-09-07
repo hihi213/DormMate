@@ -12,17 +12,25 @@ LICENSE
 .editorconfig
 Makefile
 *.md
-
-# 빌드 아티팩트
-artifacts/
+scripts/
 tools/
-db_data/
-db_data_postgres15_backup/
-
-# 개발 환경
 venv/
 .env*
 secrets/
+
+# 빌드 아티팩트
+artifacts/
+db_data/
+db_data_postgres15_backup/
+backend/build/
+client/node_modules/
+client/dist/
+
+# 개발 환경
+.direnv/
+.idea/
+.vscode/
+*.iml
 
 # IDE 설정
 .idea/
@@ -38,6 +46,10 @@ Thumbs.db
 .cache/
 .tmp/
 tmp/
+logs/
+client/.vite/
+client/.cache/
+client/.turbo/
 
 # 테스트 결과
 coverage/
@@ -49,3 +61,11 @@ test-output/
 *.backup
 *.old
 *.orig
+
+# OS/에디터 잡동사니
+.DS_Store
+Thumbs.db
+.history/
+
+# --- 비공개 문서(이미지 빌드 제외) ---
+/nogitReadME.md
