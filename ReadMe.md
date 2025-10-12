@@ -56,6 +56,14 @@ docker compose up -d
 cd backend && ./gradlew bootRun
 ```
 
+- **프론트엔드 (Next.js)**
+
+```bash
+cd client
+npm install
+npm run dev
+```
+
 - **원커맨드(dev 스크립트) 사용법**
 
 ```bash
@@ -76,7 +84,7 @@ DB_USERNAME=dorm_user
 DB_PASSWORD=dorm_password
 REDIS_HOST=localhost
 REDIS_PORT=6379
-CORS_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3000
+CORS_ALLOWED_ORIGINS=http://localhost:3000
 
 # JWT (로컬 샘플 값 — 운영에서는 안전한 값으로 교체)
 JWT_SECRET=dev-jwt-secret-key-change-in-production-2024

@@ -336,8 +336,13 @@ log/
 # --- 추가 무시 항목 (프로젝트 맞춤) ---
 
 # Frontend caches
+client/.next/
+client/out/
+client/.vercel/
+client/.turbo/
 client/.vite/
 client/.cache/
+client/.swc/
 
 # Java/Gradle extra
 backend/out/

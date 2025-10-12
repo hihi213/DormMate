@@ -50,6 +50,10 @@ logs/
 client/.vite/
 client/.cache/
 client/.turbo/
+client/.next/
+client/out/
+client/.vercel/
+client/.swc/
 
 # 테스트 결과
 coverage/

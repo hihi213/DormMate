@@ -4,6 +4,7 @@ import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+    @Operation(summary ="폴링 커서 조회, description= 'sinceId 이후를 ASC")
     @RestController
     public class TestController {
 
