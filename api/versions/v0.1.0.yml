@@ -1,0 +1,86 @@
+# API 버전 v0.1.0 - MVP 초기 버전
+# 목적: MVP 기능의 안정적인 API 계약 정의
+# 호환성: 하위 호환성 유지 (breaking change 시 새 버전 생성)
+
+openapi: 3.0.3
+info:
+  title: DormMate API
+  version: 0.1.0
+  description: |
+    DormMate MVP API v0.1.0
+    
+    ## 버전 정책
+    - **하위 호환성**: 기존 필드는 제거하지 않음
+    - **확장성**: 새로운 필드는 nullable로 추가
+    - **Breaking Change**: 새 버전(v0.2.0) 생성 시에만 허용
+    
+    ## 변경 이력
+    - v0.1.0: 초기 MVP API (폴링 기반 이벤트 시스템)
+
+servers:
+  - url: http://localhost:8080
+    description: 로컬 개발 환경
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Problem:
+      type: object
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        detail: { type: string }
+        instance: { type: string }
+    PollEvent:
+      type: object
+      properties:
+        eventId: { type: integer, format: int64 }
+        type: { type: string }
+        resourceId: { type: integer, format: int64, nullable: true }
+        floorCode: { type: string, nullable: true }
+        data: { type: string }
+        correlationId: { type: string, nullable: true }
+      required: [eventId, type, data]
+    PollResponse:
+      type: object
+      properties:
+        lastId: { type: integer, format: int64 }
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/PollEvent' }
+      required: [lastId, events]
+
+paths:
+  /events/poll:
+    get:
+      summary: 폴링 커서 조회
+      description: sinceId 이후 이벤트를 event_id ASC로 반환
+      parameters:
+        - in: query
+          name: sinceId
+          schema: { type: integer, format: int64 }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
+        - in: query
+          name: resourceId
+          schema: { type: integer, format: int64 }
+        - in: query
+          name: floor
+          schema: { type: string }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/PollResponse' }
+        '409': { description: Conflict, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' }}}}
+        '422': { description: Unprocessable, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' }}}}
+        '423': { description: Locked, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' }}}}
+        '429': { description: Too Many Requests, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' }}}}
+      security: [{ BearerAuth: [] }]

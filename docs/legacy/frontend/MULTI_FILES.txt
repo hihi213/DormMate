@@ -1,0 +1,136 @@
+// app/page.tsx
+import React, { useEffect } from "react";
+
+const Page = () => {
+useEffect(() => {
+  if (typeof window === "undefined") return;
+  if ("serviceWorker" in navigator) {
+    (async () => {
+      const candidates = [
+        // relative to current page (works when hosted under a sub-path)
+        new URL("sw.js", window.location.href).toString(),
+        // site root fallback
+        "/sw.js",
+      ];
+      for (const url of candidates) {
+        try {
+          await navigator.serviceWorker.register(url);
+          break;
+        } catch (_) {
+          // try next candidate
+        }
+      }
+    })();
+  }
+}, []);
+
+return (
+  <div>
+    {/* rest of code here */}
+  </div>
+);
+};
+
+export default Page;
+
+// public/sw.js
+// Lightweight service worker for PWA shell, offline cache, and push display
+
+const CACHE = "dorm-static-v2";
+
+// Install: pre-cache minimal shell, but don't fail if any single asset is missing
+self.addEventListener("install", (event) => {
+event.waitUntil(
+  (async () => {
+    const cache = await caches.open(CACHE);
+    const scope = self.registration?.scope || "/";
+    // Build asset list relative to sw scope to work under sub-paths
+    const assets = [
+      new URL("./", scope).toString(),
+      new URL("manifest.webmanifest", scope).toString(),
+    ];
+    await Promise.all(
+      assets.map(async (url) => {
+        try {
+          const res = await fetch(url, { cache: "no-cache" });
+          if (res && res.ok) {
+            await cache.put(url, res.clone());
+          }
+        } catch {
+          // ignore missing assets
+        }
+      }),
+    );
+    await self.skipWaiting();
+  })(),
+);
+});
+
+// Activate: cleanup
+self.addEventListener("activate", (event) => {
+event.waitUntil(
+  caches
+    .keys()
+    .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+    .then(() => self.clients.claim()),
+);
+});
+
+// Fetch: cache-first for GET, network fallback
+self.addEventListener("fetch", (event) => {
+const req = event.request;
+if (req.method !== "GET") return;
+event.respondWith(
+  caches.match(req).then((cached) => {
+    if (cached) return cached;
+    return fetch(req)
+      .then((res) => {
+        const resClone = res.clone();
+        caches
+          .open(CACHE)
+          .then((cache) => cache.put(req, resClone))
+          .catch(() => {});
+        return res;
+      })
+      .catch(() => cached || new Response("", { status: 504 })),
+);
+});
+
+// Push: display incoming notifications
+self.addEventListener("push", (event) => {
+let data = {};
+try {
+  data = event.data ? event.data.json() : {};
+} catch {
+  data = { title: "알림", body: event.data?.text() ?? "" };
+}
+const title = data.title || "Dorm Manager";
+const body = data.body || "새로운 알림이 도착했습니다.";
+const options = {
+  body,
+  icon: "/icons/icon-192.png",
+  badge: "/icons/icon-192.png",
+  data: data.data || {},
+};
+event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Notification click handler
+self.addEventListener("notificationclick", (event) => {
+event.notification.close();
+event.waitUntil(
+  self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((clientsArr) => {
+    const url = new URL("./", self.registration?.scope || "/").toString();
+    const hadWindow = clientsArr.some((client) => {
+      if ("navigate" in client) {
+        client.focus();
+        return true;
+      }
+      return false;
+    });
+    if (!hadWindow && self.clients.openWindow) {
+      return self.clients.openWindow(url);
+    }
+  }),
+);
+});
