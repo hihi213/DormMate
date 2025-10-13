@@ -144,12 +144,12 @@ export default function AddItemDialog({
         const details = rows.map(r => ({
           name: r.name.trim(),
           expiry: r.customExpiry ? r.expiry : formState.expiry,
-          memo: formState.memo || undefined,
         }))
 
         const result = addBundle({
           slotCode: formState.slotCode,
           bundleName: formState.name.trim(),
+          memo: formState.memo || undefined,
           details,
         })
 

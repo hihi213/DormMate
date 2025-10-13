@@ -33,7 +33,8 @@ type FridgeContextValue = {
   addBundle: (opts: {
     slotCode: string
     bundleName: string
-    details: { name: string; expiry: string; memo?: string; quantity?: number }[]
+    memo?: string
+    details: { name: string; expiry: string; quantity?: number }[]
   }) => ActionResult<{ ids: string[]; bundleCode: string }>
   
   // 검사 관리
@@ -262,7 +263,8 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const addBundle = useCallback((opts: {
     slotCode: string
     bundleName: string
-    details: { name: string; expiry: string; memo?: string; quantity?: number }[]
+    memo?: string
+    details: { name: string; expiry: string; quantity?: number }[]
   }): ActionResult<{ ids: string[]; bundleCode: string }> => {
     try {
       const now = Date.now()
@@ -270,6 +272,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       const bundleId = `${opts.slotCode}-${now}`
       const bundleCode = logic.getNextId(opts.slotCode)
       const currentUserId = getCurrentUserId() || "1"
+      const representativeMemo = opts.memo?.trim() ? opts.memo.trim() : undefined
 
       const newItems: Item[] = opts.details.map((detail, idx) => {
         const num = String(parseInt(bundleCode.slice(opts.slotCode.length)) + idx).padStart(3, "0")
@@ -281,7 +284,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           label,
           name: composedName,
           expiry: detail.expiry,
-          memo: detail.memo,
+          memo: representativeMemo,
           quantity: detail.quantity,
           owner: "me",
           ownerId: currentUserId,

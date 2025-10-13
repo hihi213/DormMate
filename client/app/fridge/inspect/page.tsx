@@ -6,6 +6,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
 import { FridgeProvider, useFridge } from "@/components/fridge/fridge-context"
 import { Check, Trash2, Tag, Info, ClipboardCheck, Filter, X, Search, Plus, RotateCcw } from "lucide-react"
 import { getCurrentUserId } from "@/lib/auth"
@@ -13,6 +15,7 @@ import type { Item, Slot } from "@/components/fridge/types"
 import SearchBar from "@/components/fridge/search-bar"
 import WarnMenu from "@/components/fridge/warn-menu"
 import { SlotSelector } from "@/components/fridge/slot-selector"
+import { useToast } from "@/hooks/use-toast"
 
 const SCHED_KEY = "fridge-inspections-schedule-v1"
 
@@ -30,6 +33,7 @@ type Schedule = {
 type Stage = "idle" | "in-progress" | "committed"
 
 type ActionType = "pass" | "discard_expired" | "discard_sticker" | "warn_storage" | "warn_mismatch"
+type FilterType = "all" | ActionType
 type ResultEntry = {
   id: string
   time: number
@@ -55,6 +59,7 @@ function InspectInner() {
   const params = useSearchParams()
   const scheduleId = params.get("id") || ""
   const { items, slots, lastInspectionAt, setLastInspectionNow, deleteItem } = useFridge()
+  const { toast } = useToast()
 
   const [schedule, setSchedule] = useState<Schedule | null>(null)
 
@@ -86,19 +91,18 @@ function InspectInner() {
 
   const [tab, setTab] = useState<"before" | "done">("before")
   const [results, setResults] = useState<ResultEntry[]>([])
-  const [filter, setFilter] = useState<
-    "all" | "pass" | "discard_expired" | "discard_sticker" | "warn_storage" | "warn_mismatch"
-  >("all")
+  const [filter, setFilter] = useState<FilterType>("all")
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [revertConfirmOpen, setRevertConfirmOpen] = useState<string | null>(null) // 되돌리기 확인창용
 
   // New: filters for '검사 전' view
   const [slotCode, setSlotCode] = useState<string>("")
-  const [slotOpen, setSlotOpen] = useState(false)
   const [query, setQuery] = useState("")
   const [showExpired, setShowExpired] = useState(false)
   const [showChanged, setShowChanged] = useState(false)
+  const [stickerDialogOpen, setStickerDialogOpen] = useState(false)
+  const [stickerName, setStickerName] = useState("")
 
   // Precompute helpers
   const isChangedSince = (it: Item) => it.createdAt > lastInspectionAt || it.updatedAt > lastInspectionAt
@@ -154,6 +158,17 @@ function InspectInner() {
     }
     return c
   }, [results])
+  const filterChips = useMemo<{ key: FilterType; label: string; color: string }[]>(
+    () => [
+      { key: "all", label: "전체", color: "bg-gray-100 text-gray-700" },
+      { key: "discard_expired", label: `폐기-유통 (${counts.discard_expired})`, color: "bg-rose-100 text-rose-700" },
+      { key: "discard_sticker", label: `폐기-스티커 (${counts.discard_sticker})`, color: "bg-rose-100 text-rose-700" },
+      { key: "warn_storage", label: `경고-보관 (${counts.warn_storage})`, color: "bg-amber-100 text-amber-700" },
+      { key: "warn_mismatch", label: `경고-정보 (${counts.warn_mismatch})`, color: "bg-amber-100 text-amber-700" },
+      { key: "pass", label: `통과 (${counts.pass})`, color: "bg-emerald-100 text-emerald-700" },
+    ],
+    [counts],
+  )
 
   const addResult = (entry: Omit<ResultEntry, "id" | "time">) => {
     setResults((prev) => [
@@ -178,8 +193,24 @@ function InspectInner() {
     if (!it) return
     addResult({ action: kind, itemId: it.id, slotCode: it.slotCode, name: it.name })
   }
-  const markStickerMissing = () => addResult({ action: "discard_sticker", name: "스티커 미부착", note: "현장 폐기" })
-  const markStickerMissingDiscard = () => addResult({ action: "discard_sticker", name: "스티커 미부착", note: "현장 폐기" })
+  const openStickerDialog = () => {
+    setStickerName("")
+    setStickerDialogOpen(true)
+  }
+  const submitStickerDiscard = () => {
+    const trimmed = stickerName.trim()
+    if (!trimmed) {
+      toast({ title: "물품명을 입력하세요.", description: "스티커가 부착되지 않은 물품명을 직접 기록해야 합니다." })
+      return
+    }
+    addResult({
+      action: "discard_sticker",
+      name: trimmed,
+      slotCode: slotCode || undefined,
+      note: "스티커 미부착 폐기",
+    })
+    setStickerDialogOpen(false)
+  }
 
   // 검사 완료된 물품을 되돌리는 함수
   const revertResult = (resultId: string) => {
@@ -353,7 +384,8 @@ function InspectInner() {
                     value={slotCode}
                     onChange={setSlotCode}
                     slots={slots}
-                    showAllOption={false}
+                    showAllOption
+                    placeholder="전체 칸"
                     className="shrink-0 max-w-[55%]"
                   />
                   <div className="flex-1 min-w-0">
@@ -386,7 +418,7 @@ function InspectInner() {
                     size="sm"
                     variant="default"
                     className="bg-blue-600 hover:bg-blue-700 text-white"
-                    onClick={() => markStickerMissingDiscard()}
+                    onClick={openStickerDialog}
                     title="스티커 미부착 물품 폐기"
                   >
                     <Plus className="size-4 mr-1" />
@@ -567,7 +599,8 @@ function InspectInner() {
                     value={slotCode}
                     onChange={setSlotCode}
                     slots={slots}
-                    showAllOption={false}
+                    showAllOption
+                    placeholder="전체 칸"
                     className="shrink-0 max-w-[55%]"
                   />
                   
@@ -585,14 +618,7 @@ function InspectInner() {
                 {/* 태그 필터 */}
                 <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
                   <Filter className="w-4 h-4 text-gray-500" aria-hidden />
-                  {[
-                    { key: "all", label: "전체", color: "bg-gray-100 text-gray-700" },
-                    { key: "pass", label: `통과 (${counts.pass})`, color: "bg-emerald-100 text-emerald-700" },
-                    { key: "warn_storage", label: `경고-보관 (${counts.warn_storage})`, color: "bg-amber-100 text-amber-700" },
-                    { key: "warn_mismatch", label: `경고-정보 (${counts.warn_mismatch})`, color: "bg-amber-100 text-amber-700" },
-                    { key: "discard_expired", label: `폐기-유통 (${counts.discard_expired})`, color: "bg-rose-100 text-rose-700" },
-                    { key: "discard_sticker", label: `폐기-스티커 (${counts.discard_sticker})`, color: "bg-rose-100 text-rose-700" },
-                  ].map((f: any) => (
+                  {filterChips.map((f) => (
                     <Button
                       key={f.key}
                       size="sm"
@@ -699,6 +725,43 @@ function InspectInner() {
           </>
         )}
       </div>
+
+      {/* Sticker missing dialog */}
+      <Dialog open={stickerDialogOpen} onOpenChange={setStickerDialogOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{"스티커 미부착 물품 기록"}</DialogTitle>
+          </DialogHeader>
+          <DialogDescription className="sr-only">
+            {"스티커가 부착되지 않은 물품의 이름을 입력하고 폐기 처리합니다."}
+          </DialogDescription>
+          <div className="space-y-3">
+            <p className="text-sm text-muted-foreground">
+              {"스티커가 부착되지 않은 물품의 이름을 입력하면 '폐기-스티커' 항목으로 기록됩니다."}
+            </p>
+            <div className="space-y-2">
+              <Label htmlFor="sticker-item-name" className="text-xs">
+                {"물품 이름"}
+              </Label>
+              <Input
+                id="sticker-item-name"
+                value={stickerName}
+                onChange={(e) => setStickerName(e.target.value)}
+                placeholder="예: 3층 냉동실 김치통"
+                maxLength={40}
+              />
+            </div>
+          </div>
+          <div className="flex justify-end gap-2">
+            <Button variant="outline" onClick={() => setStickerDialogOpen(false)}>
+              {"취소"}
+            </Button>
+            <Button className="bg-rose-600 hover:bg-rose-700" onClick={submitStickerDiscard}>
+              {"폐기 기록"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirm when no results */}
       <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
@@ -834,5 +897,3 @@ function badgeForAction(a: ActionType) {
       return "경고"
   }
 }
-
-

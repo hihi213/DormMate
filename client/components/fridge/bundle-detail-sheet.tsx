@@ -34,9 +34,35 @@ export default function BundleDetailSheet({
   const first = group[0]
   const bundleName = getBundleName(first ? first.name : "")
   const groupCode = first ? first.groupCode : ""
+  const representativeMemo = first?.memo || ""
   const canManage = first && first.ownerId ? uid === first.ownerId : false
 
   const sorted = useMemo(() => group.slice().sort((a, b) => daysLeft(a.expiry) - daysLeft(b.expiry)), [group])
+  const [memoDraft, setMemoDraft] = useState(representativeMemo)
+
+  useEffect(() => {
+    setMemoDraft(representativeMemo)
+  }, [representativeMemo])
+
+  const handleSaveMemo = () => {
+    const trimmed = memoDraft.trim()
+    let allOk = true
+    for (const it of sorted) {
+      const result = updateItem(it.id, { memo: trimmed || undefined })
+      if (!result.success) {
+        allOk = false
+      }
+    }
+    setMemoDraft(trimmed)
+    if (allOk) {
+      toast({ title: "대표 메모가 저장되었습니다." })
+    } else {
+      toast({
+        title: "일부 메모 저장에 실패했습니다.",
+        description: "다시 시도하거나 새로고침 해주세요.",
+      })
+    }
+  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -76,13 +102,35 @@ export default function BundleDetailSheet({
           ) : (
             <>
               <Card className="border-emerald-200">
-                <CardContent className="py-3">
+                <CardContent className="py-3 space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <Field label="대표명" value={bundleName} />
                     {groupCode && <Field label="대표 식별번호" value={groupCode} />}
                     <Field label="총 개수" value={`${sorted.length}`} />
                     <Field label="소유자" value={canManage ? "내 물품" : "타인"} />
                   </div>
+                  {canManage ? (
+                    <div className="space-y-2">
+                      <Label className="text-xs">{"대표 메모 (묶음 전체 공유)"}</Label>
+                      <Input
+                        value={memoDraft}
+                        maxLength={200}
+                        onChange={(e) => setMemoDraft(e.target.value)}
+                        placeholder="메모를 입력하세요"
+                      />
+                      <div className="flex justify-end">
+                        <Button
+                          className="bg-emerald-600 hover:bg-emerald-700"
+                          onClick={handleSaveMemo}
+                          disabled={memoDraft === representativeMemo}
+                        >
+                          {"메모 저장"}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : representativeMemo ? (
+                    <div className="text-xs text-muted-foreground">{`대표 메모: ${representativeMemo}`}</div>
+                  ) : null}
                 </CardContent>
               </Card>
 
@@ -105,16 +153,13 @@ export default function BundleDetailSheet({
                             </div>
                             {canManage && edit && (
                               <EditRow
-                                value={{ name: detailName, expiry: it.expiry, memo: it.memo || "" }}
+                                value={{ name: detailName, expiry: it.expiry }}
                                 onSave={(v) => {
                                   const newName = suffix ? `${bundleName} - ${v.name}` : `${bundleName} - ${v.name}`
-                                  updateItem(it.id, { name: newName, expiry: v.expiry, memo: v.memo || undefined })
+                                  updateItem(it.id, { name: newName, expiry: v.expiry })
                                   toast({ title: "수정 완료", description: `${it.id} 항목이 업데이트되었습니다.` })
                                 }}
                               />
-                            )}
-                            {it.memo && !edit && (
-                              <div className="text-xs text-muted-foreground">{`메모: ${it.memo}`}</div>
                             )}
                           </div>
                           {canManage && (
@@ -166,14 +211,14 @@ function EditRow({
   value,
   onSave = () => {},
 }: {
-  value: { name: string; expiry: string; memo: string }
-  onSave?: (v: { name: string; expiry: string; memo: string }) => void
+  value: { name: string; expiry: string }
+  onSave?: (v: { name: string; expiry: string }) => void
 }) {
   const [v, setV] = useState(value)
   useEffect(() => setV(value), [value])
   return (
-    <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
-      <div className="sm:col-span-1">
+    <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div>
         <Label className="text-xs">{"세부명"}</Label>
         <Input value={v.name} onChange={(e) => setV((p) => ({ ...p, name: e.target.value }))} />
       </div>
@@ -186,11 +231,7 @@ function EditRow({
           onChange={(e) => setV((p) => ({ ...p, expiry: e.target.value }))}
         />
       </div>
-      <div>
-        <Label className="text-xs">{"메모(선택)"}</Label>
-        <Input value={v.memo} onChange={(e) => setV((p) => ({ ...p, memo: e.target.value }))} />
-      </div>
-      <div className="sm:col-span-3 flex justify-end">
+      <div className="sm:col-span-2 flex justify-end">
         <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onSave(v)}>
           {"저장"}
         </Button>

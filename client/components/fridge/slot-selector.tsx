@@ -29,7 +29,8 @@ export function SlotSelector({
     }
   }, [value, slots, onChange, showAllOption])
 
-  const currentSlotLabel = slots.find(s => s.code === value)?.label || placeholder
+  const currentSlotLabel =
+    showAllOption && !value ? "전체 칸" : slots.find((s) => s.code === value)?.label || placeholder
 
   const handleSlotSelect = (slotCode: string) => {
     onChange(slotCode)
