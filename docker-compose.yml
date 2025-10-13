@@ -6,7 +6,7 @@ services: # 이 파일로 관리할 컨테이너(서비스)들의 목록을 정�
   # PostgreSQL Database
   # 우리 애플리케이션의 핵심 데이터를 저장할 PostgreSQL 데이터베이스 서비스입니다.
   db:
-    image: postgres:16-alpine # 사용할 도커 이미지입니다. 'postgres'의 16 버전을 사용하며, 'alpine'은 경량화된 리눅스 배포판으로 이미지 크기를 줄여줍니다.
+    image: postgres:16.4-alpine # 사용할 도커 이미지입니다. 'postgres'의 16 버전을 사용하며, 'alpine'은 경량화된 리눅스 배포판으로 이미지 크기를 줄여줍니다.
     container_name: dorm_postgres # 컨테이너에 고정된 이름을 부여하여 다른 서비스에서 쉽게 참조하고 관리할 수 있게 합니다.
     environment: # 컨테이너 내부에 환경 변수를 설정합니다. 주로 설정이나 비밀번호 등에 사용됩니다.
       # .env 파일이나 셸 환경변수가 없으면 ':-' 뒤의 기본값을 사용합니다.
@@ -28,13 +28,13 @@ services: # 이 파일로 관리할 컨테이너(서비스)들의 목록을 정�
   # Redis Cache
   # 인메모리 데이터 저장소로, 캐싱, 세션 관리 등 빠른 데이터 조회가 필요할 때 사용됩니다.
   redis:
-    image: redis:7 # Redis 7 버전 이미지를 사용합니다.
+    image: redis:7.2-alpine # Redis 7.2 버전 이미지를 사용합니다. (alpine 기반으로 경량화)
     container_name: dorm_redis # 컨테이너에 고정 이름을 부여합니다.
 
   # pgAdmin Database Management
   # PostgreSQL 데이터베이스를 웹 UI를 통해 쉽게 관리하고 쿼리할 수 있는 도구입니다.
   pgadmin:
-    image: dpage/pgadmin4:8 # pgAdmin4의 8 버전 이미지를 사용합니다.
+    image: dpage/pgadmin4:8.6 # pgAdmin4의 8.6 버전 이미지를 사용합니다.
     container_name: dorm_pgadmin # 컨테이너에 고정 이름을 부여합니다.
     depends_on:
       # 서비스 시작 순서를 제어합니다. pgadmin은 db 서비스가 'healthy' 상태가 된 후에 시작됩니다.
@@ -52,7 +52,7 @@ services: # 이 파일로 관리할 컨테이너(서비스)들의 목록을 정�
   # Flyway Database Migration
   # 데이터베이스 스키마 변경(마이그레이션)을 버전 관리하고 자동으로 적용해주는 도구입니다.
   migrate:
-    image: flyway/flyway:10 # Flyway 10 버전 이미지를 사용합니다.
+    image: flyway/flyway:10.17.0 # Flyway 10.17 버전 이미지를 사용합니다.
     container_name: dorm_flyway # 컨테이너에 고정 이름을 부여합니다.
     depends_on:
       # Flyway 역시 DB가 완전히 준비된 상태에서 실행되어야 하므로, db 서비스의 'healthy' 상태를 기다립니다.

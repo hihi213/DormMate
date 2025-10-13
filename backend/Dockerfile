@@ -2,13 +2,10 @@
 # 멀티스테이지 빌드로 최적화된 이미지 생성
 
 # 빌드 스테이지
-FROM gradle:8.5-jdk21-alpine AS builder
+FROM gradle:8.9-jdk21-alpine AS builder
 
 # 작업 디렉토리 설정
 WORKDIR /app
-
-# Gradle 캐시 최적화를 위한 gradle.properties 복사
-COPY gradle.properties ./
 
 # 의존성 다운로드를 위한 build.gradle과 settings.gradle 복사
 COPY build.gradle settings.gradle ./

@@ -175,7 +175,7 @@ export default function AddItemDialog({
       })
       console.error("Registration error:", error)
     }
-  }, [formState, rows, inBundle, addItem, addBundle, validateFormData, onOpenChange, toast])
+  }, [formState, rows, inBundle, addItem, addBundle, validateFormData, onOpenChange, toast, updateDialogState])
 
   // 이벤트 핸들러들
   const handleQuantityChange = useCallback((qty: number) => {

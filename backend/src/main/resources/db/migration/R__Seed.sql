@@ -1,321 +1,372 @@
 -- =========================
--- seed.sql
--- 목적: 코드값과 예시 데이터를 최소 삽입한다.
--- 원칙: 실전 흐름을 보여주는 작은 샘플을 제공한다.
+-- DormMate 기본 시드 (PostgreSQL 전용)
+-- 목적: 코드 테이블, 샘플 계정/냉장고 데이터/알림 초기화
+-- 정책: 재실행 시 안전하도록 ON CONFLICT / 존재 여부 검사 사용
 -- =========================
 
-SET time_zone = '+00:00'; -- UTC 기준으로 기록한다.
+SET TIME ZONE 'UTC';
 
--- =============
--- 섹션: 코드 테이블 시드
--- 설명: 상태·유형·알림 종류를 초기화한다.
--- =============
-
-INSERT INTO BundleStatus(code,display_name,description,is_terminal,sort_order)
+-- ============
+-- 코드 테이블 시드
+-- ============
+INSERT INTO bundle_status (code, display_name, description, is_terminal, sort_order)
 VALUES
-('NORMAL','정상','사용 가능한 상태',FALSE,1),
-('REMOVED','삭제됨','사용자 자진 삭제',TRUE,2),
-('DISPOSED','폐기됨','검사로 폐기됨',TRUE,3);
+    ('NORMAL',  '정상',   '사용 가능한 상태', FALSE, 1),
+    ('REMOVED', '삭제됨', '사용자 자진 삭제', TRUE,  2),
+    ('DISPOSED','폐기됨', '검사로 폐기됨',   TRUE,  3)
+ON CONFLICT (code) DO UPDATE
+SET display_name = EXCLUDED.display_name,
+    description  = EXCLUDED.description,
+    is_terminal  = EXCLUDED.is_terminal,
+    sort_order   = EXCLUDED.sort_order;
 
-INSERT INTO ItemState(code,next_states,is_terminal)
+INSERT INTO item_state (code, next_states, is_terminal)
 VALUES
-('NORMAL', JSON_ARRAY('IMMINENT','DISPOSED'), FALSE),
-('IMMINENT', JSON_ARRAY('EXPIRED','DISPOSED'), FALSE),
-('EXPIRED', JSON_ARRAY('DISPOSED'), FALSE),
-('DISPOSED', JSON_ARRAY(), TRUE);
+    ('NORMAL',   jsonb_build_array('IMMINENT', 'DISPOSED'), FALSE),
+    ('IMMINENT', jsonb_build_array('EXPIRED',  'DISPOSED'), FALSE),
+    ('EXPIRED',  jsonb_build_array('DISPOSED'),             FALSE),
+    ('DISPOSED', jsonb_build_array(),                       TRUE)
+ON CONFLICT (code) DO UPDATE
+SET next_states = EXCLUDED.next_states,
+    is_terminal = EXCLUDED.is_terminal;
 
-INSERT INTO InspectionActionType(code,requires_reason)
+INSERT INTO inspection_action_type (code, requires_reason)
 VALUES
-('PASS', FALSE),
-('WARN', TRUE),
-('DISPOSE', TRUE),
-('UNREGISTERED_DISPOSE', TRUE);
+    ('PASS',                 FALSE),
+    ('WARN',                 TRUE),
+    ('DISPOSE',              TRUE),
+    ('UNREGISTERED_DISPOSE', TRUE)
+ON CONFLICT (code) DO UPDATE
+SET requires_reason = EXCLUDED.requires_reason;
 
-INSERT INTO WarningReason(code,action_type_code)
+INSERT INTO warning_reason (code, action_type_code)
 VALUES
-('INFO_MISMATCH','WARN'),
-('STORAGE_ISSUE','WARN'),
-('STICKER_MISSING','WARN');
+    ('INFO_MISMATCH',   'WARN'),
+    ('STORAGE_ISSUE',   'WARN'),
+    ('STICKER_MISSING', 'WARN')
+ON CONFLICT (code) DO UPDATE
+SET action_type_code = EXCLUDED.action_type_code;
 
-INSERT INTO NotificationKind(code,module,severity,ttl_hours,template)
+INSERT INTO notification_kind (code, module, severity, ttl_hours, template)
 VALUES
-('FRIDGE_EXPIRY','FRIDGE',3,24,'임박: {{bundle}} {{count}}건'),
-('INSPECTION_RESULT','FRIDGE',4,72,'검사 결과 요약'),
-('ROOM_START','ROOM',1,24,'입사 안내');
+    ('FRIDGE_EXPIRY',     'FRIDGE', 3, 24, '임박: {{bundle}} {{count}}건'),
+    ('INSPECTION_RESULT', 'FRIDGE', 4, 72, '검사 결과 요약'),
+    ('ROOM_START',        'ROOM',   1, 24, '입사 안내')
+ON CONFLICT (code) DO UPDATE
+SET module    = EXCLUDED.module,
+    severity  = EXCLUDED.severity,
+    ttl_hours = EXCLUDED.ttl_hours,
+    template  = EXCLUDED.template;
 
--- =============
--- 섹션: 기본 공간과 사용자
--- 설명: 2층에 방 201,202. 관리자, 거주자, 검사자를 만든다.
--- 예시: 201호 개인번호 1 사용자가 거주한다.
--- =============
-
-INSERT INTO Rooms(floor,room_number,capacity,type)
+-- ============
+-- 기본 공간 및 사용자
+-- ============
+INSERT INTO rooms (floor, room_number, capacity, type)
 VALUES
-(2,'01',3,'TRIPLE'),
-(2,'02',3,'TRIPLE');
+    (2, '01', 3, 'TRIPLE'::room_type),
+    (2, '02', 3, 'TRIPLE'::room_type)
+ON CONFLICT (floor, room_number) DO UPDATE
+SET capacity = EXCLUDED.capacity,
+    type     = EXCLUDED.type;
 
-INSERT INTO Users(email,password_hash,room_id,personal_no,role,is_active)
+INSERT INTO users (email, password_hash, room_id, personal_no, role, is_active)
 VALUES
-('a@dm.test','$2y$hash.admin',NULL,NULL,'ADMIN',TRUE),
-('201-1@test','$$hash2011',
- (SELECT id FROM Rooms WHERE floor=2 AND room_number='01'),1,'RESIDENT',TRUE),
-('202-1@test','$$hash2021',
- (SELECT id FROM Rooms WHERE floor=2 AND room_number='02'),1,'RESIDENT',TRUE),
-('inspector@test','$$hashinsp',NULL,NULL,'INSPECTOR',TRUE);
+    ('a@dm.test',      '$2y$hash.admin', NULL, NULL, 'ADMIN'::user_role, TRUE),
+    ('201-1@test',     '$$hash2011', (SELECT id FROM rooms WHERE floor = 2 AND room_number = '01'), 1, 'RESIDENT'::user_role, TRUE),
+    ('202-1@test',     '$$hash2021', (SELECT id FROM rooms WHERE floor = 2 AND room_number = '02'), 1, 'RESIDENT'::user_role, TRUE),
+    ('inspector@test', '$$hashinsp', NULL, NULL, 'INSPECTOR'::user_role, TRUE)
+ON CONFLICT (email) DO UPDATE
+SET password_hash = EXCLUDED.password_hash,
+    room_id       = EXCLUDED.room_id,
+    personal_no   = EXCLUDED.personal_no,
+    role          = EXCLUDED.role,
+    is_active     = EXCLUDED.is_active;
 
--- =============
--- 섹션: 자주 쓰는 변수 초기화
--- 설명: 반복 조회를 줄이기 위해 ID를 변수에 저장한다.
--- =============
+-- ============
+-- 냉장고/칸/배분 시드 및 샘플 데이터
+-- ============
+DO $$
+DECLARE
+    v_unit_id       BIGINT;
+    v_comp1         BIGINT;
+    v_comp2         BIGINT;
+    v_user_admin    BIGINT;
+    v_user_201      BIGINT;
+    v_user_202      BIGINT;
+    v_user_inspector BIGINT;
+    v_label         INTEGER;
+    v_label_code    TEXT;
+    v_bundle_id     BIGINT;
+BEGIN
+    -- 냉장고 본체
+    INSERT INTO fridge_units (floor, unit_no, building)
+    VALUES (2, 1, 'A')
+    ON CONFLICT (floor, unit_no) DO UPDATE
+    SET building = EXCLUDED.building
+    RETURNING id INTO v_unit_id;
 
-SET @user_admin = (SELECT id FROM Users WHERE email='a@dm.test');
-SET @user_201_1 = (SELECT id FROM Users WHERE email='201-1@test');
-SET @user_202_1 = (SELECT id FROM Users WHERE email='202-1@test');
-SET @user_inspector = (SELECT id FROM Users WHERE email='inspector@test');
+    IF v_unit_id IS NULL THEN
+        SELECT id INTO v_unit_id FROM fridge_units WHERE floor = 2 AND unit_no = 1;
+    END IF;
 
--- =============
--- 섹션: 냉장고와 칸
--- 설명: 2층 1번 냉장고. 칸1=FRIDGE(1~50), 칸2=FREEZER(51~100)
--- =============
+    -- 냉장고 칸
+    INSERT INTO compartments (unit_id, slot_number, type, label_range_start, label_range_end)
+    VALUES
+        (v_unit_id, 1, 'FRIDGE'::compartment_type, 1, 50),
+        (v_unit_id, 2, 'FREEZER'::compartment_type, 51, 100)
+    ON CONFLICT (unit_id, slot_number) DO UPDATE
+    SET type = EXCLUDED.type,
+        label_range_start = EXCLUDED.label_range_start,
+        label_range_end   = EXCLUDED.label_range_end;
 
-INSERT INTO FridgeUnits(floor,unit_no,building) VALUES (2,1,'A');
+    SELECT id INTO v_comp1 FROM compartments WHERE unit_id = v_unit_id AND slot_number = 1;
+    SELECT id INTO v_comp2 FROM compartments WHERE unit_id = v_unit_id AND slot_number = 2;
 
-INSERT INTO Compartments(
-  unit_id,slot_number,type,label_range_start,label_range_end
-) VALUES
-((SELECT id FROM FridgeUnits WHERE floor=2 AND unit_no=1),1,'FRIDGE',1,50),
-((SELECT id FROM FridgeUnits WHERE floor=2 AND unit_no=1),2,'FREEZER',51,100);
+    -- 배분 규칙 (존재하지 않을 때만 추가)
+    IF NOT EXISTS (
+        SELECT 1 FROM compartment_room_access
+        WHERE compartment_id = v_comp1
+          AND room_id = (SELECT id FROM rooms WHERE floor = 2 AND room_number = '01')
+          AND active_to IS NULL
+    ) THEN
+        INSERT INTO compartment_room_access (compartment_id, room_id, allocation_rule, active_from, active_to)
+        VALUES (v_comp1, (SELECT id FROM rooms WHERE floor = 2 AND room_number = '01'), 'DIRECT', DATE '2025-10-01', NULL);
+    END IF;
 
-SET @comp_1 = (SELECT c.id FROM Compartments c
-               JOIN FridgeUnits u ON u.id=c.unit_id
-               WHERE u.floor=2 AND u.unit_no=1 AND c.slot_number=1);
-SET @comp_2 = (SELECT c.id FROM Compartments c
-               JOIN FridgeUnits u ON u.id=c.unit_id
-               WHERE u.floor=2 AND u.unit_no=1 AND c.slot_number=2);
+    IF NOT EXISTS (
+        SELECT 1 FROM compartment_room_access
+        WHERE compartment_id = v_comp2
+          AND room_id = (SELECT id FROM rooms WHERE floor = 2 AND room_number = '02')
+          AND active_to IS NULL
+    ) THEN
+        INSERT INTO compartment_room_access (compartment_id, room_id, allocation_rule, active_from, active_to)
+        VALUES (v_comp2, (SELECT id FROM rooms WHERE floor = 2 AND room_number = '02'), 'DIRECT', DATE '2025-10-01', NULL);
+    END IF;
 
--- 배분 규칙: 201호→칸1, 202호→칸2
-INSERT INTO CompartmentRoomAccess(
-  compartment_id,room_id,allocation_rule,active_from,active_to
-) VALUES
-(@comp_1, (SELECT id FROM Rooms WHERE floor=2 AND room_number='01'),
- 'DIRECT','2025-10-01',NULL),
-(@comp_2, (SELECT id FROM Rooms WHERE floor=2 AND room_number='02'),
- 'DIRECT','2025-10-01',NULL);
+    -- 라벨 풀 미리 생성
+    INSERT INTO label_pool (compartment_id, label_number, status)
+    SELECT v_comp1, gs, 0 FROM generate_series(1, 10) AS gs
+    ON CONFLICT (compartment_id, label_number) DO NOTHING;
 
--- =============
--- 섹션: 라벨 풀
--- 설명: 각 칸의 라벨 번호를 사전 생성한다. 샘플 10개씩 만든다.
--- =============
+    INSERT INTO label_pool (compartment_id, label_number, status)
+    SELECT v_comp2, gs, 0 FROM generate_series(51, 60) AS gs
+    ON CONFLICT (compartment_id, label_number) DO NOTHING;
 
--- 칸1: 1~10
-INSERT INTO LabelPool(compartment_id,label_number,status)
-SELECT @comp_1, n, 0
-FROM (
-  SELECT 1 n UNION ALL SELECT 2 UNION ALL SELECT 3 UNION ALL SELECT 4
-  UNION ALL SELECT 5 UNION ALL SELECT 6 UNION ALL SELECT 7 UNION ALL
-  SELECT 8 UNION ALL SELECT 9 UNION ALL SELECT 10
-) nums;
+    -- 주요 사용자 ID 캐시
+    SELECT id INTO v_user_admin     FROM users WHERE email = 'a@dm.test';
+    SELECT id INTO v_user_201       FROM users WHERE email = '201-1@test';
+    SELECT id INTO v_user_202       FROM users WHERE email = '202-1@test';
+    SELECT id INTO v_user_inspector FROM users WHERE email = 'inspector@test';
 
--- 칸2: 51~60
-INSERT INTO LabelPool(compartment_id,label_number,status)
-SELECT @comp_2, n, 0
-FROM (
-  SELECT 51 n UNION ALL SELECT 52 UNION ALL SELECT 53 UNION ALL SELECT 54
-  UNION ALL SELECT 55 UNION ALL SELECT 56 UNION ALL SELECT 57 UNION ALL
-  SELECT 58 UNION ALL SELECT 59 UNION ALL SELECT 60
-) nums;
+    -- 라벨 할당 및 묶음 생성
+    SELECT label_number INTO v_label
+    FROM label_pool
+    WHERE compartment_id = v_comp1 AND status = 0
+    ORDER BY label_number
+    LIMIT 1
+    FOR UPDATE;
 
--- =============
--- 섹션: 샘플 묶음과 아이템(실전 흐름)
--- 설명: SKIP LOCKED로 라벨을 발급하고 묶음을 만든다.
--- 주의: 트랜잭션으로 선정→사용을 원자화한다.
--- =============
+    IF v_label IS NULL THEN
+        RAISE EXCEPTION '사용 가능한 라벨을 찾을 수 없습니다. compartment_id=%', v_comp1;
+    END IF;
 
-START TRANSACTION;
+    UPDATE label_pool
+    SET status = 1,
+        last_used_at = CURRENT_TIMESTAMP
+    WHERE compartment_id = v_comp1
+      AND label_number = v_label;
 
-SET @acq_comp = NULL, @acq_label = NULL;
-SELECT compartment_id, label_number
-INTO @acq_comp, @acq_label
-FROM LabelPool
-WHERE status = 0 AND compartment_id = @comp_1
-ORDER BY label_number
-LIMIT 1
-FOR UPDATE SKIP LOCKED; -- 동시 발급 안전
+    v_label_code := format('1-%s', lpad(v_label::TEXT, 3, '0'));
 
-UPDATE LabelPool
-SET status = 1, last_used_at = CURRENT_TIMESTAMP
-WHERE compartment_id = @acq_comp AND label_number = @acq_label;
+    INSERT INTO fridge_bundles (owner_id, compartment_id, label_code, bundle_name, status_code)
+    VALUES (v_user_201, v_comp1, v_label_code, '아침 식재료', 'NORMAL')
+    ON CONFLICT (label_code) DO UPDATE
+    SET owner_id       = EXCLUDED.owner_id,
+        compartment_id = EXCLUDED.compartment_id,
+        bundle_name    = EXCLUDED.bundle_name,
+        status_code    = EXCLUDED.status_code
+    RETURNING id INTO v_bundle_id;
 
-SET @created_label_code = CONCAT('1-', LPAD(@acq_label, 3, '0'));
+    IF v_bundle_id IS NULL THEN
+        SELECT id INTO v_bundle_id FROM fridge_bundles WHERE label_code = v_label_code;
+    END IF;
 
-INSERT INTO FridgeBundles(
-  owner_id,compartment_id,label_code,bundle_name,status_code
-) VALUES
-(@user_201_1, @acq_comp, @created_label_code, '아침 식재료', 'NORMAL');
+    UPDATE label_pool
+    SET last_used_bundle_id = v_bundle_id
+    WHERE compartment_id = v_comp1
+      AND label_number = v_label;
 
-COMMIT;
+    -- 아이템 예시 (중복 방지)
+    IF NOT EXISTS (SELECT 1 FROM fridge_items WHERE bundle_id = v_bundle_id AND item_name = '계란') THEN
+        INSERT INTO fridge_items (bundle_id, item_name, expiry_date, state_code, memo)
+        VALUES (v_bundle_id, '계란', CURRENT_DATE + INTERVAL '3 day', 'IMMINENT', NULL);
+    END IF;
 
--- 아이템 2개 생성: 계란 3일 후, 우유 1일 후 만료
-INSERT INTO FridgeItems(bundle_id,item_name,expiry_date,state_code,memo)
-VALUES
-((SELECT id FROM FridgeBundles WHERE label_code=@created_label_code),
- '계란', DATE_ADD(CURDATE(), INTERVAL 3 DAY),'IMMINENT',NULL),
-((SELECT id FROM FridgeBundles WHERE label_code=@created_label_code),
- '우유', DATE_ADD(CURDATE(), INTERVAL 1 DAY),'IMMINENT',NULL);
+    IF NOT EXISTS (SELECT 1 FROM fridge_items WHERE bundle_id = v_bundle_id AND item_name = '우유') THEN
+        INSERT INTO fridge_items (bundle_id, item_name, expiry_date, state_code, memo)
+        VALUES (v_bundle_id, '우유', CURRENT_DATE + INTERVAL '1 day', 'IMMINENT', NULL);
+    END IF;
 
--- =============
--- 섹션: 알림 예시(단일 테이블)
--- 설명: 목록은 preview_json, 상세는 detail_json에 저장한다.
--- 규칙: 같은 사용자·종류·날짜·묶음은 dedupe로 1회만 생성한다.
--- =============
-
-INSERT INTO Notifications(
-  user_id, kind_code, title, preview_json, detail_json, dedupe_key,
-  ttl_at, related_bundle_id
-) VALUES
-(
-  @user_201_1,
-  'FRIDGE_EXPIRY',
-  '유통기한 임박 알림',
-  JSON_OBJECT(
-    'summary','계란 외 1개 물품의 유통기한이 임박했습니다.',
-    'item_names', JSON_ARRAY('계란','우유'),
-    'counts', JSON_OBJECT('imminent',2,'expired',0),
-    'icon','expiry_warning'
-  ),
-  JSON_OBJECT(
-    'type','FRIDGE_EXPIRY',
-    'bundle_id',(SELECT id FROM FridgeBundles
-                 WHERE label_code=@created_label_code),
-    'item_count',2,
-    'warning_count',1,
-    'dispose_count',0,
-    'items', JSON_ARRAY(
-      JSON_OBJECT('name','계란','expiry_date',
-        DATE_FORMAT(DATE_ADD(CURDATE(),INTERVAL 3 DAY),'%Y-%m-%d'),
-        'state','IMMINENT'),
-      JSON_OBJECT('name','우유','expiry_date',
-        DATE_FORMAT(DATE_ADD(CURDATE(),INTERVAL 1 DAY),'%Y-%m-%d'),
-        'state','IMMINENT')
+    -- 알림 (냉장고 임박)
+    INSERT INTO notifications (
+        user_id, kind_code, title, preview_json, detail_json, dedupe_key,
+        ttl_at, related_bundle_id
     )
-  ),
-  RPAD('demo_dedupe_key_201_2025_10_12_bundle_1',64,'x'),
-  DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 24 HOUR),
-  (SELECT id FROM FridgeBundles WHERE label_code=@created_label_code)
-);
-
--- =============
--- 섹션: 검사 예시
--- 설명: 세션 생성 후 검사자 참여, 경고 조치 1건을 기록한다.
--- =============
-
-INSERT INTO InspectionSessions(compartment_id,session_uuid,status)
-VALUES
-(@comp_1,'11111111-1111-1111-1111-111111111111','OPEN');
-
-INSERT INTO InspectionInspectors(session_id,inspector_id)
-VALUES
-((SELECT id FROM InspectionSessions WHERE session_uuid=
-  '11111111-1111-1111-1111-111111111111'),
- @user_inspector);
-
-INSERT INTO InspectionActions(
-  session_id,inspector_id,bundle_id,action_type_code,reason_code,memo
-) VALUES
-(
- (SELECT id FROM InspectionSessions WHERE session_uuid=
-  '11111111-1111-1111-1111-111111111111'),
- @user_inspector,
- (SELECT id FROM FridgeBundles WHERE label_code=@created_label_code),
- 'WARN','STICKER_MISSING','스티커 위치 식별 어려움'
-);
-
--- =============
--- 섹션: 검사 결과 알림 예시
--- 설명: 세션 기반 알림. related_session_id로 빠르게 필터링한다.
--- =============
-
-INSERT INTO Notifications(
-  user_id, kind_code, title, preview_json, detail_json, dedupe_key,
-  ttl_at, related_session_id
-) VALUES
-(
-  @user_201_1,
-  'INSPECTION_RESULT',
-  '냉장고 검사 결과',
-  JSON_OBJECT('summary','검사 결과: 경고 1건, 폐기 0건'),
-  JSON_OBJECT(
-    'type','INSPECTION_RESULT',
-    'session_id',(SELECT id FROM InspectionSessions WHERE session_uuid=
-      '11111111-1111-1111-1111-111111111111'),
-    'affected_bundles',1,
-    'actions', JSON_ARRAY(
-      JSON_OBJECT(
-        'bundle_id',(SELECT id FROM FridgeBundles
-                     WHERE label_code=@created_label_code),
-        'action','WARN','reason','STICKER_MISSING'
-      )
+    VALUES (
+        v_user_201,
+        'FRIDGE_EXPIRY',
+        '유통기한 임박 알림',
+        jsonb_build_object(
+            'summary', '계란 외 1개 물품의 유통기한이 임박했습니다.',
+            'item_names', jsonb_build_array('계란', '우유'),
+            'counts', jsonb_build_object('imminent', 2, 'expired', 0),
+            'icon', 'expiry_warning'
+        ),
+        jsonb_build_object(
+            'type', 'FRIDGE_EXPIRY',
+            'bundle_id', v_bundle_id,
+            'item_count', 2,
+            'warning_count', 1,
+            'dispose_count', 0,
+            'items', jsonb_build_array(
+                jsonb_build_object(
+                    'name', '계란',
+                    'expiry_date', to_char(CURRENT_DATE + INTERVAL '3 day', 'YYYY-MM-DD'),
+                    'state', 'IMMINENT'
+                ),
+                jsonb_build_object(
+                    'name', '우유',
+                    'expiry_date', to_char(CURRENT_DATE + INTERVAL '1 day', 'YYYY-MM-DD'),
+                    'state', 'IMMINENT'
+                )
+            )
+        ),
+        rpad('demo_dedupe_key_201_2025_10_12_bundle_1', 64, 'x'),
+        CURRENT_TIMESTAMP + INTERVAL '24 hour',
+        v_bundle_id
     )
-  ),
-  RPAD('demo_dedupe_key_inspection_201',64,'y'),
-  DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 72 HOUR),
-  (SELECT id FROM InspectionSessions WHERE session_uuid=
-   '11111111-1111-1111-1111-111111111111')
-);
+    ON CONFLICT (dedupe_key) DO UPDATE
+    SET ttl_at           = EXCLUDED.ttl_at,
+        preview_json     = EXCLUDED.preview_json,
+        detail_json      = EXCLUDED.detail_json,
+        related_bundle_id = EXCLUDED.related_bundle_id;
 
--- =============
--- 섹션: 라벨 반환 트리거 시연
--- 설명: 묶음을 REMOVED로 바꾸어 라벨 자동 반환을 시연한다.
--- =============
+    -- 검사 세션 & 참여자
+    INSERT INTO inspection_sessions (compartment_id, session_uuid, status)
+    VALUES (v_comp1, '11111111-1111-1111-1111-111111111111', 'OPEN')
+    ON CONFLICT (session_uuid) DO UPDATE
+    SET compartment_id = EXCLUDED.compartment_id,
+        status         = EXCLUDED.status;
 
-UPDATE FridgeBundles
-SET status_code = 'REMOVED'
-WHERE label_code = @created_label_code;
-
--- =============
--- 섹션: 일반 공지 알림 예시(ROOM_START)
--- 설명: 모듈 독립 알림. 관련 FK 없이 detail_json만 사용한다.
--- =============
-
-INSERT INTO Notifications(
-  user_id, kind_code, title, preview_json, detail_json, dedupe_key,
-  ttl_at
-) VALUES
-(
-  @user_201_1,
-  'ROOM_START',
-  '입사 안내',
-  JSON_OBJECT(
-    'summary','환영합니다. 생활 안내를 확인하세요.',
-    'icon','info'
-  ),
-  JSON_OBJECT(
-    'type','ROOM_START',
-    'links', JSON_ARRAY(
-      JSON_OBJECT('title','생활 수칙','url','/guide/rules'),
-      JSON_OBJECT('title','층별 담당','url','/guide/staff')
+    INSERT INTO inspection_inspectors (session_id, inspector_id)
+    VALUES (
+        (SELECT id FROM inspection_sessions WHERE session_uuid = '11111111-1111-1111-1111-111111111111'),
+        v_user_inspector
     )
-  ),
-  RPAD('demo_dedupe_key_room_start_201',64,'z'),
-  DATE_ADD(CURRENT_TIMESTAMP, INTERVAL 24 HOUR)
-);
+    ON CONFLICT (session_id, inspector_id) DO NOTHING;
 
--- =============
--- 섹션: 관리자 작업 로그 예시
--- 설명: 권한 변경 같은 운영 이벤트를 기록한다.
--- 주의: actor_role_at_action은 당시 역할을 저장한다.
--- =============
+    IF NOT EXISTS (
+        SELECT 1 FROM inspection_actions
+        WHERE session_id = (SELECT id FROM inspection_sessions WHERE session_uuid = '11111111-1111-1111-1111-111111111111')
+          AND inspector_id = v_user_inspector
+          AND bundle_id = v_bundle_id
+          AND action_type_code = 'WARN'
+    ) THEN
+        INSERT INTO inspection_actions (
+            session_id, inspector_id, bundle_id, action_type_code, reason_code, memo
+        )
+        VALUES (
+            (SELECT id FROM inspection_sessions WHERE session_uuid = '11111111-1111-1111-1111-111111111111'),
+            v_user_inspector,
+            v_bundle_id,
+            'WARN',
+            'STICKER_MISSING',
+            '스티커 위치 식별 어려움'
+        );
+    END IF;
 
-INSERT INTO AuditLogs(
-  actor_id, actor_role_at_action, scope, ref_type, ref_id, action, after_json
-) VALUES
-(
-  @user_admin,
-  'ADMIN',
-  'USER',
-  'User',
-  @user_inspector,
-  'GRANT_INSPECTOR_ROLE',
-  JSON_OBJECT('previous_role','RESIDENT','new_role','INSPECTOR')
-);
+    -- 검사 결과 알림
+    INSERT INTO notifications (
+        user_id, kind_code, title, preview_json, detail_json, dedupe_key,
+        ttl_at, related_session_id
+    )
+    VALUES (
+        v_user_201,
+        'INSPECTION_RESULT',
+        '냉장고 검사 결과',
+        jsonb_build_object('summary', '검사 결과: 경고 1건, 폐기 0건'),
+        jsonb_build_object(
+            'type', 'INSPECTION_RESULT',
+            'session_id', (SELECT id FROM inspection_sessions WHERE session_uuid = '11111111-1111-1111-1111-111111111111'),
+            'affected_bundles', 1,
+            'actions', jsonb_build_array(
+                jsonb_build_object(
+                    'bundle_id', v_bundle_id,
+                    'action', 'WARN',
+                    'reason', 'STICKER_MISSING'
+                )
+            )
+        ),
+        rpad('demo_dedupe_key_inspection_201', 64, 'y'),
+        CURRENT_TIMESTAMP + INTERVAL '72 hour',
+        (SELECT id FROM inspection_sessions WHERE session_uuid = '11111111-1111-1111-1111-111111111111')
+    )
+    ON CONFLICT (dedupe_key) DO UPDATE
+    SET ttl_at             = EXCLUDED.ttl_at,
+        preview_json       = EXCLUDED.preview_json,
+        detail_json        = EXCLUDED.detail_json,
+        related_session_id = EXCLUDED.related_session_id;
+
+    -- 라벨 반환 시연
+    UPDATE fridge_bundles
+    SET status_code = 'REMOVED'
+    WHERE id = v_bundle_id;
+
+    -- 일반 공지 알림
+    INSERT INTO notifications (
+        user_id, kind_code, title, preview_json, detail_json, dedupe_key, ttl_at
+    )
+    VALUES (
+        v_user_201,
+        'ROOM_START',
+        '입사 안내',
+        jsonb_build_object(
+            'summary', '환영합니다. 생활 안내를 확인하세요.',
+            'icon', 'info'
+        ),
+        jsonb_build_object(
+            'type', 'ROOM_START',
+            'links', jsonb_build_array(
+                jsonb_build_object('title', '생활 수칙', 'url', '/guide/rules'),
+                jsonb_build_object('title', '층별 담당', 'url', '/guide/staff')
+            )
+        ),
+        rpad('demo_dedupe_key_room_start_201', 64, 'z'),
+        CURRENT_TIMESTAMP + INTERVAL '24 hour'
+    )
+    ON CONFLICT (dedupe_key) DO UPDATE
+    SET ttl_at       = EXCLUDED.ttl_at,
+        preview_json = EXCLUDED.preview_json,
+        detail_json  = EXCLUDED.detail_json;
+
+    -- 관리자 작업 로그 예시
+    IF NOT EXISTS (
+        SELECT 1 FROM audit_logs
+        WHERE actor_id = v_user_admin
+          AND ref_id   = v_user_inspector
+          AND action   = 'GRANT_INSPECTOR_ROLE'
+    ) THEN
+        INSERT INTO audit_logs (actor_id, actor_role_at_action, scope, ref_type, ref_id, action, after_json)
+        VALUES (
+            v_user_admin,
+            'ADMIN',
+            'USER',
+            'User',
+            v_user_inspector,
+            'GRANT_INSPECTOR_ROLE',
+            jsonb_build_object('previous_role', 'RESIDENT', 'new_role', 'INSPECTOR')
+        );
+    END IF;
+END;
+$$;
 

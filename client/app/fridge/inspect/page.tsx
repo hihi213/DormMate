@@ -105,8 +105,6 @@ function InspectInner() {
   const [stickerName, setStickerName] = useState("")
 
   // Precompute helpers
-  const isChangedSince = (it: Item) => it.createdAt > lastInspectionAt || it.updatedAt > lastInspectionAt
-
   const baseFiltered = useMemo(() => {
     const q = query.trim().toLowerCase()
     const processedItemIds = new Set(results.map(r => r.itemId).filter(Boolean))
@@ -120,11 +118,11 @@ function InspectInner() {
       })
       .filter((it) => {
         const expired = daysLeft(it.expiry) < 0
-        const changed = isChangedSince(it)
+        const changed = it.createdAt > lastInspectionAt || it.updatedAt > lastInspectionAt
         if (!showExpired && !showChanged) return true
         return (showExpired && expired) || (showChanged && changed)
       })
-  }, [items, slotCode, query, showExpired, showChanged, results])
+  }, [items, slotCode, query, showExpired, showChanged, results, lastInspectionAt])
 
   const singles = useMemo(() => baseFiltered.filter((i) => !i.bundleId), [baseFiltered])
   const bundles = useMemo(() => {

@@ -1,9 +1,10 @@
 package com.dormmate.backend.health;
 
 import java.time.Instant;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.actuate.health.Health;
-import org.springframework.boot.actuate.health.HealthIndicator;
+import org.springframework.boot.actuate.health.HealthComponent;
+import org.springframework.boot.actuate.health.HealthEndpoint;
+import org.springframework.boot.actuate.health.CompositeHealth;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -13,8 +14,11 @@ import org.springframework.web.bind.annotation.*;
 @RestController
 public class HealthController {
 
-    @Autowired
-    private HealthIndicator dbHealthIndicator;
+    private final HealthEndpoint healthEndpoint;
+
+    public HealthController(HealthEndpoint healthEndpoint) {
+        this.healthEndpoint = healthEndpoint;
+    }
 
     /**
      * 기본 헬스체크 - 애플리케이션이 살아있는지만 확인
@@ -33,9 +37,18 @@ public class HealthController {
     @GetMapping("/readyz")
     public HealthResponse readyz() {
         try {
-            Health health = dbHealthIndicator.health();
+            HealthComponent healthComponent = healthEndpoint.health();
+            String status = healthComponent.getStatus().getCode();
+
+            if (healthComponent instanceof CompositeHealth composite) {
+                Object dbDetail = composite.getDetails().get("db");
+                if (dbDetail instanceof Health dbHealth) {
+                    status = dbHealth.getStatus().getCode();
+                }
+            }
+
             return new HealthResponse(
-                health.getStatus().getCode(),
+                status,
                 Instant.now().toString()
             );
         } catch (Exception e) {

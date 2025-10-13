@@ -1,4 +1,4 @@
-.PHONY: help up down ps logs db-up migrate schema seed seed-demo reset-db client-dev client-build client-lint backend-build backend-test backend-clean db-shell pgadmin-url redis-cli clean dev dev-front migrate-local schema-drift
+.PHONY: help up down ps logs db-up migrate schema seed reset-db client-dev client-build client-lint backend-build backend-test backend-clean db-shell pgadmin-url redis-cli clean dev dev-front migrate-local schema-drift
 
 # =============================================================
 # DormMate — 통합 개발/운영 Makefile
@@ -29,8 +29,7 @@ help:
 	@echo "  db-up        - DB(건강 체크 포함)만 기동"
 	@echo "  migrate      - Flyway 마이그레이션 실행(backend/src/main/resources/db/migration)"
 	@echo "  schema       - migrate 별칭"
-	@echo "  seed         - 기본 시드 실행(R_seed.sql)"
-	@echo "  seed-demo    - 데모 시드 실행(R_seed_demo.sql)"
+	@echo "  seed         - 기본 시드 실행(R__Seed.sql)"
 	@echo "  reset-db     - DB 초기화(데이터 삭제) → 스키마 → 데모 시드"
 	@echo "  db-shell     - psql 셸 접속"
 	@echo "  pgadmin-url  - pgAdmin 접속 URL 힌트 출력"
@@ -43,7 +42,7 @@ help:
 	@echo "  clean        - 캐시/빌드 산출물 정리"
 	@echo "  dev          - 도커 기동 후 백엔드(Spring Boot) 실행"
 	@echo "  dev-front    - dev + 프론트(Next.js) 병행 실행"
-	@echo "  migrate-local- V000 → R_seed → R_seed_demo 순차 적용(psql)"
+	@echo "  migrate-local- V1__init → R__Seed 순차 적용(psql)"
 	@echo "  schema-drift  - migra 사용해 actual↔expected 스키마 드리프트 점검"
 	@echo "  api-docs      - Swagger UI 열기 (로컬 개발용)"
 	@echo "  api-diff      - Seed vs Runtime OpenAPI diff 체크"
@@ -75,7 +74,7 @@ db-up:
 
 # --- DB 마이그레이션/시드 ---
 # migrate: flyway 컨테이너로 backend/src/main/resources/db/migration/*.sql 적용
-# seed/seed-demo: psql로 로컬 SQL을 컨테이너에 stdin 전달
+# seed: psql로 로컬 SQL을 컨테이너에 stdin 전달
 migrate:
 	# docker-compose의 flyway 컨테이너 사용
 	docker compose run --rm migrate
@@ -84,11 +83,7 @@ schema: migrate
 
 seed:
 	# 기본 시드 스크립트를 DB에 적용 (로컬 파일을 stdin으로 전달)
-	cat backend/src/main/resources/db/migration/R_seed.sql | docker exec -i $(DB_CONTAINER) psql -U $(DB_USER) -d $(DB_NAME) -v ON_ERROR_STOP=1
-
-seed-demo:
-	# 데모 시드 스크립트를 DB에 적용 (로컬 파일을 stdin으로 전달)
-	cat backend/src/main/resources/db/migration/R_seed_demo.sql | docker exec -i $(DB_CONTAINER) psql -U $(DB_USER) -d $(DB_NAME) -v ON_ERROR_STOP=1
+	cat backend/src/main/resources/db/migration/R__Seed.sql | docker exec -i $(DB_CONTAINER) psql -U $(DB_USER) -d $(DB_NAME) -v ON_ERROR_STOP=1
 
 reset-db:
 	# 주의: 로컬 DB 볼륨(db_data/) 내용을 삭제합니다. 되돌릴 수 없습니다.
@@ -100,7 +95,7 @@ reset-db:
 		echo "DB 건강 체크 대기 중..."; \
 		sleep 5; \
 		$(MAKE) migrate; \
-		$(MAKE) seed-demo; \
+		$(MAKE) seed; \
 		echo "DB 리셋 완료"; \
 	else \
 		echo "취소됨"; \
@@ -158,12 +153,10 @@ dev-front:
 
 migrate-local:
 	# 로컬에서 flyway 없이 psql로 순차 적용이 필요할 때 사용
-	@echo "[migrate-local] V000__baseline.sql 적용"
-	cat backend/src/main/resources/db/migration/V000__baseline.sql | docker exec -i $(DB_CONTAINER) psql -U $(DB_USER) -d $(DB_NAME) -v ON_ERROR_STOP=1
-	@echo "[migrate-local] R_seed.sql 적용"
+	@echo "[migrate-local] V1__init.sql 적용"
+	cat backend/src/main/resources/db/migration/V1__init.sql | docker exec -i $(DB_CONTAINER) psql -U $(DB_USER) -d $(DB_NAME) -v ON_ERROR_STOP=1
+	@echo "[migrate-local] R__Seed.sql 적용"
 	$(MAKE) seed
-	@echo "[migrate-local] R_seed_demo.sql 적용"
-	$(MAKE) seed-demo
 
 schema-drift:
 	# tools/db/migra-local.sh를 호출하여 스키마 드리프트를 점검합니다.
