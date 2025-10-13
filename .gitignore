@@ -366,6 +366,9 @@ client/.pnpm-store/
 *.local
 *.local.*
 
+# Python 가상환경
+venv/
+
 # 임시 파일
 .tmp/
 tmp/

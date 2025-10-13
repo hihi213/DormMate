@@ -176,6 +176,15 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  // 유틸리티 함수들
+  const getSlotLabel = useCallback((slotCode: string): string => {
+    return slots.find(s => s.code === slotCode)?.label || slotCode
+  }, [slots])
+
+  const isSlotActive = useCallback((slotCode: string): boolean => {
+    return slots.find(s => s.code === slotCode)?.isActive ?? false
+  }, [slots])
+
   // 아이템 추가
   const addItem = useCallback((data: Omit<Item, "id" | "createdAt" | "updatedAt" | "label" | "owner" | "ownerId">): ActionResult<Item> => {
     try {
@@ -215,7 +224,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         message: error instanceof Error ? error.message : "알 수 없는 오류"
       }
     }
-  }, [items, persistItems, logic])
+  }, [items, persistItems, logic, getSlotLabel])
 
   // 아이템 수정
   const updateItem = useCallback((id: string, patch: Partial<Omit<Item, "id" | "createdAt">>): ActionResult => {
@@ -313,7 +322,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         message: error instanceof Error ? error.message : "알 수 없는 오류"
       }
     }
-  }, [items, persistItems, logic])
+  }, [items, persistItems, logic, getSlotLabel])
 
   // 검사 시간 설정
   const setLastInspectionNow = useCallback(() => {
@@ -325,15 +334,6 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to save inspection time:", error)
     }
   }, [])
-
-  // 유틸리티 함수들
-  const getSlotLabel = useCallback((slotCode: string): string => {
-    return slots.find(s => s.code === slotCode)?.label || slotCode
-  }, [slots])
-
-  const isSlotActive = useCallback((slotCode: string): boolean => {
-    return slots.find(s => s.code === slotCode)?.isActive ?? false
-  }, [slots])
 
   // 컨텍스트 값 메모이제이션
   const contextValue = useMemo<FridgeContextValue>(() => ({
