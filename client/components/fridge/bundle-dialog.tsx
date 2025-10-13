@@ -57,7 +57,7 @@ export default function BundleDialog({
         <div className="p-3">
           {groupCode && <div className="text-xs text-muted-foreground mb-1">{`대표 식별번호: ${groupCode}`}</div>}
 
-          {representativeMemo && canManage && (
+          {representativeMemo && (
             <div className="text-xs text-muted-foreground mb-2">{`대표 메모: ${representativeMemo}`}</div>
           )}
 
@@ -75,7 +75,6 @@ export default function BundleDialog({
                         {it.id}
                       </Badge>
                       {leftText}
-                      {own && it.memo ? ` • 메모: ${it.memo}` : ""}
                     </div>
                   </div>
                   {own && (

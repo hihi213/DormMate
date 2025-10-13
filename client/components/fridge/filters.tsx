@@ -45,7 +45,8 @@ export default function Filters({
           value={slotCode}
           onChange={setSlotCode}
           slots={slots}
-          showAllOption={false}
+          showAllOption
+          placeholder="전체 칸"
           className="shrink-0 max-w-[55%]"
         />
         
