@@ -1,7 +1,7 @@
 "use client"
 
-import { clampToToday, ddayInlineLabel, daysDiffFromToday, toYMD } from "@/lib/date-utils"
 import type { DetailRowState } from "./types"
+import { ExpiryInput } from "@/components/shared/expiry-input"
 
 interface BundleDetailsProps {
   name: string
@@ -40,10 +40,7 @@ export function BundleDetails({
           const repNameTrim = name.trim()
           const nameChanged = row.name.trim() !== repNameTrim
           const valueExpiry = row.customExpiry ? row.expiry : expiry
-          const diff = daysDiffFromToday(valueExpiry)
           const changedDate = row.customExpiry
-          const ddayText = ddayInlineLabel(diff)
-          const ddayColor = diff < 0 ? "text-rose-600" : diff <= 1 ? "text-amber-600" : "text-emerald-700"
 
           return (
             <div key={idx} className="border rounded-lg p-4 bg-gray-50">
@@ -84,35 +81,22 @@ export function BundleDetails({
                 </div>
 
                 {/* 유통기한 */}
-                <div>
-                  <label htmlFor={`row-expiry-${idx}`} className="block text-sm font-medium text-gray-700 mb-1">
-                    {"유통기한"}
-                  </label>
-                  <div className="flex items-center gap-2">
-                    <input
-                      id={`row-expiry-${idx}`}
-                      type="date"
-                      value={valueExpiry}
-                      min={toYMD(new Date())}
-                      onChange={(e) => {
-                        const val = clampToToday(e.target.value)
-                        const isSameAsRep = val === expiry
-                        onRowUpdate(idx, {
-                          customExpiry: !isSameAsRep,
-                          expiry: val,
-                        })
-                      }}
-                      className="h-10 flex-1 rounded-md border border-gray-300 px-3 text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500"
-                    />
-                    <span
-                      className={`text-sm whitespace-nowrap px-2 py-1 rounded ${
-                        changedDate ? `${ddayColor} bg-white` : "text-transparent"
-                      }`}
-                    >
-                      {changedDate ? ddayText : "placeholder"}
-                    </span>
-                  </div>
-                </div>
+                <ExpiryInput
+                  id={`row-expiry-${idx}`}
+                  label="유통기한"
+                  value={valueExpiry}
+                  onChange={(val) => {
+                    const isSameAsRep = val === expiry
+                    onRowUpdate(idx, {
+                      customExpiry: !isSameAsRep,
+                      expiry: val,
+                    })
+                  }}
+                  helperText={changedDate ? "대표값에서 변경됨" : "대표값과 동일"}
+                  warningThresholdDays={1}
+                  presets={[]}
+                  className="flex-1"
+                />
               </div>
             </div>
           )

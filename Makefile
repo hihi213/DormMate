@@ -17,6 +17,7 @@ PROJECT_ROOT := $(PWD)
 DB_CONTAINER := dorm_postgres
 DB_NAME := dormitory_db
 DB_USER := dorm_user
+NODE_IMAGE ?= node:20-alpine
 
 help:
 	@echo "사용 가능한 타깃:"
@@ -118,7 +119,17 @@ client-build:
 	cd client && npm run build
 
 client-lint:
-	cd client && npm run lint
+	@if command -v npm >/dev/null 2>&1; then \
+		echo "🧹 Running client lint with local npm"; \
+		cd client && npm run lint; \
+	else \
+		echo "🧹 npm not found. Using Docker ($(NODE_IMAGE)) to run lint..."; \
+		docker run --rm \
+			-v $(PROJECT_ROOT)/client:/app \
+			-w /app \
+			$(NODE_IMAGE) \
+			sh -lc "npm ci --ignore-scripts && npm run lint"; \
+	fi
 
 # --- 백엔드(Gradle) ---
 # build/test/clean 기본 작업. bootRun은 dev/ dev-front에서 사용
@@ -150,6 +161,14 @@ dev-front:
 	docker compose up -d
 	( cd client && npm run dev ) &
 	cd backend && ./gradlew bootRun
+dev-stop:
+	@echo "🔻 Stopping DormMate dev processes..."
+	- pkill -f "gradlew bootRun" >/dev/null 2>&1 || true
+	- pkill -f "npm run dev" >/dev/null 2>&1 || true
+	- pkill -f "next dev" >/dev/null 2>&1 || true
+	- pkill -f "node .*pj_DormMate/client" >/dev/null 2>&1 || true
+	- docker compose down >/dev/null 2>&1 || true
+	@echo "✅ Dev processes terminated."
 
 migrate-local:
 	# 로컬에서 flyway 없이 psql로 순차 적용이 필요할 때 사용

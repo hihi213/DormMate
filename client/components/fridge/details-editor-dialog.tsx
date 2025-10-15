@@ -3,9 +3,10 @@
 import { useEffect, useState } from "react"
 import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog"
 import { Label } from "@/components/ui/label"
-import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
 import { X } from "lucide-react"
+import { ExpiryInput } from "@/components/shared/expiry-input"
+import { toYMD } from "@/lib/date-utils"
 
 export type DetailRow = { name: string; expiry: string }
 
@@ -30,7 +31,7 @@ export default function DetailsEditorDialog({
 
   useEffect(() => {
     if (!open) return
-    const today = toISO(new Date())
+    const today = toYMD(new Date())
     const next: DetailRow[] = []
     for (let i = 0; i < Math.max(1, qty); i++) {
       const existing = initial[i]
@@ -62,14 +63,11 @@ export default function DetailsEditorDialog({
             </div>
             <div className="max-h-72 overflow-y-auto p-3 space-y-3">
               {rows.map((row, idx) => {
-                const left = daysLeft(row.expiry)
-                const leftText = leftLabel(left)
                 return (
                   <div key={idx} className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-end">
                     <div className="min-w-0">
                       <Label className="text-xs">{`세부명 #${idx + 1}`}</Label>
-                      <Input
-                        value={row.name}
+                      <input value={row.name}
                         onChange={(e) =>
                           setRows((r) => {
                             const n = [...r]
@@ -81,25 +79,21 @@ export default function DetailsEditorDialog({
                         className="min-w-0"
                       />
                     </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <div className="flex-1 min-w-0">
-                        <Label className="text-xs">{"유통기한"}</Label>
-                        <Input
-                          type="date"
-                          value={row.expiry}
-                          min={toISO(new Date())}
-                          onChange={(e) =>
-                            setRows((r) => {
-                              const n = [...r]
-                              n[idx] = { ...n[idx], expiry: e.target.value }
-                              return n
-                            })
-                          }
-                          className="min-w-0"
-                        />
-                      </div>
-                      <span className="text-xs text-muted-foreground mb-0.5 shrink-0">{leftText}</span>
-                    </div>
+                    <ExpiryInput
+                      id={`detail-expiry-${idx}`}
+                      label="유통기한"
+                      value={row.expiry}
+                      onChange={(next) =>
+                        setRows((r) => {
+                          const n = [...r]
+                          n[idx] = { ...n[idx], expiry: next }
+                          return n
+                        })
+                      }
+                      presets={[]}
+                      warningThresholdDays={1}
+                      helperText="개별 유통기한을 설정하세요."
+                    />
                   </div>
                 )
               })}
@@ -124,20 +118,4 @@ export default function DetailsEditorDialog({
       </DialogContent>
     </Dialog>
   )
-}
-
-function toISO(d: Date) {
-  return d.toISOString().slice(0, 10)
-}
-function daysLeft(dateISO: string) {
-  if (!dateISO) return Number.NaN
-  const today = new Date(new Date().toDateString())
-  const d = new Date(dateISO)
-  return Math.floor((d.getTime() - today.getTime()) / 86400000)
-}
-function leftLabel(n: number) {
-  if (isNaN(n)) return ""
-  if (n < 0) return `만료 ${Math.abs(n)}일 지남`
-  if (n === 0) return "오늘"
-  return `${n}일 남음`
 }

@@ -41,6 +41,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration`에
 - `make seed`: 기본 시드 데이터 적용
 - `make backend-build` / `make backend-test`: Gradle 빌드 및 테스트
 - `make client-dev` / `make client-build`: 프론트엔드 개발 서버 및 프로덕션 빌드
+- `make client-lint`: 프론트엔드 ESLint 검사 (로컬에 Node.js가 없으면 자동으로 Docker `node:20-alpine` 이미지를 사용해 실행)
 
 자세한 옵션은 `make help`를 확인하세요.
 
@@ -51,4 +52,3 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration`에
 - `api/openapi.yml`: OpenAPI seed 명세
 
 운영/배포 절차, 검증 체크리스트 등은 이후 문서화를 진행하면서 `docs/` 이하에 보강할 예정입니다.
-

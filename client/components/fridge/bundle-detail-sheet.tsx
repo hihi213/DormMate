@@ -7,11 +7,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { CalendarDays, Pencil, Trash2, X } from "lucide-react"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useFridge } from "./fridge-context"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentUserId } from "@/lib/auth"
+import { Input } from "@/components/ui/input"
+import { ExpiryInput } from "@/components/shared/expiry-input"
 
 export default function BundleDetailSheet({
   open = false,
@@ -222,15 +223,14 @@ function EditRow({
         <Label className="text-xs">{"세부명"}</Label>
         <Input value={v.name} onChange={(e) => setV((p) => ({ ...p, name: e.target.value }))} />
       </div>
-      <div>
-        <Label className="text-xs">{"유통기한"}</Label>
-        <Input
-          type="date"
-          value={v.expiry}
-          min={toISO(new Date())}
-          onChange={(e) => setV((p) => ({ ...p, expiry: e.target.value }))}
-        />
-      </div>
+      <ExpiryInput
+        id="bundle-detail-editor-expiry"
+        label="유통기한"
+        value={v.expiry}
+        onChange={(next) => setV((p) => ({ ...p, expiry: next }))}
+        presets={[]}
+        warningThresholdDays={1}
+      />
       <div className="sm:col-span-2 flex justify-end">
         <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onSave(v)}>
           {"저장"}
@@ -249,9 +249,6 @@ function splitDetail(fullName: string, bundleName: string): [string, boolean] {
 function getBundleName(name: string) {
   const idx = name.indexOf(" - ")
   return idx >= 0 ? name.slice(0, idx) : name
-}
-function toISO(d: Date) {
-  return d.toISOString().slice(0, 10)
 }
 function daysLeft(dateISO: string) {
   const today = new Date(new Date().toDateString())
