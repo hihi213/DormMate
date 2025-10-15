@@ -7,11 +7,12 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { CalendarDays, Pencil, Trash2, X } from "lucide-react"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useFridge } from "./fridge-context"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentUserId } from "@/lib/auth"
+import { Input } from "@/components/ui/input"
+import { ExpiryInput } from "@/components/shared/expiry-input"
 
 export default function ItemDetailSheet({
   open = false,
@@ -141,16 +142,13 @@ export default function ItemDetailSheet({
                         onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
                       />
                     </div>
-                    <div className="grid gap-2">
-                      <Label htmlFor="expiry">{"유통기한"}</Label>
-                      <Input
-                        id="expiry"
-                        type="date"
-                        value={form.expiry}
-                        min={toISO(new Date())}
-                        onChange={(e) => setForm((f) => ({ ...f, expiry: e.target.value }))}
-                      />
-                    </div>
+                    <ExpiryInput
+                      id="expiry"
+                      label="유통기한"
+                      value={form.expiry}
+                      onChange={(next) => setForm((f) => ({ ...f, expiry: next }))}
+                      warningThresholdDays={1}
+                    />
                     <div className="grid gap-2">
                       <Label htmlFor="memo">{"메모(선택)"}</Label>
                       <Input
@@ -189,9 +187,6 @@ function Field({ label, value, className = "" }: { label: string; value: React.R
       <div className="text-sm">{value}</div>
     </div>
   )
-}
-function toISO(d: Date) {
-  return d.toISOString().slice(0, 10)
 }
 function daysLeft(dateISO: string) {
   const today = new Date(new Date().toDateString())

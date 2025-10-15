@@ -22,6 +22,8 @@ export function SlotSelector({
   showAllOption = false,
   className = ""
 }: SlotSelectorProps) {
+  const [open, setOpen] = React.useState(false)
+
   // 기본값이 없고 칸이 있을 때 첫 번째 칸을 자동 선택
   React.useEffect(() => {
     if (!value && slots.length > 0 && !showAllOption) {
@@ -34,11 +36,12 @@ export function SlotSelector({
 
   const handleSlotSelect = (slotCode: string) => {
     onChange(slotCode)
+    setOpen(false)
   }
 
   return (
     <div className={`min-w-0 ${className}`}>
-      <Popover>
+      <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <button
             className="w-full justify-between bg-transparent inline-flex items-center gap-2 rounded-md border px-3 py-2 text-sm hover:bg-gray-50"
