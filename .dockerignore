@@ -17,6 +17,9 @@ tools/
 venv/
 .env*
 secrets/
+api/
+docs/
+workflow/
 
 # 빌드 아티팩트
 artifacts/
