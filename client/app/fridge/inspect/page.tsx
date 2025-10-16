@@ -8,14 +8,16 @@ import { Badge } from "@/components/ui/badge"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { FridgeProvider, useFridge } from "@/components/fridge/fridge-context"
+import { FridgeProvider, useFridge } from "@/features/fridge/hooks/fridge-context"
+import { formatBundleLabel } from "@/features/fridge/utils/data-shaping"
 import { Check, Trash2, Tag, Info, ClipboardCheck, Filter, X, Search, Plus, RotateCcw } from "lucide-react"
 import { getCurrentUserId } from "@/lib/auth"
-import type { Item, Slot } from "@/components/fridge/types"
-import SearchBar from "@/components/fridge/search-bar"
-import WarnMenu from "@/components/fridge/warn-menu"
-import { SlotSelector } from "@/components/fridge/slot-selector"
+import type { Item, Slot } from "@/features/fridge/types"
+import SearchBar from "@/features/fridge/components/search-bar"
+import WarnMenu from "@/features/fridge/components/warn-menu"
+import { SlotSelector } from "@/features/fridge/components/slot-selector"
 import { useToast } from "@/hooks/use-toast"
+import { formatShortDate, ddayLabel } from "@/lib/date-utils"
 
 const SCHED_KEY = "fridge-inspections-schedule-v1"
 
@@ -38,7 +40,12 @@ type ResultEntry = {
   id: string
   time: number
   action: ActionType
-  itemId?: string
+  unitId?: string
+  bundleId?: string
+  labelNumber?: number
+  bundleLabel?: string
+  bundleName?: string
+  expiry?: string
   slotCode?: string
   name?: string
   note?: string
@@ -105,39 +112,50 @@ function InspectInner() {
   const [stickerName, setStickerName] = useState("")
 
   // Precompute helpers
-  const baseFiltered = useMemo(() => {
+  const { singles, bundles } = useMemo(() => {
     const q = query.trim().toLowerCase()
-    const processedItemIds = new Set(results.map(r => r.itemId).filter(Boolean))
-    
-    return items
-      .filter((it) => !processedItemIds.has(it.id)) // 이미 검사한 물품 제외
-      .filter((it) => (slotCode ? it.slotCode === slotCode : true))
-      .filter((it) => {
-        if (!q) return true
-        return `${it.id} ${it.name}`.toLowerCase().includes(q)
-      })
-      .filter((it) => {
-        const expired = daysLeft(it.expiry) < 0
-        const changed = it.createdAt > lastInspectionAt || it.updatedAt > lastInspectionAt
-        if (!showExpired && !showChanged) return true
-        return (showExpired && expired) || (showChanged && changed)
-      })
-  }, [items, slotCode, query, showExpired, showChanged, results, lastInspectionAt])
-
-  const singles = useMemo(() => baseFiltered.filter((i) => !i.bundleId), [baseFiltered])
-  const bundles = useMemo(() => {
+    const processedUnitIds = new Set(results.map((r) => r.unitId).filter(Boolean))
     const map = new Map<string, Item[]>()
-    for (const it of baseFiltered) {
-      if (!it.bundleId) continue
-      if (!map.has(it.bundleId)) map.set(it.bundleId, [])
-      map.get(it.bundleId)!.push(it)
+    const matchedBundles = new Set<string>()
+    const singleItems: Item[] = []
+
+    for (const it of items) {
+      if (processedUnitIds.has(it.unitId)) continue
+      if (slotCode && it.slotCode !== slotCode) continue
+
+      const expired = daysLeft(it.expiry) < 0
+      const createdAtMs = new Date(it.createdAt).getTime()
+      const updatedAtMs = new Date(it.updatedAt).getTime()
+      const changed = createdAtMs > lastInspectionAt || updatedAtMs > lastInspectionAt
+      if (showExpired || showChanged) {
+        const passesSpecialFilter = (showExpired && expired) || (showChanged && changed)
+        if (!passesSpecialFilter) continue
+      }
+
+      const haystack = `${it.bundleLabelDisplay ?? ""} ${it.bundleName ?? ""} ${it.name ?? ""}`.toLowerCase()
+      const matchesQuery = !q || haystack.includes(q)
+
+      if (!it.bundleId) {
+        if (matchesQuery) singleItems.push(it)
+        continue
+      }
+
+      if (matchesQuery) matchedBundles.add(it.bundleId)
+
+      const list = map.get(it.bundleId) ?? []
+      list.push(it)
+      map.set(it.bundleId, list)
     }
-    // Sort inner items by id
-    return Array.from(map.values()).map((grp) => grp.sort((a, b) => a.id.localeCompare(b.id)))
-  }, [baseFiltered])
+
+    const bundleGroups = Array.from(map.entries())
+      .filter(([bundleId]) => !q || matchedBundles.has(bundleId))
+      .map(([, list]) => list.slice().sort((a, b) => a.seqNo - b.seqNo))
+
+    return { singles: singleItems.slice().sort((a, b) => a.seqNo - b.seqNo), bundles: bundleGroups }
+  }, [items, results, slotCode, showExpired, showChanged, query, lastInspectionAt])
 
   // 검사 진행 상태 계산
-  const processedRegisteredItems = results.filter(r => r.itemId).length // 등록된 물품만 카운트 (스티커 미부착 제외)
+  const processedRegisteredItems = results.filter((r) => r.unitId).length // 등록된 물품만 카운트 (스티커 미부착 제외)
   const totalItems = singles.length + bundles.reduce((sum, grp) => sum + grp.length, 0)
   const remainingItems = totalItems - processedRegisteredItems
   const isInspectionComplete = remainingItems === 0 && totalItems > 0
@@ -176,20 +194,53 @@ function InspectInner() {
   }
 
   // Stage-only until submit
-  const markDiscard = (itemId: string) => {
-    const it = items.find((x) => x.id === itemId)
+  const markDiscard = (unitId: string) => {
+    const it = items.find((x) => x.unitId === unitId)
     if (!it) return
-    addResult({ action: "discard_expired", itemId: it.id, slotCode: it.slotCode, name: it.name })
+    const bundleLabel = it.bundleLabelDisplay || formatBundleLabel(it.slotCode, it.labelNumber)
+    addResult({
+      action: "discard_expired",
+      unitId: it.unitId,
+      bundleId: it.bundleId,
+      labelNumber: it.labelNumber,
+      bundleLabel,
+      bundleName: it.bundleName,
+      expiry: it.expiry,
+      slotCode: it.slotCode,
+      name: it.name,
+    })
   }
-  const markPass = (itemId: string) => {
-    const it = items.find((x) => x.id === itemId)
+  const markPass = (unitId: string) => {
+    const it = items.find((x) => x.unitId === unitId)
     if (!it) return
-    addResult({ action: "pass", itemId: it.id, slotCode: it.slotCode, name: it.name })
+    const bundleLabel = it.bundleLabelDisplay || formatBundleLabel(it.slotCode, it.labelNumber)
+    addResult({
+      action: "pass",
+      unitId: it.unitId,
+      bundleId: it.bundleId,
+      labelNumber: it.labelNumber,
+      bundleLabel,
+      bundleName: it.bundleName,
+      expiry: it.expiry,
+      slotCode: it.slotCode,
+      name: it.name,
+    })
   }
-  const markWarn = (itemId: string, kind: Extract<ActionType, "warn_storage" | "warn_mismatch">) => {
-    const it = items.find((x) => x.id === itemId)
+  const markWarn = (unitId: string, kind: Extract<ActionType, "warn_storage" | "warn_mismatch">) => {
+    const it = items.find((x) => x.unitId === unitId)
     if (!it) return
-    addResult({ action: kind, itemId: it.id, slotCode: it.slotCode, name: it.name })
+    const bundleLabel = it.bundleLabelDisplay || formatBundleLabel(it.slotCode, it.labelNumber)
+    addResult({
+      action: kind,
+      unitId: it.unitId,
+      bundleId: it.bundleId,
+      labelNumber: it.labelNumber,
+      bundleLabel,
+      bundleName: it.bundleName,
+      expiry: it.expiry,
+      slotCode: it.slotCode,
+      name: it.name,
+    })
   }
   const openStickerDialog = () => {
     setStickerName("")
@@ -217,31 +268,74 @@ function InspectInner() {
 
   const filteredResults = useMemo(() => {
     let filtered = results
-    
-    // 액션 타입별 필터링
+
     if (filter !== "all") {
       filtered = filtered.filter((r) => r.action === filter)
     }
-    
-    // 칸별 필터링
+
     if (slotCode) {
       filtered = filtered.filter((r) => r.slotCode === slotCode)
     }
-    
-    // 검색어 필터링
+
     if (query.trim()) {
       const q = query.trim().toLowerCase()
       filtered = filtered.filter((r) => {
-        if (r.itemId && r.name) {
-          return `${r.itemId} ${r.name}`.toLowerCase().includes(q)
-        }
-        return r.name?.toLowerCase().includes(q) || false
+        const haystack = `${r.bundleLabel ?? ""} ${r.bundleName ?? ""} ${r.name ?? ""}`.toLowerCase()
+        return haystack.includes(q)
       })
     }
-    
-    // 처리 시간 기준 최신순으로 정렬
-    return filtered.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+
+    return filtered.slice().sort((a, b) => b.time - a.time)
   }, [results, filter, slotCode, query])
+
+  const processedGroups = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        key: string
+        bundleLabel?: string
+        bundleName: string
+        slotCode?: string
+        items: ResultEntry[]
+      }
+    >()
+
+    filteredResults.forEach((r) => {
+      if (!r.unitId) return
+      const key = r.bundleId || r.bundleLabel || r.unitId
+      if (!map.has(key)) {
+        map.set(key, {
+          key,
+          bundleLabel: r.bundleLabel,
+          bundleName: r.bundleName || r.name || "포장",
+          slotCode: r.slotCode,
+          items: [],
+        })
+      }
+      map.get(key)!.items.push(r)
+    })
+
+    return Array.from(map.values())
+      .map((group) => ({
+        ...group,
+        items: group.items.slice().sort((a, b) => b.time - a.time),
+      }))
+      .sort((a, b) => {
+        const left = (a.bundleLabel || a.bundleName).toLowerCase()
+        const right = (b.bundleLabel || b.bundleName).toLowerCase()
+        return left.localeCompare(right)
+      })
+  }, [filteredResults])
+
+  const processedSpecial = useMemo(
+    () => filteredResults.filter((r) => !r.unitId),
+    [filteredResults],
+  )
+
+  const processedItemCount = useMemo(
+    () => processedGroups.reduce((sum, group) => sum + group.items.length, 0),
+    [processedGroups],
+  )
 
   const summary = useMemo(() => {
     const passed = results.filter((r) => r.action === "pass").length
@@ -252,7 +346,9 @@ function InspectInner() {
 
   const finalizeAndPersist = (countsSummary: { passed: number; warned: number; discarded: number }) => {
     // Update items: apply staged mutations (only discards)
-    const toDelete = Array.from(new Set(results.filter((r) => r.action === "discard_expired" && r.itemId).map((r) => r.itemId!)))
+    const toDelete = Array.from(
+      new Set(results.filter((r) => r.action === "discard_expired" && r.unitId).map((r) => r.unitId!)),
+    )
     for (const id of toDelete) deleteItem(id)
 
     // Append to legacy history (optional)
@@ -442,12 +538,19 @@ function InspectInner() {
                   <ul className="space-y-2">
                     {singles
                       .slice()
-                      .sort((a, b) => a.id.localeCompare(b.id))
+                      .sort((a, b) =>
+                        (a.bundleLabelDisplay || a.displayCode || "").localeCompare(
+                          b.bundleLabelDisplay || b.displayCode || "",
+                        ),
+                      )
                       .map((it) => {
                         const d = daysLeft(it.expiry)
                         const expired = d < 0
+                        const code = it.bundleLabelDisplay || it.displayCode
+                        const location = code || it.slotCode || "-"
+                        const detailLine = `${location} • ${formatShortDate(it.expiry)}`
                         return (
-                          <li key={it.id} className="flex items-center justify-between rounded-md border p-2">
+                          <li key={it.unitId} className="flex items-center justify-between rounded-md border p-2">
                             {expired ? (
                               // 유통기한 지난 물품: 폐기 버튼 + 물품정보
                               <>
@@ -455,7 +558,7 @@ function InspectInner() {
                                   <Button
                                     variant="destructive"
                                     size="sm"
-                                    onClick={() => markDiscard(it.id)}
+                                    onClick={() => markDiscard(it.unitId)}
                                     aria-label="폐기 및 벌점"
                                     title="유통기한 만료로 인한 폐기"
                                   >
@@ -465,24 +568,24 @@ function InspectInner() {
                                 </div>
                                 <div className="min-w-0 flex-1 text-center">
                                   <div className="text-sm font-medium truncate">{it.name}</div>
-                                  <div className="text-xs text-muted-foreground">{`${it.id} • ${it.slotCode} • ${it.expiry}`}</div>
+                                  <div className="text-xs text-muted-foreground">{detailLine}</div>
                                 </div>
                               </>
                             ) : (
                               // 유통기한 안 지난 물품: 조치버튼 + 물품정보 + 통과버튼
                               <>
                                 <div className="flex items-center gap-2">
-                                  <WarnMenu onSelect={(k) => markWarn(it.id, k)} />
+                                  <WarnMenu onSelect={(k) => markWarn(it.unitId, k)} />
                                 </div>
                                 <div className="min-w-0 flex-1 text-center">
                                   <div className="text-sm font-medium truncate">{it.name}</div>
-                                  <div className="text-xs text-muted-foreground">{`${it.id} • ${it.slotCode} • ${it.expiry}`}</div>
+                                  <div className="text-xs text-muted-foreground">{detailLine}</div>
                                 </div>
                                 <div className="flex items-center gap-2">
                                   <Button
                                     size="sm"
                                     className="bg-emerald-600 hover:bg-emerald-700"
-                                    onClick={() => markPass(it.id)}
+                                    onClick={() => markPass(it.unitId)}
                                   >
                                     <Check className="size-4 mr-1" />
                                     {"통과"}
@@ -515,17 +618,21 @@ function InspectInner() {
                     {bundles.map((grp) => {
                       const first = grp[0]
                       const bundleName = getBundleName(first.name)
+                      const bundleCode = formatBundleLabel(first.slotCode, first.labelNumber)
                       return (
                         <li key={first.bundleId} className="rounded-md border p-2">
                           <div className="flex items-center justify-between">
-                            <div className="text-sm font-semibold truncate">{`${bundleName} • 총 ${grp.length}`}</div>
+                            <div className="text-sm font-semibold truncate">
+                              {`${bundleCode ? `${bundleCode} • ` : ""}${bundleName} · 총 ${grp.length}`}
+                            </div>
                           </div>
                           <ul className="mt-2 space-y-2">
                             {grp.map((it) => {
                               const d = daysLeft(it.expiry)
                               const expired = d < 0
+                              const detailLine = `${it.slotCode || "-"} • ${formatShortDate(it.expiry)}`
                               return (
-                                <li key={it.id} className="flex items-center justify-between rounded-md border p-2">
+                                <li key={it.unitId} className="flex items-center justify-between rounded-md border p-2">
                                   {expired ? (
                                     // 유통기한 지난 물품: 폐기 버튼 + 물품정보
                                     <>
@@ -533,7 +640,7 @@ function InspectInner() {
                                         <Button
                                           variant="destructive"
                                           size="sm"
-                                          onClick={() => markDiscard(it.id)}
+                                          onClick={() => markDiscard(it.unitId)}
                                           aria-label="폐기 및 벌점"
                                           title="유통기한 만료로 인한 폐기"
                                         >
@@ -545,26 +652,26 @@ function InspectInner() {
                                         <div className="text-sm font-medium truncate">
                                           {getDetailName(it.name, bundleName)}
                                         </div>
-                                        <div className="text-xs text-muted-foreground">{`${it.id} • ${it.slotCode} • ${it.expiry}`}</div>
+                                        <div className="text-xs text-muted-foreground">{detailLine}</div>
                                       </div>
                                     </>
                                   ) : (
                                     // 유통기한 안 지난 물품: 조치버튼 + 물품정보 + 통과버튼
                                     <>
                                       <div className="flex items-center gap-2">
-                                        <WarnMenu onSelect={(k) => markWarn(it.id, k)} />
+                                        <WarnMenu onSelect={(k) => markWarn(it.unitId, k)} />
                                       </div>
                                       <div className="min-w-0 flex-1 text-center">
                                         <div className="text-sm font-medium truncate">
                                           {getDetailName(it.name, bundleName)}
                                         </div>
-                                        <div className="text-xs text-muted-foreground">{`${it.id} • ${it.slotCode} • ${it.expiry}`}</div>
+                                        <div className="text-xs text-muted-foreground">{detailLine}</div>
                                       </div>
                                       <div className="flex items-center gap-2">
                                         <Button
                                           size="sm"
                                           className="bg-emerald-600 hover:bg-emerald-700"
-                                          onClick={() => markPass(it.id)}
+                                          onClick={() => markPass(it.unitId)}
                                         >
                                           <Check className="size-4 mr-1" />
                                           {"통과"}
@@ -638,57 +745,127 @@ function InspectInner() {
                   <ClipboardCheck className="w-4 h-4 text-emerald-700" />
                   {"처리 내역"}
                   <span className="text-xs text-muted-foreground font-normal">{"(최신순)"}</span>
-                  <span className="ml-auto text-xs text-muted-foreground">{`${filteredResults.length}건`}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">{`${
+                    processedItemCount + processedSpecial.length
+                  }건`}</span>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="space-y-3">
-                {filteredResults.length === 0 ? (
+              <CardContent className="space-y-4">
+                {processedItemCount + processedSpecial.length === 0 ? (
                   <p className="text-sm text-muted-foreground">
                     {results.length === 0 ? "표시할 내역이 없습니다." : "검색 조건에 맞는 내역이 없습니다."}
                   </p>
                 ) : (
-                  <ul className="space-y-2">
-                    {filteredResults.map((r) => (
-                      <li key={r.id} className="flex items-center justify-between rounded-md border p-2">
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-2">
-                            <Badge 
-                              variant="secondary" 
-                              className={`${
-                                r.action === "pass" ? "bg-emerald-100 text-emerald-700" :
-                                r.action.startsWith("warn") ? "bg-amber-100 text-amber-700" :
-                                "bg-rose-100 text-rose-700"
-                              }`}
-                            >
-                              {badgeForAction(r.action)}
-                            </Badge>
-                            <span className="text-sm font-medium truncate">
-                              {r.name || "스티커 미부착"}
-                            </span>
-                          </div>
-                          <div className="text-xs text-muted-foreground truncate mt-1">
-                            {r.itemId ? `${r.itemId} • ${r.slotCode} • ${new Date(r.time).toLocaleTimeString()}` : 
-                             `${new Date(r.time).toLocaleTimeString()}`}
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-2 shrink-0 ml-2">
-                          <div className="text-xs text-muted-foreground">
-                            {labelForAction(r.action)}
-                          </div>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            className="text-xs h-6 px-2 border-gray-300 hover:bg-gray-50"
-                            onClick={() => revertResult(r.id)}
-                            title="검사 결과 취소하기"
-                          >
-                            <RotateCcw className="w-3 h-3 mr-1" />
-                            {"검사취소"}
-                          </Button>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
+                  <>
+                    {processedGroups.length > 0 && (
+                      <ul className="space-y-3">
+                        {processedGroups.map((group) => (
+                          <li key={group.key} className="rounded-md border p-2">
+                            <div className="flex items-center justify-between">
+                              <div className="text-sm font-semibold truncate">
+                                {`${group.bundleLabel ? `${group.bundleLabel} • ` : ""}${group.bundleName} · ${group.items.length}건`}
+                              </div>
+                              {!group.bundleLabel && group.slotCode && (
+                                <span className="text-xs text-muted-foreground">{group.slotCode}</span>
+                              )}
+                            </div>
+                            <ul className="mt-2 space-y-2">
+                              {group.items.map((r) => {
+                                const expiryText = r.expiry ? formatShortDate(r.expiry) : ""
+                                const diff = r.expiry ? daysLeft(r.expiry) : Number.NaN
+                                const diffLabel = r.expiry ? ddayLabel(diff) : ""
+                                const meta = [group.bundleLabel, expiryText, diffLabel, !group.bundleLabel ? r.slotCode : undefined]
+                                  .filter(Boolean)
+                                  .join(" • ")
+                                return (
+                                  <li key={r.id} className="flex items-center justify-between rounded-md border p-2">
+                                    <div className="min-w-0 flex-1">
+                                      <div className="flex items-center gap-2">
+                                        <Badge
+                                          variant="secondary"
+                                          className={`${
+                                            r.action === "pass"
+                                              ? "bg-emerald-100 text-emerald-700"
+                                              : r.action.startsWith("warn")
+                                                ? "bg-amber-100 text-amber-700"
+                                                : "bg-rose-100 text-rose-700"
+                                          }`}
+                                        >
+                                          {badgeForAction(r.action)}
+                                        </Badge>
+                                        <span className="text-sm font-medium truncate">{r.name || "세부 물품"}</span>
+                                      </div>
+                                      {meta && (
+                                        <div className="text-xs text-muted-foreground truncate mt-1">{meta}</div>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                                      <div className="text-xs text-muted-foreground">{labelForAction(r.action)}</div>
+                                      <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-xs h-6 px-2 border-gray-300 hover:bg-gray-50"
+                                        onClick={() => revertResult(r.id)}
+                                        title="검사 결과 취소하기"
+                                      >
+                                        <RotateCcw className="w-3 h-3 mr-1" />
+                                        {"검사취소"}
+                                      </Button>
+                                    </div>
+                                  </li>
+                                )
+                              })}
+                            </ul>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+
+                    {processedSpecial.length > 0 && (
+                      <div>
+                        <div className="text-xs font-semibold text-slate-600 mb-2">{"기록 전용 항목"}</div>
+                        <ul className="space-y-2">
+                          {processedSpecial.map((r) => (
+                            <li key={r.id} className="flex items-center justify-between rounded-md border p-2">
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <Badge
+                                    variant="secondary"
+                                    className={`${
+                                      r.action === "pass"
+                                        ? "bg-emerald-100 text-emerald-700"
+                                        : r.action.startsWith("warn")
+                                          ? "bg-amber-100 text-amber-700"
+                                          : "bg-rose-100 text-rose-700"
+                                    }`}
+                                  >
+                                    {badgeForAction(r.action)}
+                                  </Badge>
+                                  <span className="text-sm font-medium truncate">{r.name || "기록"}</span>
+                                </div>
+                                <div className="text-xs text-muted-foreground mt-1 truncate">
+                                  {new Date(r.time).toLocaleTimeString()}
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2 shrink-0 ml-2">
+                                <div className="text-xs text-muted-foreground">{labelForAction(r.action)}</div>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  className="text-xs h-6 px-2 border-gray-300 hover:bg-gray-50"
+                                  onClick={() => revertResult(r.id)}
+                                  title="검사 결과 취소하기"
+                                >
+                                  <RotateCcw className="w-3 h-3 mr-1" />
+                                  {"검사취소"}
+                                </Button>
+                              </div>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    )}
+                  </>
                 )}
 
                 {/* 제출 버튼과 요약 정보 */}

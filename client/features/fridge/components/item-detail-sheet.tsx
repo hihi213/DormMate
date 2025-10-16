@@ -8,11 +8,12 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { CalendarDays, Pencil, Trash2, X } from "lucide-react"
 import { Label } from "@/components/ui/label"
-import { useFridge } from "./fridge-context"
+import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentUserId } from "@/lib/auth"
 import { Input } from "@/components/ui/input"
 import { ExpiryInput } from "@/components/shared/expiry-input"
+import { formatShortDate } from "@/lib/date-utils"
 
 export default function ItemDetailSheet({
   open = false,
@@ -66,7 +67,7 @@ export default function ItemDetailSheet({
             <Button variant="ghost" size="icon" aria-label="닫기" onClick={() => onOpenChange(false)}>
               <X className="size-5" />
             </Button>
-            <div className="text-sm font-semibold truncate">{it ? it.name : "상세 정보"}</div>
+            <div className="text-sm font-semibold truncate">{it ? `${it.bundleName} 세부` : "상세 정보"}</div>
             <div className="inline-flex items-center gap-1">
               <Button
                 variant="ghost"
@@ -85,8 +86,8 @@ export default function ItemDetailSheet({
                 onClick={() => {
                   if (!it || !canEdit) return
                   if (confirm("해당 물품을 삭제하시겠어요? (되돌릴 수 없음)")) {
-                    deleteItem(it.id)
-                    toast({ title: "삭제됨", description: `${it.id} 항목이 삭제되었습니다.` })
+                    deleteItem(it.unitId)
+                    toast({ title: "삭제됨", description: `${it.name} 항목이 삭제되었습니다.` })
                     onOpenChange(false)
                   }
                 }}
@@ -109,12 +110,12 @@ export default function ItemDetailSheet({
                 <CardContent className="py-3">
                   <div className="text-sm">
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <Field label="식별번호" value={it.id} />
+                      <Field label="보관 칸" value={it.slotCode || "-"} />
                       <Field
                         label="유통기한"
                         value={
                           <span className="inline-flex items-center gap-2">
-                            <span>{it.expiry}</span>
+                            <span>{formatShortDate(it.expiry)}</span>
                             <span className={`inline-flex items-center gap-1 text-sm ${statusColor}`}>
                               <CalendarDays className="size-4" />
                               {dText}
@@ -122,7 +123,7 @@ export default function ItemDetailSheet({
                           </span>
                         }
                       />
-                      <Field label="등록일" value={new Date(it.createdAt).toLocaleDateString()} />
+                      <Field label="등록일" value={formatShortDate(it.createdAt)} />
                       <Field label="소유자" value={it.ownerId ? (uid === it.ownerId ? "내 물품" : "타인") : it.owner} />
                       {it.memo && <Field label="메모" value={it.memo} className="sm:col-span-2" />}
                     </div>
@@ -161,8 +162,9 @@ export default function ItemDetailSheet({
                       <Button
                         className="bg-emerald-600 hover:bg-emerald-700"
                         onClick={() => {
-                          updateItem(it.id, { name: form.name, expiry: form.expiry, memo: form.memo || undefined })
-                          toast({ title: "수정 완료", description: `${it.id} 항목이 업데이트되었습니다.` })
+                          const updatedName = form.name.trim() || it.name
+                          updateItem(it.unitId, { name: form.name, expiry: form.expiry, memo: form.memo || undefined })
+                          toast({ title: "수정 완료", description: `${updatedName} 항목이 업데이트되었습니다.` })
                           setEdit(false)
                         }}
                       >

@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { getCurrentUserId } from "@/lib/auth"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
 import BottomNav from "@/components/bottom-nav"
-import AuthGuard from "@/components/auth-guard"
+import AuthGuard from "@/features/auth/components/auth-guard"
 
 type BookItem = {
   id: string

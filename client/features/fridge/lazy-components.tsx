@@ -52,7 +52,7 @@ export function ItemDetailSheetSkeleton() {
 
 // 동적 임포트 컴포넌트들
 export const LazyAddItemDialog = dynamic(
-  () => import('./add-item').then(mod => ({ default: mod.default })),
+  () => import('@/features/fridge/components/add-item').then(mod => ({ default: mod.default })),
   {
     loading: () => <AddItemDialogSkeleton />,
     ssr: false
@@ -60,7 +60,7 @@ export const LazyAddItemDialog = dynamic(
 )
 
 export const LazyBundleDetailSheet = dynamic(
-  () => import('./bundle-detail-sheet').then(mod => ({ default: mod.default })),
+  () => import('@/features/fridge/components/bundle-detail-sheet').then(mod => ({ default: mod.default })),
   {
     loading: () => <BundleDetailSheetSkeleton />,
     ssr: false
@@ -68,7 +68,7 @@ export const LazyBundleDetailSheet = dynamic(
 )
 
 export const LazyItemDetailSheet = dynamic(
-  () => import('./item-detail-sheet').then(mod => ({ default: mod.default })),
+  () => import('@/features/fridge/components/item-detail-sheet').then(mod => ({ default: mod.default })),
   {
     loading: () => <ItemDetailSheetSkeleton />,
     ssr: false

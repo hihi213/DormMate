@@ -1,106 +1,149 @@
-import { useMemo, useCallback, useRef, useState } from 'react'
-import { useFridgeStore } from '@/stores/fridge-store'
-import type { Item, Slot, FilterOptions } from '@/components/fridge/types'
-import { getItemStatus, getItemPriority } from '@/lib/fridge-logic'
+import { useMemo, useCallback, useRef, useState } from "react"
+import { useFridge } from "@/features/fridge/hooks/fridge-context"
+import type { Item, FilterOptions, ItemPriority } from "@/features/fridge/types"
+import { resolveStatus } from "@/lib/fridge-logic"
+import { daysLeft } from "@/lib/date-utils"
 
-// 필터링된 아이템 계산 (메모이제이션)
 export function useFilteredItems(filters: FilterOptions) {
-  const items = useFridgeStore(state => state.items)
-  
+  const { items } = useFridge()
+
   return useMemo(() => {
-    return items.filter(item => {
-      // 슬롯 필터
-      if (filters.slotCode && item.slotCode !== filters.slotCode) {
-        return false
+    const query = filters.searchQuery?.trim().toLowerCase() ?? ""
+
+    const matchesBaseFilters = (item: Item) => {
+      if (filters.slotCode && item.slotCode !== filters.slotCode) return false
+      if (typeof filters.resourceId === "number" && item.resourceId !== filters.resourceId) return false
+
+      switch (filters.tab) {
+        case "mine":
+          if (item.owner !== "me") return false
+          break
+        case "expiring":
+          if (resolveStatus(item.expiry) !== "expiring") return false
+          break
+        case "expired":
+          if (resolveStatus(item.expiry) !== "expired") return false
+          break
+        default:
+          break
       }
-      
-      // 상태 필터
-      if (filters.status && getItemStatus(item.expiry) !== filters.status) {
-        return false
-      }
-      
-      // 우선순위 필터
-      if (filters.priority && getItemPriority(item.expiry) !== filters.priority) {
-        return false
-      }
-      
-      // 검색어 필터
-      if (filters.search && !item.name.toLowerCase().includes(filters.search.toLowerCase())) {
-        return false
-      }
-      
-      // 소유자 필터
-      if (filters.owner && item.owner !== filters.owner) {
-        return false
-      }
-      
+
+      if (filters.myOnly && item.owner !== "me") return false
       return true
+    }
+
+    const preliminary: Item[] = []
+    const matchedBundles = new Set<string>()
+
+    for (const item of items) {
+      if (!matchesBaseFilters(item)) continue
+      preliminary.push(item)
+
+      if (!query) continue
+      const haystack = `${item.bundleLabelDisplay ?? ""} ${item.bundleName ?? ""} ${item.name ?? ""}`.toLowerCase()
+      if (haystack.includes(query)) {
+        matchedBundles.add(item.bundleId)
+      }
+    }
+
+    const filtered = preliminary.filter((item) => {
+      if (!query) return true
+      return matchedBundles.has(item.bundleId)
     })
+
+    filtered.sort((a, b) => {
+      let aValue: string | number = 0
+      let bValue: string | number = 0
+
+      switch (filters.sortBy) {
+        case "name":
+          aValue = a.name.toLowerCase()
+          bValue = b.name.toLowerCase()
+          break
+        case "createdAt":
+          aValue = new Date(a.createdAt).getTime()
+          bValue = new Date(b.createdAt).getTime()
+          break
+        case "expiry":
+        default:
+          aValue = new Date(a.expiry).getTime()
+          bValue = new Date(b.expiry).getTime()
+          break
+      }
+
+      if (filters.sortOrder === "desc") {
+        [aValue, bValue] = [bValue, aValue]
+      }
+
+      if (typeof aValue === "string") {
+        return aValue.localeCompare(bValue as string)
+      }
+      return (aValue as number) - (bValue as number)
+    })
+
+    return filtered
   }, [items, filters])
 }
 
-// 통계 계산 (메모이제이션)
 export function useFridgeStats() {
-  const items = useFridgeStore(state => state.items)
-  
+  const { items } = useFridge()
+
   return useMemo(() => {
     const total = items.length
-    const expired = items.filter(item => getItemStatus(item.expiry) === 'expired').length
-    const expiringSoon = items.filter(item => getItemStatus(item.expiry) === 'expiring-soon').length
-    const fresh = items.filter(item => getItemStatus(item.expiry) === 'fresh').length
-    
-    const bySlot = items.reduce((acc, item) => {
-      acc[item.slotCode] = (acc[item.slotCode] || 0) + 1
+    const expired = items.filter((item) => resolveStatus(item.expiry) === "expired").length
+    const expiringSoon = items.filter((item) => resolveStatus(item.expiry) === "expiring").length
+    const fresh = items.filter((item) => resolveStatus(item.expiry) === "ok").length
+
+    const bySlot = items.reduce<Record<string, number>>((acc, item) => {
+      const key = item.slotCode
+      acc[key] = (acc[key] || 0) + 1
       return acc
-    }, {} as Record<string, number>)
-    
-    const byPriority = items.reduce((acc, item) => {
-      const priority = getItemPriority(item.expiry)
+    }, {})
+
+    const byPriority = items.reduce<Record<string, number>>((acc, item) => {
+      const priority = derivePriority(item)
       acc[priority] = (acc[priority] || 0) + 1
       return acc
-    }, {} as Record<string, number>)
-    
+    }, {})
+
     return {
       total,
       expired,
       expiringSoon,
       fresh,
       bySlot,
-      byPriority
+      byPriority,
     }
   }, [items])
 }
 
-// 슬롯별 아이템 그룹화 (메모이제이션)
 export function useItemsBySlot() {
-  const items = useFridgeStore(state => state.items)
-  const slots = useFridgeStore(state => state.slots)
-  
+  const { items, slots } = useFridge()
+
   return useMemo(() => {
-    const grouped = items.reduce((acc, item) => {
-      if (!acc[item.slotCode]) {
-        acc[item.slotCode] = []
+    const grouped = items.reduce<Record<string, Item[]>>((acc, item) => {
+      const key = item.slotCode || `resource-${item.resourceId}`
+      if (!acc[key]) {
+        acc[key] = []
       }
-      acc[item.slotCode].push(item)
+      acc[key].push(item)
       return acc
-    }, {} as Record<string, Item[]>)
-    
-    // 슬롯 순서대로 정렬
+    }, {})
+
     return slots.map(slot => ({
       slot,
-      items: grouped[slot.code] || []
+      items: grouped[slot.code] || [],
     }))
   }, [items, slots])
 }
 
-// 묶음 그룹화 (메모이제이션)
 export function useBundles() {
-  const items = useFridgeStore(state => state.items)
-  
+  const { items } = useFridge()
+
   return useMemo(() => {
     const bundleMap = new Map<string, Item[]>()
-    
-    items.forEach(item => {
+
+    items.forEach((item) => {
       if (item.bundleId) {
         if (!bundleMap.has(item.bundleId)) {
           bundleMap.set(item.bundleId, [])
@@ -108,19 +151,26 @@ export function useBundles() {
         bundleMap.get(item.bundleId)!.push(item)
       }
     })
-    
+
     return Array.from(bundleMap.entries()).map(([bundleId, items]) => ({
       bundleId,
       items,
-      bundleCode: items[0]?.groupCode || '',
-      slotCode: items[0]?.slotCode || '',
-      name: items[0]?.name || '',
-      count: items.length
+      bundleCode: items[0]?.bundleLabelDisplay || "",
+      slotCode: items[0]?.slotCode || "",
+      name: items[0]?.bundleName || "",
+      count: items.length,
     }))
   }, [items])
 }
 
-// 검색 최적화 (디바운싱)
+const derivePriority = (item: Item): ItemPriority => {
+  if (item.priority) return item.priority
+  const diff = daysLeft(item.expiry)
+  if (diff <= 1) return "high"
+  if (diff <= 3) return "medium"
+  return "low"
+}
+
 export function useSearchOptimized(initialValue = '') {
   const [searchTerm, setSearchTerm] = useState(initialValue)
   const debounceRef = useRef<NodeJS.Timeout>()
@@ -138,7 +188,6 @@ export function useSearchOptimized(initialValue = '') {
   return [searchTerm, setSearchTermDebounced] as const
 }
 
-// 무한 스크롤 훅
 export function useInfiniteScroll<T>(
   items: T[],
   pageSize: number = 20
@@ -172,7 +221,6 @@ export function useInfiniteScroll<T>(
   }
 }
 
-// 가상화를 위한 아이템 인덱스 계산
 export function useVirtualizedItems<T>(
   items: T[],
   itemHeight: number,

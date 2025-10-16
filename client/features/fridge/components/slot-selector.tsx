@@ -2,7 +2,7 @@
 
 import { Check, ChevronDown } from "lucide-react"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
-import type { Slot } from "./types"
+import type { Slot } from "@/features/fridge/types"
 import React from "react"
 
 interface SlotSelectorProps {

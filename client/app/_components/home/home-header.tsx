@@ -1,5 +1,7 @@
 "use client"
 
+import { useCallback } from "react"
+import { useRouter } from "next/navigation"
 import { User } from "lucide-react"
 
 import NotificationPermission from "@/components/notification-permission"
@@ -18,7 +20,6 @@ type Props = {
   isLoggedIn: boolean
   user: AuthUser | null
   onOpenInfo: () => void
-  onOpenLogin: () => void
   onLogout: () => void
   onResetDemo: () => void
   onStartDemo: () => void
@@ -29,20 +30,24 @@ export default function HomeHeader({
   isLoggedIn,
   user,
   onOpenInfo,
-  onOpenLogin,
   onLogout,
   onResetDemo,
   onStartDemo,
 }: Props) {
+  const router = useRouter()
+
+  const navigateToLogin = useCallback(() => {
+    const redirect = typeof window !== "undefined" ? window.location.pathname : "/"
+    router.push(`/auth/login?redirect=${encodeURIComponent(redirect)}`)
+  }, [router])
+
   return (
     <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
       <div className="mx-auto max-w-screen-sm px-4 py-3 flex items-center gap-3">
         <div className="flex-1">
           <h1 className="text-lg font-semibold leading-none">{"OO기숙사"}</h1>
           {mounted && isLoggedIn ? (
-            <p className="text-xs text-muted-foreground leading-tight">{`${user?.name ?? ""} - ${
-              user?.room ?? ""
-            }`}</p>
+            <p className="text-xs text-muted-foreground leading-tight">{`${user?.name ?? ""} - ${user?.room ?? ""}`}</p>
           ) : (
             <p className="text-xs text-muted-foreground leading-tight">{"로그인이 필요합니다"}</p>
           )}
@@ -72,7 +77,7 @@ export default function HomeHeader({
                 <>
                   <DropdownMenuLabel>{"로그인이 필요합니다"}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
-                  <DropdownMenuItem onClick={onOpenLogin}>{"로그인"}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={navigateToLogin}>{"로그인"}</DropdownMenuItem>
                   <DropdownMenuItem onClick={onStartDemo}>{"데모 시작(1번 계정)"}</DropdownMenuItem>
                 </>
               )}

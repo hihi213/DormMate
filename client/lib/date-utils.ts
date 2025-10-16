@@ -6,6 +6,15 @@ export function toYMD(d: Date) {
   return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`
 }
 
+export function formatShortDate(input?: string | Date | null) {
+  if (!input) return ""
+  const source = typeof input === "string" ? input : input.toISOString()
+  const match = source.match(/(\d{4})-(\d{2})-(\d{2})/)
+  if (!match) return source.slice(-8)
+  const [, year, month, day] = match
+  return `${year.slice(-2)}-${month}-${day}`
+}
+
 export function startOfDayLocal(d: Date) {
   const copy = new Date(d)
   copy.setHours(0, 0, 0, 0)

@@ -1,15 +1,15 @@
 "use client"
 
 import { useMemo, memo } from "react"
-import type { Item } from "./types"
+import type { Item } from "@/features/fridge/types"
 import { Card, CardContent } from "@/components/ui/card"
 import SwipeableCard from "./swipeable-card"
 import { Trash2 } from "lucide-react"
 import { getCurrentUserId } from "@/lib/auth"
 import { useToast } from "@/hooks/use-toast"
-import { useFridge } from "./fridge-context"
+import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import StatusBadge from "@/components/shared/status-badge"
-import { earliestDays, getBundleName, resolveStatus } from "@/lib/fridge-logic"
+import { earliestDays, resolveStatus } from "@/lib/fridge-logic"
 
 type ItemsListProps = {
   items?: Item[]
@@ -18,28 +18,21 @@ type ItemsListProps = {
 }
 
 export default function ItemsList({ items = [], onOpenItem, onOpenBundle }: ItemsListProps) {
-  // Group by bundleId presence
-  const singles = useMemo(() => items.filter((i) => !i.bundleId), [items])
-
-  // Map bundleId -> items[]
-  const bundles = useMemo(() => {
+  const grouped = useMemo(() => {
     const map = new Map<string, Item[]>()
     for (const it of items) {
-      if (!it.bundleId) continue
       if (!map.has(it.bundleId)) map.set(it.bundleId, [])
       map.get(it.bundleId)!.push(it)
     }
-    // Sort inner items by urgency asc
-    const groups = Array.from(map.values()).map((grp) => grp.slice().sort((a, b) => a.expiry.localeCompare(b.expiry)))
-    // Sort bundles by earliest urgency asc
+    const groups = Array.from(map.values()).map((grp) => grp.slice().sort((a, b) => a.seqNo - b.seqNo))
     groups.sort((a, b) => earliestDays(a) - earliestDays(b))
     return groups
   }, [items])
 
-  // Sort singles by expiry asc
-  const singlesSorted = useMemo(() => singles.slice().sort((a, b) => a.expiry.localeCompare(b.expiry)), [singles])
+  const singles = useMemo(() => grouped.filter((grp) => grp.length === 1).map((grp) => grp[0]), [grouped])
+  const bundles = useMemo(() => grouped.filter((grp) => grp.length > 1), [grouped])
 
-  if (singlesSorted.length === 0 && bundles.length === 0) {
+  if (singles.length === 0 && bundles.length === 0) {
     return (
       <Card>
         <CardContent className="py-6 text-center text-sm text-muted-foreground">
@@ -51,7 +44,7 @@ export default function ItemsList({ items = [], onOpenItem, onOpenBundle }: Item
 
   return (
     <div className="space-y-3">
-      <MergedByUrgency singles={singlesSorted} bundles={bundles} onOpenItem={onOpenItem} onOpenBundle={onOpenBundle} />
+      <MergedByUrgency singles={singles} bundles={bundles} onOpenItem={onOpenItem} onOpenBundle={onOpenBundle} />
     </div>
   )
 }
@@ -106,7 +99,7 @@ function MergedByUrgency({
 
           return (
             <SwipeableCard
-              key={it.id}
+              key={it.unitId}
               onClick={() => onOpenItem?.(it.id)}
               className="rounded-md border bg-white"
               revealWidth={56}
@@ -118,8 +111,11 @@ function MergedByUrgency({
                     e.stopPropagation()
                     if (!isMine) return
                     if (confirm("해당 물품을 삭제하시겠어요? (되돌릴 수 없음)")) {
-                      deleteItem(it.id)
-                      toast({ title: "삭제됨", description: `${it.id} 항목이 삭제되었습니다.` })
+                      deleteItem(it.unitId)
+                      toast({
+                        title: "삭제됨",
+                        description: `${it.bundleLabelDisplay || it.displayCode} 항목이 삭제되었습니다.`,
+                      })
                     }
                   }}
                   aria-label="삭제"
@@ -135,7 +131,7 @@ function MergedByUrgency({
         } else {
           const grp = row.items
           const first = grp[0]
-          const bundleName = getBundleName(first.name)
+          const bundleName = first.bundleName
           const status = resolveStatus(grp[0].expiry) // earliest after sort
           const count = grp.length
           const isMine = first.ownerId ? uid === first.ownerId : false
@@ -154,8 +150,11 @@ function MergedByUrgency({
                     e.stopPropagation()
                     if (!isMine) return
                     if (confirm("묶음의 모든 세부 물품을 삭제할까요? (되돌릴 수 없음)")) {
-                      for (const it of grp) deleteItem(it.id)
-                      toast({ title: "삭제됨", description: `묶음(총 ${count})이 삭제되었습니다.` })
+                      for (const unit of grp) deleteItem(unit.unitId)
+                      toast({
+                        title: "삭제됨",
+                        description: `묶음 ${first.bundleLabelDisplay || first.bundleName || ""} (총 ${count})이 삭제되었습니다.`,
+                      })
                     }
                   }}
                   aria-label="묶음 삭제"

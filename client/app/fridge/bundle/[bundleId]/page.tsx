@@ -1,10 +1,11 @@
 "use client"
 
-import type React from "react"
+import type { ReactNode } from "react"
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { FridgeProvider, useFridge } from "@/components/fridge/fridge-context"
+import { FridgeProvider, useFridge } from "@/features/fridge/hooks/fridge-context"
+import { formatBundleLabel } from "@/features/fridge/utils/data-shaping"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ArrowLeft, CalendarDays, Pencil, Trash2 } from "lucide-react"
@@ -12,6 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentUserId } from "@/lib/auth"
+import { formatShortDate } from "@/lib/date-utils"
 
 export default function BundleDetailPage() {
   return (
@@ -38,8 +40,8 @@ function BundleInner() {
 
   const group = useMemo(() => items.filter((x) => x.bundleId === bundleId), [items, bundleId])
   const first = group[0]
-  const bundleName = getBundleName(first ? first.name : "")
-  const groupCode = first ? first.groupCode : ""
+  const bundleName = first?.bundleName ?? "묶음"
+  const groupCode = first ? formatBundleLabel(first.slotCode, first.labelNumber) : ""
   const canManage = first && first.ownerId ? uid === first.ownerId : false
 
   // Sorted detail items by urgency
@@ -97,25 +99,27 @@ function BundleInner() {
               const statusColor = d < 0 ? "text-rose-600" : d <= 1 ? "text-amber-600" : "text-emerald-700"
               const [detailName, suffix] = splitDetail(it.name, bundleName)
               return (
-                <div key={it.id} className="rounded-md border p-2">
+                <div key={it.unitId} className="rounded-md border p-2">
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-sm font-medium truncate">{detailName}</div>
-                      <div className="text-xs text-muted-foreground">{`식별번호 ${it.id}`}</div>
                       <div className={`mt-0.5 inline-flex items-center gap-1 text-sm ${statusColor}`}>
                         <CalendarDays className="size-4" />
-                        <span>{`${it.expiry} • ${dText}`}</span>
+                        <span>{`${formatShortDate(it.expiry)} • ${dText}`}</span>
                       </div>
                       {canManage && edit && (
                         <EditRow
                           value={{ name: detailName, expiry: it.expiry, memo: it.memo || "" }}
                           onSave={(v) => {
-                            updateItem(it.id, {
+                            updateItem(it.unitId, {
                               name: suffix ? `${bundleName} - ${v.name}` : `${bundleName} - ${v.name}`,
                               expiry: v.expiry,
                               memo: v.memo || undefined,
                             })
-                            toast({ title: "수정 완료", description: `${it.id} 항목이 업데이트되었습니다.` })
+                            toast({
+                              title: "수정 완료",
+                              description: `${v.name.trim() || detailName} 항목이 업데이트되었습니다.`,
+                            })
                           }}
                         />
                       )}
@@ -134,8 +138,11 @@ function BundleInner() {
                           className="text-rose-600"
                           onClick={() => {
                             if (confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) {
-                              deleteItem(it.id)
-                              toast({ title: "삭제됨", description: `${it.id} 항목이 삭제되었습니다.` })
+                              deleteItem(it.unitId)
+                              toast({
+                                title: "삭제됨",
+                                description: `${getDetailName(it.name, bundleName)} 항목이 삭제되었습니다.`,
+                              })
                             }
                           }}
                           aria-label="삭제"
@@ -156,7 +163,7 @@ function BundleInner() {
 }
 
 /* UI helpers */
-function Header({ title, onBack, right }: { title: string; onBack: () => void; right?: React.ReactNode }) {
+function Header({ title, onBack, right }: { title: string; onBack: () => void; right?: ReactNode }) {
   return (
     <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
       <div className="mx-auto max-w-screen-sm px-2 py-3 flex items-center">
@@ -171,7 +178,7 @@ function Header({ title, onBack, right }: { title: string; onBack: () => void; r
     </header>
   )
 }
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
+function Field({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div>
       <div className="text-xs text-muted-foreground">{label}</div>
@@ -223,10 +230,6 @@ function splitDetail(fullName: string, bundleName: string): [string, boolean] {
     return [fullName.slice(prefix.length), true]
   }
   return [fullName, false]
-}
-function getBundleName(name: string) {
-  const idx = name.indexOf(" - ")
-  return idx >= 0 ? name.slice(0, idx) : name
 }
 function toISO(d: Date) {
   return d.toISOString().slice(0, 10)

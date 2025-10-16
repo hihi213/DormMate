@@ -120,16 +120,39 @@ CREATE INDEX ix_fridge_units_floor ON fridge_units (floor);
 CREATE TABLE compartments (
     id                    BIGSERIAL PRIMARY KEY,
     unit_id               BIGINT NOT NULL,
-    slot_number           SMALLINT NOT NULL,
+    display_order         INTEGER NOT NULL,
     type                  compartment_type NOT NULL,
     label_range_start     INTEGER NOT NULL,
     label_range_end       INTEGER NOT NULL,
     lock_owner_session_id UUID,
     lock_acquired_at      TIMESTAMPTZ,
     lock_expires_at       TIMESTAMPTZ,
-    CONSTRAINT uq_compartments_unit_slot UNIQUE (unit_id, slot_number),
+    CONSTRAINT uq_compartments_unit_display_order UNIQUE (unit_id, display_order),
     CONSTRAINT fk_compartments_unit FOREIGN KEY (unit_id) REFERENCES fridge_units(id)
 );
+
+CREATE OR REPLACE FUNCTION set_compartment_display_order()
+RETURNS TRIGGER AS $$
+DECLARE
+    next_order INTEGER;
+BEGIN
+    IF NEW.display_order IS NULL THEN
+        SELECT COALESCE(MAX(display_order), 0) + 1
+        INTO next_order
+        FROM compartments
+        WHERE unit_id = NEW.unit_id;
+
+        NEW.display_order := next_order;
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_compartments_set_display_order
+BEFORE INSERT ON compartments
+FOR EACH ROW
+EXECUTE FUNCTION set_compartment_display_order();
 CREATE INDEX ix_compartments_lock_owner ON compartments (lock_owner_session_id);
 CREATE INDEX ix_compartments_lock_exp ON compartments (lock_expires_at);
 
@@ -164,12 +187,12 @@ CREATE TABLE fridge_bundles (
     id               BIGSERIAL PRIMARY KEY,
     owner_id         BIGINT NOT NULL,
     compartment_id   BIGINT NOT NULL,
-    label_code       VARCHAR(12) NOT NULL,
+    label_number     INTEGER NOT NULL,
     bundle_name      VARCHAR(100),
     status_code      VARCHAR(20) NOT NULL,
     registered_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     last_modified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT uq_fridge_bundles_label UNIQUE (label_code),
+    CONSTRAINT uq_fridge_bundles_compartment_label UNIQUE (compartment_id, label_number),
     CONSTRAINT fk_fridge_bundles_owner FOREIGN KEY (owner_id) REFERENCES users(id),
     CONSTRAINT fk_fridge_bundles_compartment FOREIGN KEY (compartment_id) REFERENCES compartments(id),
     CONSTRAINT fk_fridge_bundles_status FOREIGN KEY (status_code) REFERENCES bundle_status(code)
@@ -327,10 +350,9 @@ RETURNS TRIGGER AS $$
 DECLARE
     lb INTEGER;
     ub INTEGER;
-    numeric_label INTEGER;
 BEGIN
-    IF POSITION('-' IN NEW.label_code) = 0 THEN
-        RAISE EXCEPTION 'label_code must contain hyphen';
+    IF NEW.label_number IS NULL THEN
+        RAISE EXCEPTION 'label_number must be provided';
     END IF;
 
     SELECT label_range_start, label_range_end
@@ -342,9 +364,7 @@ BEGIN
         RAISE EXCEPTION 'compartment % not found for label validation', NEW.compartment_id;
     END IF;
 
-    numeric_label := split_part(NEW.label_code, '-', 2)::INTEGER;
-
-    IF numeric_label < lb OR numeric_label > ub THEN
+    IF NEW.label_number < lb OR NEW.label_number > ub THEN
         RAISE EXCEPTION 'label out of range';
     END IF;
 
@@ -366,7 +386,7 @@ DECLARE
     numeric_label INTEGER;
 BEGIN
     IF OLD.status_code <> 'REMOVED' AND NEW.status_code = 'REMOVED' THEN
-        numeric_label := split_part(NEW.label_code, '-', 2)::INTEGER;
+        numeric_label := NEW.label_number;
 
         UPDATE label_pool
            SET status = 0,

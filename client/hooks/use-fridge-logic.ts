@@ -1,9 +1,8 @@
 import { useMemo, useCallback } from "react"
-import type { Item, Slot, FilterOptions, FridgeStats, ItemStatus } from "@/components/fridge/types"
+import type { Item, Slot, FilterOptions, FridgeStats, ItemStatus } from "@/features/fridge/types"
 import { daysLeft } from "@/lib/date-utils"
 
 export function useFridgeLogic(items: Item[], slots: Slot[]) {
-  // 아이템 상태 계산
   const getItemStatus = useCallback((expiry: string): ItemStatus => {
     const days = daysLeft(expiry)
     if (days < 0) return "expired"
@@ -11,174 +10,159 @@ export function useFridgeLogic(items: Item[], slots: Slot[]) {
     return "ok"
   }, [])
 
-  // 아이템에 상태 추가
   const itemsWithStatus = useMemo(() => {
-    return items.map(item => ({
+    return items.map((item) => ({
       ...item,
-      status: getItemStatus(item.expiry)
+      status: getItemStatus(item.expiry),
     }))
   }, [items, getItemStatus])
 
-  // 필터링된 아이템
-  const getFilteredItems = useCallback((options: FilterOptions) => {
-    let filtered = [...itemsWithStatus]
+  const getFilteredItems = useCallback(
+    (options: FilterOptions) => {
+      const query = options.searchQuery?.trim().toLowerCase() ?? ""
 
-    // 탭별 필터링
-    switch (options.tab) {
-      case "mine":
-        filtered = filtered.filter(item => item.owner === "me")
-        break
-      case "expiring":
-        filtered = filtered.filter(item => item.status === "expiring")
-        break
-      case "expired":
-        filtered = filtered.filter(item => item.status === "expired")
-        break
-    }
+      const matchesBaseFilters = (item: typeof itemsWithStatus[number]) => {
+        switch (options.tab) {
+          case "mine":
+            if (item.owner !== "me") return false
+            break
+          case "expiring":
+            if (item.status !== "expiring") return false
+            break
+          case "expired":
+            if (item.status !== "expired") return false
+            break
+        }
 
-    // 칸별 필터링
-    if (options.slotCode) {
-      filtered = filtered.filter(item => item.slotCode === options.slotCode)
-    }
+        if (options.slotCode && item.slotCode !== options.slotCode) return false
+        if (typeof options.resourceId === "number") {
+          const slot = slots.find((s) => s.code === item.slotCode)
+          if (!slot || slot.resourceId !== options.resourceId) return false
+        }
 
-    // 검색어 필터링
-    if (options.searchQuery) {
-      const query = options.searchQuery.trim().toLowerCase()
-      filtered = filtered.filter(item => 
-        item.name.toLowerCase().includes(query) ||
-        item.label.toLowerCase().includes(query) ||
-        (item.memo && item.memo.toLowerCase().includes(query))
-      )
-    }
-
-    // 내 물품만 필터링
-    if (options.myOnly) {
-      filtered = filtered.filter(item => item.owner === "me")
-    }
-
-    // 정렬
-    filtered.sort((a, b) => {
-      let aValue: string | number
-      let bValue: string | number
-
-      switch (options.sortBy) {
-        case "expiry":
-          aValue = new Date(a.expiry).getTime()
-          bValue = new Date(b.expiry).getTime()
-          break
-        case "name":
-          aValue = a.name.toLowerCase()
-          bValue = b.name.toLowerCase()
-          break
-        case "createdAt":
-          aValue = a.createdAt
-          bValue = b.createdAt
-          break
-        default:
-          aValue = new Date(a.expiry).getTime()
-          bValue = new Date(b.expiry).getTime()
+        if (options.myOnly && item.owner !== "me") return false
+        return true
       }
 
-      if (options.sortOrder === "desc") {
-        [aValue, bValue] = [bValue, aValue]
+      const preliminary: typeof itemsWithStatus = []
+      const matchedBundles = new Set<string>()
+
+      for (const item of itemsWithStatus) {
+        if (!matchesBaseFilters(item)) continue
+        preliminary.push(item)
+
+        if (!query) continue
+        const haystack = `${item.bundleLabelDisplay ?? ""} ${item.bundleName ?? ""} ${item.name ?? ""}`.toLowerCase()
+        if (haystack.includes(query)) {
+          matchedBundles.add(item.bundleId)
+        }
       }
 
-      if (typeof aValue === "string") {
-        return aValue.localeCompare(bValue as string)
-      }
-      return aValue - bValue
-    })
+      const filtered = preliminary.filter((item) => {
+        if (!query) return true
+        return matchedBundles.has(item.bundleId)
+      })
 
-    return filtered
-  }, [itemsWithStatus])
+      filtered.sort((a, b) => {
+        let aValue: string | number
+        let bValue: string | number
 
-  // 통계 계산
+        switch (options.sortBy) {
+          case "name":
+            aValue = a.name.toLowerCase()
+            bValue = b.name.toLowerCase()
+            break
+          case "createdAt":
+            aValue = new Date(a.createdAt).getTime()
+            bValue = new Date(b.createdAt).getTime()
+            break
+          case "expiry":
+          default:
+            aValue = new Date(a.expiry).getTime()
+            bValue = new Date(b.expiry).getTime()
+            break
+        }
+
+        if (options.sortOrder === "desc") {
+          ;[aValue, bValue] = [bValue, aValue]
+        }
+
+        if (typeof aValue === "string") {
+          return aValue.localeCompare(bValue as string)
+        }
+        return (aValue as number) - (bValue as number)
+      })
+
+      return filtered
+    },
+    [itemsWithStatus, slots],
+  )
+
   const getStats = useCallback((): FridgeStats => {
     const stats: FridgeStats = {
       totalItems: items.length,
-      myItems: items.filter(item => item.owner === "me").length,
-      expiringItems: itemsWithStatus.filter(item => item.status === "expiring").length,
-      expiredItems: itemsWithStatus.filter(item => item.status === "expired").length,
+      myItems: items.filter((item) => item.owner === "me").length,
+      expiringItems: itemsWithStatus.filter((item) => item.status === "expiring").length,
+      expiredItems: itemsWithStatus.filter((item) => item.status === "expired").length,
       bySlot: {},
-      byStatus: { ok: 0, expiring: 0, expired: 0 }
+      byStatus: { ok: 0, expiring: 0, expired: 0 },
     }
 
-    // 칸별 개수
-    items.forEach(item => {
-      stats.bySlot[item.slotCode] = (stats.bySlot[item.slotCode] || 0) + 1
+    items.forEach((item) => {
+      const key = item.slotCode
+      stats.bySlot[key] = (stats.bySlot[key] || 0) + 1
     })
 
-    // 상태별 개수
-    itemsWithStatus.forEach(item => {
-      if (item.status) {
-        stats.byStatus[item.status]++
-      }
+    itemsWithStatus.forEach((item) => {
+      if (item.status) stats.byStatus[item.status]++
     })
 
     return stats
   }, [items, itemsWithStatus])
 
-  // 묶음 그룹화
   const getBundles = useCallback(() => {
     const bundles = new Map<string, Item[]>()
-    
-    itemsWithStatus.forEach(item => {
-      if (item.groupCode) {
-        if (!bundles.has(item.groupCode)) {
-          bundles.set(item.groupCode, [])
-        }
-        bundles.get(item.groupCode)!.push(item)
+    itemsWithStatus.forEach((item) => {
+      if (!bundles.has(item.bundleId)) {
+        bundles.set(item.bundleId, [])
       }
+      bundles.get(item.bundleId)!.push(item)
     })
 
-    return Array.from(bundles.entries()).map(([code, items]) => ({
-      code,
-      items,
-      name: getBundleName(items[0]?.name || ""),
-      slotCode: items[0]?.slotCode || "",
-      earliestExpiry: items.reduce((earliest, item) => 
-        new Date(item.expiry) < new Date(earliest) ? item.expiry : earliest
-      , items[0]?.expiry || "")
-    }))
+    return Array.from(bundles.entries()).map(([bundleId, list]) => {
+      const [first] = list
+      return {
+        bundleId,
+        items: list.sort((a, b) => a.seqNo - b.seqNo),
+        name: first?.bundleName ?? "포장",
+        slotCode: first?.slotCode ?? "",
+        earliestExpiry: list.reduce(
+          (earliest, unit) => (new Date(unit.expiry) < new Date(earliest) ? unit.expiry : earliest),
+          first?.expiry ?? new Date().toISOString().slice(0, 10),
+        ),
+      }
+    })
   }, [itemsWithStatus])
 
-  // 묶음 이름 추출
-  const getBundleName = useCallback((name: string) => {
-    const idx = name.indexOf(" - ")
-    return idx >= 0 ? name.slice(0, idx) : name
-  }, [])
+  const getBundleName = useCallback((name: string) => name, [])
 
-  // 상세 이름 추출
   const getDetailName = useCallback((name: string, bundleName: string) => {
     const prefix = `${bundleName} - `
     return name.startsWith(prefix) ? name.slice(prefix.length) : name
   }, [])
 
-  // 다음 ID 생성
-  const getNextId = useCallback((slotCode: string) => {
-    const existingIds = items
-      .filter(item => item.slotCode === slotCode)
-      .map(item => {
-        const numPart = item.id.replace(slotCode, "")
-        return parseInt(numPart, 10)
+  const getExpiringItems = useCallback(
+    (daysThreshold = 2) => {
+      return itemsWithStatus.filter((item) => {
+        const days = daysLeft(item.expiry)
+        return days >= 0 && days <= daysThreshold
       })
-      .filter(num => !isNaN(num))
+    },
+    [itemsWithStatus],
+  )
 
-    const nextNum = existingIds.length > 0 ? Math.max(...existingIds) + 1 : 1
-    return `${slotCode}${String(nextNum).padStart(3, "0")}`
-  }, [items])
-
-  // 유통기한 경고 아이템
-  const getExpiringItems = useCallback((daysThreshold = 2) => {
-    return itemsWithStatus.filter(item => {
-      const days = daysLeft(item.expiry)
-      return days >= 0 && days <= daysThreshold
-    })
-  }, [itemsWithStatus])
-
-  // 만료된 아이템
   const getExpiredItems = useCallback(() => {
-    return itemsWithStatus.filter(item => item.status === "expired")
+    return itemsWithStatus.filter((item) => item.status === "expired")
   }, [itemsWithStatus])
 
   return {
@@ -188,9 +172,8 @@ export function useFridgeLogic(items: Item[], slots: Slot[]) {
     getBundles,
     getBundleName,
     getDetailName,
-    getNextId,
     getExpiringItems,
     getExpiredItems,
-    getItemStatus
+    getItemStatus,
   }
 }

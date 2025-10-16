@@ -1,10 +1,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
+import { useRouter } from "next/navigation"
 import { User } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { getCurrentUser } from "@/lib/auth"
+import { DEMO_ACCOUNTS, getCurrentUser, subscribeAuth } from "@/lib/auth"
 
 interface AuthGuardProps {
   children: React.ReactNode
@@ -12,24 +13,27 @@ interface AuthGuardProps {
 }
 
 export default function AuthGuard({ children, fallback }: AuthGuardProps) {
+  const router = useRouter()
   const [user, setUser] = useState(getCurrentUser())
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
     setMounted(true)
+    const unsubscribe = subscribeAuth((next) => setUser(next))
     setUser(getCurrentUser())
+    return () => unsubscribe()
   }, [])
 
-  // 서버 사이드 렌더링 중에는 로딩 상태
   if (!mounted) {
     return null
   }
 
-  // 로그인되지 않은 경우
   if (!user) {
     if (fallback) {
       return <>{fallback}</>
     }
+
+    const redirectTo = typeof window !== "undefined" ? window.location.pathname : "/"
 
     return (
       <main className="min-h-[100svh] bg-white">
@@ -41,23 +45,21 @@ export default function AuthGuard({ children, fallback }: AuthGuardProps) {
               </div>
               <h1 className="text-2xl font-bold text-gray-900 mb-3">로그인이 필요합니다</h1>
               <p className="text-base text-gray-600 mb-8 max-w-md mx-auto">
-                이 페이지를 이용하려면 로그인이 필요합니다.<br />
+                이 페이지를 이용하려면 로그인이 필요합니다.
+                <br />
                 기숙사 서비스에 로그인해주세요.
               </p>
               <div className="space-y-3">
-                <Button 
-                  onClick={() => {
-                    if (typeof window !== "undefined") {
-                      window.location.href = "/"
-                    }
-                  }}
+                <Button
+                  onClick={() => router.push(`/auth/login?redirect=${encodeURIComponent(redirectTo)}`)}
                   className="bg-emerald-600 hover:bg-emerald-700 w-full max-w-xs"
                   size="lg"
                 >
-                  홈으로 이동하여 로그인하기
+                  로그인하러 가기
                 </Button>
                 <p className="text-sm text-gray-500">
-                  테스트 계정: 1/1 (김승현 301호), 2/2 (이번 202호), 3/3 (삼번 203호)
+                  테스트 계정:{" "}
+                  {DEMO_ACCOUNTS.map((account) => `${account.id}/${account.id} (${account.name} ${account.room})`).join(", ")}
                 </p>
               </div>
             </CardContent>
@@ -67,6 +69,5 @@ export default function AuthGuard({ children, fallback }: AuthGuardProps) {
     )
   }
 
-  // 로그인된 경우 자식 컴포넌트 렌더링
   return <>{children}</>
 }

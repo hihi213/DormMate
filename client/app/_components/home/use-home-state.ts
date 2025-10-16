@@ -1,10 +1,8 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-
-import type React from "react"
 import type { AuthUser } from "@/lib/auth"
-import { USERS, getCurrentUser, logout as doLogout, setCurrentUser } from "@/lib/auth"
+import { getCurrentUser, logout as doLogout, setCurrentUser, subscribeAuth } from "@/lib/auth"
 import { resetAndSeedAll } from "@/lib/demo-seed"
 
 const SCHED_KEY = "fridge-inspections-schedule-v1"
@@ -38,16 +36,14 @@ export function useHomeState() {
   const [user, setUser] = useState<AuthUser | null>(null)
   const isLoggedIn = useMemo(() => !!user, [user])
 
-  const [loginOpen, setLoginOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
-  const [loginId, setLoginId] = useState("")
-  const [loginPw, setLoginPw] = useState("")
-  const [loginErr, setLoginErr] = useState("")
   const [nextInspection, setNextInspection] = useState<NextInspection>(null)
 
   useEffect(() => {
     setMounted(true)
     setUser(getCurrentUser())
+    const unsubscribe = subscribeAuth((current) => setUser(current))
+    return () => unsubscribe()
   }, [])
 
   useEffect(() => {
@@ -76,24 +72,8 @@ export function useHomeState() {
     }
   }, [])
 
-  const handleLoginSubmit = (e?: React.FormEvent) => {
-    e?.preventDefault()
-    const found = USERS[loginId.trim()]
-    if (!found || found.password !== loginPw.trim()) {
-      setLoginErr("아이디 또는 비밀번호가 올바르지 않습니다.")
-      return
-    }
-    setCurrentUser(found.id)
-    setUser(getCurrentUser())
-    setLoginOpen(false)
-    setLoginId("")
-    setLoginPw("")
-    setLoginErr("")
-  }
-
   const logout = () => {
     doLogout()
-    setUser(null)
   }
 
   const resetDemoForUser = () => {
@@ -116,18 +96,9 @@ export function useHomeState() {
     mounted,
     user,
     isLoggedIn,
-    loginOpen,
-    setLoginOpen,
     infoOpen,
     setInfoOpen,
-    loginId,
-    setLoginId,
-    loginPw,
-    setLoginPw,
-    loginErr,
-    setLoginErr,
     nextInspection,
-    handleLoginSubmit,
     logout,
     resetDemoForUser,
     startDemoWithDefaultUser,
