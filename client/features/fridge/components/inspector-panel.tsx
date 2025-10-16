@@ -2,13 +2,14 @@
 
 import type React from "react"
 
-import type { Item } from "./types"
+import type { Item } from "@/features/fridge/types"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { useMemo, useState } from "react"
 import { AlertTriangle, Bell, Check } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { formatShortDate } from "@/lib/date-utils"
 
 export default function InspectorPanel({
   lastInspectionAt = 0,
@@ -94,7 +95,7 @@ export default function InspectorPanel({
             {"검사 기준일 갱신"}
           </Button>
           <span className="text-xs text-muted-foreground ml-auto">
-            {lastInspectionAt ? `기준일 ${new Date(lastInspectionAt).toLocaleDateString()}` : "기준일 미설정"}
+            {lastInspectionAt ? `기준일 ${formatShortDate(new Date(lastInspectionAt))}` : "기준일 미설정"}
           </span>
         </div>
       </CardContent>

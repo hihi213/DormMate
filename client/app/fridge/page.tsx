@@ -5,18 +5,19 @@ import dynamic from "next/dynamic"
 import { Snowflake, Plus } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { FridgeProvider, useFridge } from "@/components/fridge/fridge-context"
-import Filters from "@/components/fridge/filters"
-import ItemsList from "@/components/fridge/items-list"
+import { FridgeProvider, useFridge } from "@/features/fridge/hooks/fridge-context"
+import type { Item } from "@/features/fridge/types"
+import Filters from "@/features/fridge/components/filters"
+import ItemsList from "@/features/fridge/components/items-list"
 import BottomNav from "@/components/bottom-nav"
 import { getCurrentUserId } from "@/lib/auth"
-import AddItemDialog from "@/components/fridge/add-item-dialog"
+import AddItemDialog from "@/features/fridge/components/add-item-dialog"
 import { formatKoreanDate } from "./utils-fridge-page"
-import AuthGuard from "@/components/auth-guard"
+import AuthGuard from "@/features/auth/components/auth-guard"
 
 // Lazy load heavier bottom sheets
-const ItemDetailSheet = dynamic(() => import("@/components/fridge/item-detail-sheet"), { ssr: false })
-const BundleDetailSheet = dynamic(() => import("@/components/fridge/bundle-detail-sheet"), { ssr: false })
+const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
+const BundleDetailSheet = dynamic(() => import("@/features/fridge/components/bundle-detail-sheet"), { ssr: false })
 
 const SCHED_KEY = "fridge-inspections-schedule-v1"
 
@@ -73,24 +74,53 @@ function FridgeInner() {
 
   const filtered = useMemo(() => {
     const now = new Date()
+    const today = new Date(now.toDateString()).getTime()
     const q = query.trim().toLowerCase()
-    return items
-      .filter((it) => (slotCode ? it.slotCode === slotCode : true))
-      .filter((it) => (myOnly ? (uid ? it.ownerId === uid : it.owner === "me") : true))
-      .filter((it) => {
-        if (!q) return true
-        const hay = `${it.id} ${it.name} ${it.label}`.toLowerCase()
-        return hay.includes(q)
-      })
-      .filter((it) => {
-        if (tab === "all") return true
-        if (tab === "mine") return uid ? it.ownerId === uid : it.owner === "me"
-        const d = Math.floor((new Date(it.expiry).getTime() - new Date(now.toDateString()).getTime()) / 86400000)
-        if (tab === "expiring") return d >= 0 && d <= 2
-        if (tab === "expired") return d < 0
-        return true
-      })
-      .sort((a, b) => a.expiry.localeCompare(b.expiry))
+
+    const matchesBaseFilters = (item: Item) => {
+      if (slotCode && item.slotCode !== slotCode) return false
+      if (myOnly && !(uid ? item.ownerId === uid : item.owner === "me")) return false
+
+      switch (tab) {
+        case "mine":
+          if (!(uid ? item.ownerId === uid : item.owner === "me")) return false
+          break
+        case "expiring": {
+          const d = Math.floor((new Date(item.expiry).getTime() - today) / 86400000)
+          if (!(d >= 0 && d <= 2)) return false
+          break
+        }
+        case "expired": {
+          const d = Math.floor((new Date(item.expiry).getTime() - today) / 86400000)
+          if (d >= 0) return false
+          break
+        }
+      }
+
+      return true
+    }
+
+    const preliminary: Item[] = []
+    const matchedBundles = new Set<string>()
+
+    for (const item of items) {
+      if (!matchesBaseFilters(item)) continue
+      preliminary.push(item)
+
+      if (!q) continue
+      const haystack = `${item.bundleLabelDisplay ?? ""} ${item.bundleName ?? ""} ${item.name ?? ""}`.toLowerCase()
+      if (haystack.includes(q)) {
+        matchedBundles.add(item.bundleId)
+      }
+    }
+
+    const result = preliminary.filter((item) => {
+      if (!q) return true
+      return matchedBundles.has(item.bundleId)
+    })
+
+    result.sort((a, b) => a.expiry.localeCompare(b.expiry))
+    return result
   }, [items, query, tab, slotCode, myOnly, uid])
 
   const counts = useMemo(() => {

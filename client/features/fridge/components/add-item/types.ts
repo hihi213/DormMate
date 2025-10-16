@@ -13,8 +13,9 @@ export type PendingEntry = {
   qty: number
 }
 
-export const CONSTANTS = {
-  MAX_NAME: 20,
-  MAX_QTY: 50,
-  WARNING_EXPIRY_DAYS: 2
-} as const
+export type DetailRowState = {
+  name: string
+  expiry: string
+  customName: boolean
+  customExpiry: boolean
+}

@@ -1,10 +1,10 @@
 "use client"
 
-import type React from "react"
+import type { ReactNode } from "react"
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { FridgeProvider, useFridge } from "@/components/fridge/fridge-context"
+import { FridgeProvider, useFridge } from "@/features/fridge/hooks/fridge-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ArrowLeft, CalendarDays, Pencil, Trash2 } from "lucide-react"
@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentUserId } from "@/lib/auth"
+import { formatShortDate } from "@/lib/date-utils"
 
 export default function ItemDetailPage() {
   return (
@@ -63,7 +64,7 @@ function DetailInner() {
   return (
     <main className="min-h-[100svh] bg-white">
       <Header
-        title={it.name}
+        title={`${it.bundleName} 세부`}
         onBack={() => router.back()}
         right={
           <div className="inline-flex items-center gap-2">
@@ -84,8 +85,8 @@ function DetailInner() {
               onClick={() => {
                 if (!canEdit) return
                 if (confirm("해당 물품을 삭제하시겠어요? (되돌릴 수 없음)")) {
-                  deleteItem(it.id)
-                  toast({ title: "삭제됨", description: `${it.id} 항목이 삭제되었습니다.` })
+                  deleteItem(it.unitId)
+                  toast({ title: "삭제됨", description: `${it.name} 항목이 삭제되었습니다.` })
                   router.push("/fridge")
                 }
               }}
@@ -104,12 +105,12 @@ function DetailInner() {
           <CardContent className="py-3">
             <div className="text-sm">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <Field label="식별번호" value={it.id} />
+                <Field label="보관 칸" value={it.slotCode || "-"} />
                 <Field
                   label="유통기한"
                   value={
                     <span className="inline-flex items-center gap-2">
-                      <span>{it.expiry}</span>
+                      <span>{formatShortDate(it.expiry)}</span>
                       <span className={`inline-flex items-center gap-1 text-sm ${statusColor}`}>
                         <CalendarDays className="size-4" />
                         {dText}
@@ -117,7 +118,7 @@ function DetailInner() {
                     </span>
                   }
                 />
-                <Field label="등록일" value={new Date(it.createdAt).toLocaleDateString()} />
+                <Field label="등록일" value={formatShortDate(it.createdAt)} />
                 <Field label="소유자" value={it.ownerId ? (uid === it.ownerId ? "내 물품" : "타인") : it.owner} />
                 {it.memo && <Field label="메모" value={it.memo} className="sm:col-span-2" />}
               </div>
@@ -148,14 +149,15 @@ function DetailInner() {
                 <Input id="memo" value={form.memo} onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))} />
               </div>
               <div className="flex justify-end">
-                <Button
-                  className="bg-emerald-600 hover:bg-emerald-700"
-                  onClick={() => {
-                    updateItem(it.id, { name: form.name, expiry: form.expiry, memo: form.memo || undefined })
-                    toast({ title: "수정 완료", description: `${it.id} 항목이 업데이트되었습니다.` })
-                    setEdit(false)
-                  }}
-                >
+                  <Button
+                    className="bg-emerald-600 hover:bg-emerald-700"
+                    onClick={() => {
+                      const updatedName = form.name.trim() || it.name
+                      updateItem(it.unitId, { name: form.name, expiry: form.expiry, memo: form.memo || undefined })
+                      toast({ title: "수정 완료", description: `${updatedName} 항목이 업데이트되었습니다.` })
+                      setEdit(false)
+                    }}
+                  >
                   {"저장"}
                 </Button>
               </div>
@@ -168,7 +170,7 @@ function DetailInner() {
 }
 
 /* UI helpers */
-function Header({ title, onBack, right }: { title: string; onBack: () => void; right?: React.ReactNode }) {
+function Header({ title, onBack, right }: { title: string; onBack: () => void; right?: ReactNode }) {
   // Local slide-in animation
   return (
     <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
@@ -187,7 +189,7 @@ function Header({ title, onBack, right }: { title: string; onBack: () => void; r
   )
 }
 
-function Field({ label, value, className = "" }: { label: string; value: React.ReactNode; className?: string }) {
+function Field({ label, value, className = "" }: { label: string; value: ReactNode; className?: string }) {
   return (
     <div className={className}>
       <div className="text-xs text-muted-foreground">{label}</div>

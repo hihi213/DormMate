@@ -8,11 +8,13 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { CalendarDays, Pencil, Trash2, X } from "lucide-react"
 import { Label } from "@/components/ui/label"
-import { useFridge } from "./fridge-context"
+import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentUserId } from "@/lib/auth"
 import { Input } from "@/components/ui/input"
 import { ExpiryInput } from "@/components/shared/expiry-input"
+import { formatBundleLabel } from "@/features/fridge/utils/data-shaping"
+import { formatShortDate } from "@/lib/date-utils"
 
 export default function BundleDetailSheet({
   open = false,
@@ -33,9 +35,9 @@ export default function BundleDetailSheet({
 
   const group = useMemo(() => items.filter((x) => x.bundleId === bundleId), [items, bundleId])
   const first = group[0]
-  const bundleName = getBundleName(first ? first.name : "")
-  const groupCode = first ? first.groupCode : ""
-  const representativeMemo = first?.memo || ""
+  const bundleName = first?.bundleName ?? "묶음"
+  const groupCode = first ? formatBundleLabel(first.slotCode, first.labelNumber) : ""
+  const representativeMemo = first?.bundleMemo || ""
   const canManage = first && first.ownerId ? uid === first.ownerId : false
 
   const sorted = useMemo(() => group.slice().sort((a, b) => daysLeft(a.expiry) - daysLeft(b.expiry)), [group])
@@ -49,7 +51,7 @@ export default function BundleDetailSheet({
     const trimmed = memoDraft.trim()
     let allOk = true
     for (const it of sorted) {
-      const result = updateItem(it.id, { memo: trimmed || undefined })
+      const result = updateItem(it.unitId, { memo: trimmed || undefined })
       if (!result.success) {
         allOk = false
       }
@@ -143,22 +145,24 @@ export default function BundleDetailSheet({
                     const statusColor = d < 0 ? "text-rose-600" : d <= 1 ? "text-amber-600" : "text-emerald-700"
                     const [detailName, suffix] = splitDetail(it.name, bundleName)
                     return (
-                      <div key={it.id} className="rounded-md border p-2">
+                      <div key={it.unitId} className="rounded-md border p-2">
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0">
                             <div className="text-sm font-medium truncate">{detailName}</div>
-                            <div className="text-xs text-muted-foreground">{`식별번호 ${it.id}`}</div>
                             <div className={`mt-0.5 inline-flex items-center gap-1 text-sm ${statusColor}`}>
                               <CalendarDays className="size-4" />
-                              <span>{`${it.expiry} • ${dText}`}</span>
+                              <span>{`${formatShortDate(it.expiry)} • ${dText}`}</span>
                             </div>
                             {canManage && edit && (
                               <EditRow
                                 value={{ name: detailName, expiry: it.expiry }}
                                 onSave={(v) => {
                                   const newName = suffix ? `${bundleName} - ${v.name}` : `${bundleName} - ${v.name}`
-                                  updateItem(it.id, { name: newName, expiry: v.expiry })
-                                  toast({ title: "수정 완료", description: `${it.id} 항목이 업데이트되었습니다.` })
+                                  updateItem(it.unitId, { name: newName, expiry: v.expiry })
+                                  toast({
+                                    title: "수정 완료",
+                                    description: `${v.name.trim() || detailName} 항목이 업데이트되었습니다.`,
+                                  })
                                 }}
                               />
                             )}
@@ -176,8 +180,11 @@ export default function BundleDetailSheet({
                                 className="text-rose-600"
                                 onClick={() => {
                                   if (confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) {
-                                    deleteItem(it.id)
-                                    toast({ title: "삭제됨", description: `${it.id} 항목이 삭제되었습니다.` })
+                                    deleteItem(it.unitId)
+                                    toast({
+                                      title: "삭제됨",
+                                      description: `${getDetailName(it.name, bundleName)} 항목이 삭제되었습니다.`,
+                                    })
                                   }
                                 }}
                                 aria-label="삭제"

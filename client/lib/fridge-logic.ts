@@ -1,4 +1,4 @@
-import type { Item } from "@/components/fridge/types"
+import type { Item } from "@/features/fridge/types"
 import { daysLeft } from "./date-utils"
 
 export function getBundleName(name: string) {
@@ -27,6 +27,6 @@ export function resolveStatus(expiryISO: string): "expired" | "expiring" | "ok" 
   return "ok"
 }
 
-export function isBundleMode(slotCode: string, name: string, expiry: string, qty: number) {
-  return !!slotCode && !!name.trim() && !!expiry && qty >= 2
+export function formatBundleCode(slotCode: string, labelNo: number) {
+  return `${slotCode}-${String(labelNo).padStart(3, "0")}`
 }

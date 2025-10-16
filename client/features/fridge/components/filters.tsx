@@ -1,12 +1,12 @@
 "use client"
 
 import { useMemo, useState } from "react"
-import type { Slot } from "./types"
+import type { Slot } from "@/features/fridge/types"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
 import { SearchIcon, Check } from "lucide-react"
-import { SlotSelector } from "@/components/fridge/slot-selector"
-import SearchBar from "@/components/fridge/search-bar"
+import { SlotSelector } from "@/features/fridge/components/slot-selector"
+import SearchBar from "@/features/fridge/components/search-bar"
 
 export default function Filters({
   active = "all",

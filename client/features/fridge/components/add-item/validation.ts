@@ -1,7 +1,7 @@
 import { z } from "zod"
 import { toYMD } from "@/lib/date-utils"
 import type { TemplateState, PendingEntry } from "./types"
-import { CONSTANTS } from "./types"
+import { NAME_LIMIT, QTY_LIMIT } from "./constants"
 
 const todayISO = toYMD(new Date())
 
@@ -15,9 +15,9 @@ const templateSchema = z.object({
   name: z
     .string()
     .transform((val) => val.trim())
-    .pipe(z.string().min(1, "물품(묶음)명을 입력해 주세요.").max(CONSTANTS.MAX_NAME)),
+    .pipe(z.string().min(1, "물품(묶음)명을 입력해 주세요.").max(NAME_LIMIT)),
   expiry: expirySchema,
-  qty: z.number().int().min(1, "수량은 1개 이상이어야 합니다.").max(CONSTANTS.MAX_QTY, `최대 ${CONSTANTS.MAX_QTY}개까지 등록할 수 있습니다.`),
+  qty: z.number().int().min(1, "수량은 1개 이상이어야 합니다.").max(QTY_LIMIT, `최대 ${QTY_LIMIT}개까지 등록할 수 있습니다.`),
 })
 
 export function validateTemplate(

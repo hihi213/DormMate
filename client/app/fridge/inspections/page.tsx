@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import BottomNav from "@/components/bottom-nav"
-import AuthGuard from "@/components/auth-guard"
+import AuthGuard from "@/features/auth/components/auth-guard"
 
 // 일정 타입
 type Schedule = {

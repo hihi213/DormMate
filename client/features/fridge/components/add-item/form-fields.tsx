@@ -8,11 +8,7 @@ import { ExpiryInput } from "@/components/shared/expiry-input"
 import type { TemplateState } from "./types"
 import { PackagePlus, Pencil } from "lucide-react"
 import { cn } from "@/lib/utils"
-
-const CONSTANTS = {
-  MAX_NAME: 20,
-  MAX_QTY: 50,
-} as const
+import { NAME_LIMIT, QTY_LIMIT, WARNING_EXPIRY_DAYS } from "./constants"
 
 interface FormFieldsProps {
   template: TemplateState
@@ -20,7 +16,7 @@ interface FormFieldsProps {
   onQuantityChange: (qty: number) => void
   onExpiryChange: (expiry: string) => void
   onSubmit: () => void
-  nameInputRef?: React.RefObject<HTMLInputElement | null>
+  nameInputRef?: React.MutableRefObject<HTMLInputElement | null> | null
   onNameLimit?: () => void
   onQuantityLimit?: (which: "min" | "max") => void
   isEditing?: boolean
@@ -51,13 +47,13 @@ export function FormFields({
           <div className="relative mt-1">
             <Input
               id="item-name"
-              ref={nameInputRef}
+              ref={nameInputRef ?? undefined}
               value={template.name}
-              maxLength={CONSTANTS.MAX_NAME}
+              maxLength={NAME_LIMIT}
               onChange={(e) => {
                 const raw = e.target.value
-                if (raw.length > CONSTANTS.MAX_NAME && onNameLimit) onNameLimit()
-                const next = raw.slice(0, CONSTANTS.MAX_NAME)
+                if (raw.length > NAME_LIMIT && onNameLimit) onNameLimit()
+                const next = raw.slice(0, NAME_LIMIT)
                 onTemplateChange({ name: next })
               }}
               placeholder="예: 우유 1L"
@@ -70,11 +66,11 @@ export function FormFields({
               <span
                 className={cn(
                   "absolute right-3 top-1/2 -translate-y-1/2 text-[11px]",
-                  template.name.length >= CONSTANTS.MAX_NAME ? "text-rose-600 font-semibold" : "text-muted-foreground"
+                  template.name.length >= NAME_LIMIT ? "text-rose-600 font-semibold" : "text-muted-foreground"
                 )}
                 aria-live="polite"
               >
-                {`${template.name.length}/${CONSTANTS.MAX_NAME}`}
+                {`${template.name.length}/${NAME_LIMIT}`}
               </span>
             )}
           </div>
@@ -86,7 +82,7 @@ export function FormFields({
         label="유통기한"
         value={template.expiry}
         onChange={onExpiryChange}
-        warningThresholdDays={2}
+        warningThresholdDays={WARNING_EXPIRY_DAYS}
         emphasizeToday
         className="max-w-xs"
         inputClassName="w-28"
@@ -98,7 +94,7 @@ export function FormFields({
           className="w-full justify-between sm:justify-start"
           value={template.qty}
           min={1}
-          max={CONSTANTS.MAX_QTY}
+          max={QTY_LIMIT}
           onChange={onQuantityChange}
           onLimitReach={onQuantityLimit}
         />
