@@ -82,7 +82,9 @@ jobs:
           kill $PRISM_PID
 
       - name: Backend tests
-        run: ./gradlew clean test
+        run: |
+          cd backend
+          ./gradlew clean test
 
       - name: Frontend unit tests
         run: |
