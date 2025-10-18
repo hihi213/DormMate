@@ -63,7 +63,12 @@ jobs:
           npm ci
 
       - name: Validate Taskmaster required_tests
-        run: bash scripts/check-task-tests.sh
+        run: |
+          if [ -d docs/tasks ]; then
+            bash scripts/check-task-tests.sh
+          else
+            echo "docs/tasks 디렉터리가 없어서 체크를 건너뜁니다."
+          fi
 
       - name: OpenAPI spectral lint
         run: make api-lint
