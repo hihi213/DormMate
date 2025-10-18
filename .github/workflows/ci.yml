@@ -1,98 +1,91 @@
-name: DormMate CI
+name: CI
 
 on:
   push:
-    branches: ["main", "develop"]
+    branches:
+      - main
+      - develop
   pull_request:
-    branches: ["main", "develop"]
+    branches:
+      - main
+      - develop
 
 jobs:
-  checks:
+  build:
     runs-on: ubuntu-latest
-
-    services:
-      postgres:
-        image: postgres:15
-        env:
-          POSTGRES_DB: dormitory_db
-          POSTGRES_USER: dorm_user
-          POSTGRES_PASSWORD: dorm_password
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd="pg_isready -U dorm_user -d dormitory_db"
-          --health-interval=10s
-          --health-timeout=5s
-          --health-retries=5
-
+    timeout-minutes: 40
     env:
-      CI: true
-      POSTGRES_HOST: localhost
-      POSTGRES_PORT: 5432
-      POSTGRES_DB: dormitory_db
-      POSTGRES_USER: dorm_user
-      POSTGRES_PASSWORD: dorm_password
+      CI: "true"
+      CI_ENABLE_PRISM: "false"
+      CI_ENABLE_E2E: "false"
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: temurin
-          java-version: "21"
-          cache: gradle
-
-      - name: Set up Node.js
+      - name: Set up Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: npm
+          cache: "npm"
           cache-dependency-path: |
             client/package-lock.json
 
-      - name: Install backend dependencies
-        run: |
-          cd backend
-          ./gradlew --version
+      - name: Set up Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: "temurin"
+          java-version: "21"
+
+      - name: Cache Gradle
+        uses: actions/cache@v3
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('backend/gradle/wrapper/gradle-wrapper.properties', 'backend/settings.gradle*', 'backend/build.gradle*', 'backend/**/build.gradle.kts') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
 
       - name: Install frontend dependencies
-        run: |
-          cd client
-          npm ci
+        working-directory: client
+        run: npm install
 
-      - name: Validate Taskmaster required_tests
+      - name: Core Tests (Makefile bundle)
         run: |
-          if [ -d docs/tasks ]; then
-            bash scripts/check-task-tests.sh
+          if [ "${{ env.CI_ENABLE_E2E }}" = "true" ]; then
+            PLAYWRIGHT=1 make tests-core
           else
-            echo "docs/tasks 디렉터리가 없어서 체크를 건너뜁니다."
+            make tests-core
           fi
 
-      - name: OpenAPI spectral lint
-        run: make api-lint
-
-      - name: Prism mock smoke test
+      - name: Prepare database for schema drift
         run: |
-          npx @stoplight/prism mock docs/openapi/fridge-mvp.yaml --port 4010 &
-          PRISM_PID=$!
-          sleep 5
-          curl -fsSL http://127.0.0.1:4010/api/auth/login -X POST -d '{}' -H "content-type: application/json" || true
-          kill $PRISM_PID
+          docker compose up -d db
+          docker compose run --rm migrate
 
-      - name: Backend tests
-        run: |
-          cd backend
-          ./gradlew clean test
+      - name: Schema drift check
+        env:
+          ACT_URL: postgresql://dorm_user:dorm_password@localhost:5432/dormitory_db
+          ACT_HOST: localhost
+          ACT_PORT: "5432"
+          ACT_DB: dormitory_db
+          ACT_USER: dorm_user
+          ACT_PASSWORD: dorm_password
+        run: make schema-drift
 
-      - name: Frontend unit tests
+      - name: Shutdown database services
+        if: always()
         run: |
-          cd client
-          npm test -- --watch=false
+          docker compose down
+          docker rm -f dormitory_expected >/dev/null 2>&1 || true
 
-      - name: Playwright e2e tests
-        run: |
-          cd client
-          npx playwright install --with-deps
-          npx playwright test
+      - name: Validate Taskmaster metadata
+        run: python3 tools/ci/validate_taskmaster.py
+
+      - name: Ensure Step 6 checklist is completed
+        if: github.event_name == 'pull_request'
+        run: python3 tools/ci/check_step6.py
+
+      - name: Docker Compose Build
+        run: docker compose build

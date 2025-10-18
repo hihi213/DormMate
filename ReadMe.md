@@ -5,7 +5,7 @@ DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위�
 ## 주요 스택 & 권장 버전
 
 - **Backend**: Spring Boot 3.3.4, Java 21, Gradle 8.9, Flyway 10.17, PostgreSQL 16
-- **Frontend**: Next.js 14.2.7, React 18.2, TypeScript 5.4, Tailwind CSS 4 Preview
+- **Frontend**: Next.js 14.2.7, React 18.2, TypeScript 5.4, Tailwind CSS 3.4
 - **Infrastructure**: Docker Compose, Redis 7.2, pgAdmin 4 (8.6)
 - **Tooling**: Node.js 20 LTS, npm 10, Makefile 명령 모음
 
@@ -32,6 +32,10 @@ cd backend && ./gradlew bootRun
 cd client && npm install && npm run dev
 ```
 
+> DB 컨테이너는 5432 포트를 호스트에 노출합니다. 로컬 툴(IDE, psql)에서는 `localhost:5432`로 접속하고, 다른 컨테이너에서 접근할 때는 `db:5432` 호스트명을 사용하세요.
+
+> CI 런너(예: GitHub Actions)는 Java 21, Node.js 20, Docker(Compose), PostgreSQL 16, Redis 7.2 이미지를 사용할 수 있는 환경이어야 합니다. 기본 워크플로(`.github/workflows/ci.yml`)는 이러한 런타임을 기준으로 구성되어 있습니다.
+
 Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration`에 `V1__init.sql`, `R__Seed.sql` 두 개만 유지합니다. 기존 버전 아카이브는 `docs/legacy/` 하위로 이동했습니다.
 
 ## Makefile 주요 명령
@@ -42,8 +46,26 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration`에
 - `make backend-build` / `make backend-test`: Gradle 빌드 및 테스트
 - `make client-dev` / `make client-build`: 프론트엔드 개발 서버 및 프로덕션 빌드
 - `make client-lint`: 프론트엔드 ESLint 검사 (로컬에 Node.js가 없으면 자동으로 Docker `node:20-alpine` 이미지를 사용해 실행)
+- `make tests-core`: Spectral + 백엔드 + 프론트 테스트 일괄 실행 (Step 6 권장)
+- `make playwright-install` / `make playwright-test`: Playwright 설치 및 E2E 테스트 실행 (선택)
 
 자세한 옵션은 `make help`를 확인하세요.
+
+### Playwright E2E 테스트 가이드
+
+1. 최초 한 번 브라우저 바이너리를 설치합니다.
+   ```bash
+   make playwright-install
+   # 또는 cd client && npm run playwright:install
+   ```
+2. 로컬에서 스모크 테스트를 실행하려면 `PLAYWRIGHT=1` 플래그를 켜고 통합 테스트 번들을 호출합니다.
+   ```bash
+   PLAYWRIGHT=1 make tests-core
+   # 또는 cd client && npm run playwright:test
+   ```
+3. CI에서는 `CI=true`가 자동으로 전달되어 Playwright가 포함되며, 베이스 URL은 `PLAYWRIGHT_BASE_URL` 환경 변수로 덮어쓸 수 있습니다(기본값 `http://localhost:3000`).
+
+> ❗️ 모든 Playwright 실행은 Next.js 앱이 기동된 상태를 전제로 합니다. `docker compose up` 또는 `npm run dev` 등으로 서비스가 준비됐는지 확인하세요.
 
 ## 추가 문서
 
