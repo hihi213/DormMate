@@ -12,7 +12,7 @@ import type {
   Slot,
 } from "@/features/fridge/types"
 import { useFridgeLogic } from "@/hooks/use-fridge-logic"
-import { alphaFromOrder, createInitialData, formatBundleLabel, toItems } from "@/features/fridge/utils/data-shaping"
+import { createInitialData, formatBundleLabel, normalizeSlot, toItems } from "@/features/fridge/utils/data-shaping"
 import { getCurrentUserId } from "@/lib/auth"
 
 type AddBundlePayload = {
@@ -57,14 +57,11 @@ const FridgeContext = createContext<FridgeContextValue | null>(null)
 
 export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const currentUserId = getCurrentUserId() || undefined
-  const { slots: initialSlots, bundles: initialBundles, units: initialUnits } = useMemo(
-    () => createInitialData(currentUserId),
-    [currentUserId],
-  )
+  const { slots: initialSlots, bundles: initialBundles, units: initialUnits } = useMemo(() => createInitialData(), [])
 
-  const [slots, setSlots] = useState<Slot[]>(() => initialSlots)
-  const [bundles, setBundles] = useState<Bundle[]>(() => initialBundles)
-  const [units, setUnits] = useState<ItemUnit[]>(() => initialUnits)
+  const [slots, setSlots] = useState<Slot[]>(initialSlots)
+  const [bundles, setBundles] = useState<Bundle[]>(initialBundles)
+  const [units, setUnits] = useState<ItemUnit[]>(initialUnits)
   const [lastInspectionAt, setLastInspectionAt] = useState<number>(0)
   const [isInspector, setIsInspector] = useState(false)
 
@@ -74,45 +71,55 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const controller = new AbortController()
-    fetch("/api/fridge/compartments?view=full", { signal: controller.signal })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
+    const defaultFloor = 2 // TODO: derive from 로그인 사용자 정보
+
+    const load = async () => {
+      try {
+        const response = await fetch(`/api/fridge/compartments?view=full&floor=${defaultFloor}`, {
+          signal: controller.signal,
+        })
+        if (!response.ok) {
+          console.warn("Failed to load compartment metadata: ", response.status)
+          return
+        }
+        const data = await response.json()
         if (!Array.isArray(data)) return
-        setSlots((prev) =>
-          prev.map((slot) => {
-            const meta = data.find((entry: any) => Number(entry?.id) === slot.resourceId) ?? null
-            if (!meta) return slot
-            const displayOrder =
-              typeof meta.displayOrder === "number" && meta.displayOrder > 0
-                ? meta.displayOrder
-                : slot.displayOrder ?? undefined
-            const computedCode = alphaFromOrder(displayOrder) || slot.code
-            const labelRangeStart =
-              typeof meta.labelRangeStart === "number" ? meta.labelRangeStart : slot.labelRangeStart
-            const labelRangeEnd =
-              typeof meta.labelRangeEnd === "number" ? meta.labelRangeEnd : slot.labelRangeEnd
-            return {
-              ...slot,
-              resourceId: typeof meta.id === "number" ? meta.id : slot.resourceId,
-              displayOrder,
-              code: computedCode,
-              labelRangeStart,
-              labelRangeEnd,
-              label: typeof meta.displayName === "string" ? meta.displayName : slot.label,
-            }
-          }),
+        const nextSlots = data.map((entry: any, index: number) =>
+          normalizeSlot(
+            {
+              resourceId: typeof entry?.id === "number" ? entry.id : undefined,
+              displayOrder: entry?.displayOrder,
+              labelRangeStart: entry?.labelRangeStart,
+              labelRangeEnd: entry?.labelRangeEnd,
+              label: typeof entry?.displayName === "string" ? entry.displayName : undefined,
+              floor: typeof entry?.floor === "number" ? entry.floor : undefined,
+              floorCode: typeof entry?.floorCode === "string" ? entry.floorCode : undefined,
+              type: "FRIDGE_COMP",
+              temperature: entry?.type === "FREEZER" ? "freezer" : "refrigerator",
+            },
+            index,
+          ),
         )
-      })
-      .catch((error) => {
-        if (error.name !== "AbortError") {
+        setSlots(nextSlots)
+      } catch (error) {
+        if ((error as Error).name !== "AbortError") {
           console.warn("Failed to load compartment metadata:", error)
         }
-      })
+      }
+    }
+
+    void load()
+
     return () => controller.abort()
   }, [])
 
   const getSlotByCode = useCallback(
-    (slotCode: string) => slots.find((slot) => slot.code === slotCode) ?? slots[0],
+    (slotCode: string) => {
+      if (slots.length === 0) {
+        throw new Error("등록된 칸 정보가 없습니다.")
+      }
+      return slots.find((slot) => slot.code === slotCode) ?? slots[0]
+    },
     [slots],
   )
 
@@ -141,7 +148,18 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
 
   const addBundle = useCallback<FridgeContextValue["addBundle"]>(
     (payload) => {
-      const { slot, labelNumber } = issueBundleLabel(payload.slotCode)
+      let slotInfo: { slot: Slot; labelNumber: number }
+      try {
+        slotInfo = issueBundleLabel(payload.slotCode)
+      } catch (error) {
+        return {
+          success: false,
+          error: "선택할 수 있는 보관 칸 정보를 불러오지 못했습니다.",
+          message: error instanceof Error ? error.message : undefined,
+        }
+      }
+
+      const { slot, labelNumber } = slotInfo
       const bundleId = crypto.randomUUID?.() ?? `bundle-${Date.now()}`
       const nowIso = new Date().toISOString()
       const ownerId = currentUserId
@@ -187,7 +205,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         message: `${payload.bundleName} 묶음이 등록되었습니다.`,
       }
     },
-    [bundles, units, currentUserId, issueBundleLabel],
+    [currentUserId, issueBundleLabel],
   )
 
   const addSingleItem = useCallback<FridgeContextValue["addSingleItem"]>(

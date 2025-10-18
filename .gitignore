@@ -1,3 +1,5 @@
+
+
 # Environment files
 .env*
 !.env.example
@@ -5,6 +7,9 @@
 
 # Secrets directory
 secrets/
+
+# Codex workflow state
+.codex/state.json
 
 # Node modules
 client/node_modules/
@@ -418,3 +423,4 @@ logs/
 # --- 보안/비공개 문서(절대 커밋 금지) ---
 # 개인 계획/기능 정리 문서
 /nogitReadME.md
+/docs
