@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TASK_DIR="$ROOT_DIR/docs/tasks"
 
 if [ ! -d "$TASK_DIR" ]; then
-  echo "Task 디렉터리를 찾을 수 없습니다: $TASK_DIR" >&2
+  echo "❌ Task 디렉터리를 찾을 수 없습니다: $TASK_DIR" >&2
   exit 1
 fi
 
