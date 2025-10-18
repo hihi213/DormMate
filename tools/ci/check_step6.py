@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -48,15 +49,17 @@ def main() -> int:
         print("❌ PR 본문에 '## Step 6 Checklist' 섹션이 없습니다.", file=sys.stderr)
         return 1
 
-    # 기본 항목: make tests-core
-    required_token = "- [x] make tests-core"
-    unchecked_token = "- [ ] make tests-core"
+    pattern_checked = re.compile(r"-\s*\[[xX]\]\s*make\s+tests-core")
+    pattern_unchecked = re.compile(r"-\s*\[\s*\]\s*make\s+tests-core")
 
-    if unchecked_token in body and required_token not in body:
+    has_checked = bool(pattern_checked.search(body))
+    has_unchecked = bool(pattern_unchecked.search(body))
+
+    if has_unchecked and not has_checked:
         print("❌ Step 6 체크리스트에서 `make tests-core` 항목이 미체크 상태입니다.", file=sys.stderr)
         return 1
 
-    if required_token not in body:
+    if not has_checked:
         print("❌ Step 6 체크리스트에 `- [x] make tests-core` 완료 표시가 필요합니다.", file=sys.stderr)
         return 1
 
