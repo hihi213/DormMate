@@ -1,4 +1,4 @@
-.PHONY: help up down ps logs db-up migrate schema seed reset-db client-dev client-build client-lint backend-build backend-test backend-clean db-shell pgadmin-url redis-cli clean dev dev-front migrate-local schema-drift
+.PHONY: help up down ps logs db-up migrate schema seed reset-db client-dev client-build client-lint backend-build backend-test backend-clean db-shell pgadmin-url redis-cli clean dev dev-front dev-stop migrate-local schema-drift api-lint api-mock api-diff api-export api-compat plan plan-design plan-stubs plan-review plan-brainstorm plan-current
 
 # =============================================================
 # DormMate — 통합 개발/운영 Makefile
@@ -161,6 +161,7 @@ dev-front:
 	docker compose up -d
 	( cd client && npm run dev ) &
 	cd backend && ./gradlew bootRun
+
 dev-stop:
 	@echo "🔻 Stopping DormMate dev processes..."
 	- pkill -f "gradlew bootRun" >/dev/null 2>&1 || true
@@ -196,6 +197,14 @@ api-export:
 	@echo "✅ Runtime OpenAPI 명세가 build/openapi.generated.json에 저장되었습니다"
 
 # Seed vs Runtime OpenAPI diff 체크 (설계 우선 강제)
+api-lint:
+	@echo "🧐 Running spectral lint..."
+	npx @stoplight/spectral lint docs/openapi/fridge-mvp.yaml
+
+api-mock:
+	@echo "🧪 Starting prism mock server (ctrl+c to stop)..."
+	npx @stoplight/prism mock docs/openapi/fridge-mvp.yaml
+
 api-diff:
 	@echo "🔍 OpenAPI diff 체크를 진행하고 있습니다..."
 	@bash scripts/export-openapi.sh
@@ -205,3 +214,26 @@ api-diff:
 api-compat:
 	@echo "🔍 API 호환성 체크를 진행하고 있습니다..."
 	@bash scripts/check-api-compatibility.sh
+
+# --- Codex 프로필 전환 ---
+plan:
+	@echo "make plan-design      # 설계 모드"
+	@echo "make plan-stubs       # 스텁(주석 뼈대) 모드"
+	@echo "make plan-review      # 리뷰/테스트 보강 모드"
+	@echo "make plan-brainstorm  # 아이디어(브레인스토밍) 모드"
+	@echo "make plan-current     # 현재 프로필 확인"
+
+plan-design:
+	./plan 설계
+
+plan-stubs:
+	./plan 스텁
+
+plan-review:
+	./plan 리뷰
+
+plan-brainstorm:
+	./plan 아이디어
+
+plan-current:
+	./plan 현재

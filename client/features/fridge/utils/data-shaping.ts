@@ -8,18 +8,6 @@ import type {
   Slot,
 } from "@/features/fridge/types"
 
-export const alphaFromOrder = (order: number | undefined): string => {
-  if (!order || order < 1) return "";
-  let n = order
-  let result = ""
-  while (n > 0) {
-    const idx = (n - 1) % 26
-    result = String.fromCharCode(65 + idx) + result
-    n = Math.floor((n - 1) / 26)
-  }
-  return result
-}
-
 export const FLOOR_CODES: FloorCode[] = ["2F", "3F", "4F", "5F"]
 
 export function normalizeSlot(raw: any, index: number): Slot {
@@ -46,12 +34,14 @@ export function normalizeSlot(raw: any, index: number): Slot {
     typeof raw?.displayCode === "string" && raw.displayCode.trim().length > 0 ? raw.displayCode.trim() : null
   const providedCode =
     typeof raw?.code === "string" && raw.code.trim().length > 0 ? raw.code.trim() : providedDisplayCode
-  const code = providedCode || alphaFromOrder(displayOrder) || `resource-${resourceId}`
+  const code = providedCode || String(displayOrder) || `resource-${resourceId}`
   const label = typeof raw?.label === "string" && raw.label.trim().length > 0 ? raw.label : code
   const floorCode =
     typeof raw?.floorCode === "string" && FLOOR_CODES.includes(raw.floorCode as FloorCode)
       ? (raw.floorCode as FloorCode)
-      : "2F"
+      : typeof raw?.floor === "number"
+        ? `${raw.floor}F`
+        : "2F"
   const type = raw?.type === "FRIDGE_COMP" ? raw.type : "FRIDGE_COMP"
   const status = raw?.status === "OUT_OF_SERVICE" ? "OUT_OF_SERVICE" : "ACTIVE"
   const createdAt =
@@ -276,160 +266,14 @@ export function toItems(bundles: Bundle[], units: ItemUnit[]): Item[] {
 }
 
 export function createInitialSlots(): Slot[] {
-  const baseSlots: Partial<Slot>[] = [
-    {
-      resourceId: 2101,
-      displayOrder: 1,
-      labelRangeStart: 1,
-      labelRangeEnd: 999,
-      label: "2층 냉장 1칸",
-      floorCode: "2F",
-      description: "과일과 채소를 보관하는 칸",
-      temperature: "refrigerator",
-      capacity: 10,
-      isActive: true,
-    },
-    {
-      resourceId: 2102,
-      displayOrder: 2,
-      labelRangeStart: 1,
-      labelRangeEnd: 999,
-      label: "2층 냉장 2칸",
-      floorCode: "2F",
-      description: "반찬 및 조리 음식을 보관하는 칸",
-      temperature: "refrigerator",
-      capacity: 15,
-      isActive: true,
-    },
-    {
-      resourceId: 2103,
-      displayOrder: 3,
-      labelRangeStart: 1,
-      labelRangeEnd: 999,
-      label: "2층 냉동 칸",
-      floorCode: "2F",
-      description: "냉동 보관이 필요한 음식",
-      temperature: "freezer",
-      capacity: 20,
-      isActive: true,
-    },
-    {
-      resourceId: 3101,
-      displayOrder: 1,
-      labelRangeStart: 1,
-      labelRangeEnd: 999,
-      label: "3층 냉장 1칸",
-      floorCode: "3F",
-      description: "3층 학생 전용 칸",
-      temperature: "refrigerator",
-      capacity: 12,
-      isActive: true,
-    },
-  ]
-
-  return baseSlots.map((slot, index) => normalizeSlot(slot, index))
+  return []
 }
 
-export function createInitialData(currentUserId?: string) {
-  const slots = createInitialSlots()
-
-  const bundleSources = [
-    { slotIndex: 0, bundleName: "사과 묶음", labelNo: 1, memo: "공용 과일" },
-    { slotIndex: 0, bundleName: "김치 용기", labelNo: 2, memo: "3층 학생 전용" },
-    { slotIndex: 1, bundleName: "만두팩", labelNo: 1 },
-  ]
-
-  const bundles = bundleSources.map((source, index) => {
-    const slot = slots[source.slotIndex] ?? slots[0]
-    const raw = {
-      slotCode: slot.code,
-      bundleName: source.bundleName,
-      labelNo: source.labelNo,
-      memo: source.memo,
-      resourceId: slot.resourceId,
-      labelNumber: source.labelNo,
-    }
-    return normalizeBundle(raw, slots, index, currentUserId)
-  })
-
+export function createInitialData() {
+  const slots: Slot[] = []
+  const bundles: Bundle[] = []
   const units: ItemUnit[] = []
-
-  bundles.forEach((bundle, index) => {
-    if (bundle.bundleName.includes("사과")) {
-      units.push(
-        normalizeUnit(
-          {
-            name: "부사",
-            seqNo: 1,
-            expiry: futureDate(5),
-            quantity: 3,
-            priority: "medium" as ItemPriority,
-          },
-          bundle,
-          units.length,
-        ),
-      )
-      units.push(
-        normalizeUnit(
-          {
-            name: "홍옥",
-            seqNo: 2,
-            expiry: futureDate(1),
-            quantity: 2,
-            priority: "high" as ItemPriority,
-          },
-          bundle,
-          units.length,
-        ),
-      )
-    } else if (bundle.bundleName.includes("김치")) {
-      units.push(
-        normalizeUnit(
-          {
-            name: "배추 김치",
-            seqNo: 1,
-            expiry: futureDate(14),
-            quantity: 1,
-          },
-          bundle,
-          units.length,
-        ),
-      )
-      units.push(
-        normalizeUnit(
-          {
-            name: "깍두기",
-            seqNo: 2,
-            expiry: futureDate(10),
-            quantity: 1,
-          },
-          bundle,
-          units.length,
-        ),
-      )
-    } else {
-      units.push(
-        normalizeUnit(
-          {
-            name: "고기만두",
-            seqNo: 1,
-            expiry: futureDate(20),
-            quantity: 1,
-          },
-          bundle,
-          units.length,
-        ),
-      )
-    }
-  })
-
-  const items = toItems(bundles, units)
+  const items: Item[] = []
 
   return { slots, bundles, units, items }
-}
-
-function futureDate(days: number) {
-  const date = new Date()
-  date.setDate(date.getDate() + days)
-  return date.toISOString().slice(0, 10)
 }
