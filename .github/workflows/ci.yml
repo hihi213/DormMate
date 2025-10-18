@@ -51,6 +51,11 @@ jobs:
         working-directory: client
         run: npm install
 
+      - name: Install Playwright browsers (optional)
+        if: env.CI_ENABLE_E2E == 'true'
+        working-directory: client
+        run: npx playwright install --with-deps
+
       - name: Start database services
         run: |
           docker compose up -d db
@@ -68,7 +73,7 @@ jobs:
           if [ "${{ env.CI_ENABLE_E2E }}" = "true" ]; then
             PLAYWRIGHT=1 make tests-core
           else
-            make tests-core
+            PLAYWRIGHT=0 make tests-core
           fi
 
       - name: Schema drift check
