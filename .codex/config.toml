@@ -1,6 +1,6 @@
 version = 1
 project_name = "DormMate"
-active_profile = "brainstorm"     # design | stubs | review
+active_profile = "review"     # design | stubs | review
 
 [paths]
 project_root = "/Users/gimseunghyeon/Desktop/school/졸업프로젝트(세탁)/pj_DormMate"
@@ -20,6 +20,7 @@ must_follow = [
   "OpenAPI 스펙이 단일 진실(SSOT)이다. 엔드포인트/DTO/에러코드는 서비스 정의/도메인 모델/기술 가이드/기능 인벤토리와 일치시켜라.",
   "설계 단계에서는 코드/의사코드/스니펫을 출력하지 말고 '무엇/왜/어디'만 설명한다.",
   "모든 기능 작업은 7-스텝 게이트드 루프(0~7)를 순서대로 진행하고, 단계 건너뛰기를 금지한다.",
+  "Step 0~1 출력과 Step 7 Taskmaster/문서 초안은 Codex가 먼저 준비하고 사용자는 승인만 한다.",
   "Step 2에서는 대단계와 첫 서브태스크를 테스트 기준 성공 조건과 함께 제시한다.",
   "새 요구나 용어/필드가 필요하면 문서를 먼저 갱신하고 어느 파일을 고쳐야 하는지 명시한다.",
   "추천이나 선택을 제시할 땐 반드시 '왜'에 대한 근거와 테스트/검증 방법을 함께 설명한다.",
