@@ -22,6 +22,8 @@ ADMIN_PASSWORD=admin
 SERVER_PORT=8080
 ```
 
+> **참고**: `docker-compose.yml`이 PostgreSQL 컨테이너의 `5432` 포트를 호스트에 노출합니다. 로컬 툴에서 접근할 때는 `jdbc:postgresql://localhost:5432/...`를 사용하고, 컨테이너 간 통신만 필요하면 `jdbc:postgresql://db:5432/...`와 같이 `host=db`로 지정하세요.
+
 ### **2. 환경변수 로드**
 터미널에서 다음 명령어로 환경변수를 로드하세요:
 
@@ -107,3 +109,9 @@ sudo reboot
 # 환경변수 파일을 사용하여 Docker 실행
 docker run --env-file .env.prod your-app-image
 ```
+
+## 🧊 냉장고 라벨 시드 참고
+
+- `R__Seed.sql`은 각 보관 칸당 라벨 번호 1~999를 한 번에 채우기 위해 `generate_series`와 `CROSS JOIN`을 사용합니다.
+- 배포 파이프라인에서 시드 단계가 오래 걸리지 않는지 확인하고, 필요하면 배치 크기를 줄이거나 `COPY` 기반 스크립트로 교체할 수 있습니다.
+- 대량 삽입 후 `VACUUM ANALYZE label_pool;`을 실행해 통계를 최신화하면 이후 라벨 할당 쿼리 성능이 안정적으로 유지됩니다.

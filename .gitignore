@@ -1,4 +1,28 @@
 
+
+# Environment files
+.env*
+!.env.example
+!.env.local.example
+
+# Secrets directory
+secrets/
+
+# Codex workflow state
+.codex/state.json
+
+# Node modules
+client/node_modules/
+
+# Build artifacts
+backend/build/
+**/dist/
+
+# IDE
+.idea/
+.vscode/
+
+
 # Dependencies
 node_modules/
 */node_modules/
@@ -146,9 +170,11 @@ artifacts/
 
 # Docker 관련
 .dockerignore
-docker-compose.override.yml
-docker-compose.*.yml
-!docker-compose.yml
+# docker-compose.override.yml는 개발용이므로 커밋에 포함
+# docker-compose.*.yml
+# !docker-compose.yml
+# !docker-compose.override.yml
+# !docker-compose.prod.yml
 
 # 가상환경
 venv/
@@ -288,6 +314,8 @@ pg_hba.conf.backup
 .env.local
 .env.development
 .env.test
+.envrc
+.direnv/
 
 # 캐시 및 임시 파일
 .cache/
@@ -309,3 +337,90 @@ log/
 *.db
 *.sqlite
 *.sqlite3
+
+# --- 추가 무시 항목 (프로젝트 맞춤) ---
+
+# Frontend caches
+client/.next/
+client/out/
+client/.vercel/
+client/.turbo/
+client/.vite/
+client/.cache/
+client/.swc/
+
+# Java/Gradle extra
+backend/out/
+
+# Editor history
+.history/
+
+# --- 추가 권장 항목 ---
+
+# Spring Boot 특화
+backend/.mvn/
+backend/mvnw
+backend/mvnw.cmd
+
+# Node.js 특화
+client/.npm/
+client/.yarn/
+client/.pnpm-store/
+
+# 로컬 설정 파일
+*.local
+*.local.*
+
+# Python 가상환경
+venv/
+
+# 임시 파일
+.tmp/
+tmp/
+temp/
+
+# 스크립트 관련 임시/로그
+scripts/*.log
+scripts/.env
+scripts/local/
+
+# 클라이언트 빌드/캐시(보강)
+client/dist/
+client/.vite/
+client/.cache/
+client/.turbo/
+
+# 백엔드 Gradle 캐시(보강)
+backend/.gradle/
+
+# 백업 파일
+*.bak
+*.backup
+*.old
+*.orig
+
+# 로그 파일
+logs/
+*.log.*
+
+# 환경별 설정 (로컬 개발용)
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# IDE 워크스페이스
+*.code-workspace
+
+# macOS 특화
+.AppleDouble
+.LSOverride
+
+# Windows 특화
+*.lnk
+*.url
+
+# --- 보안/비공개 문서(절대 커밋 금지) ---
+# 개인 계획/기능 정리 문서
+/nogitReadME.md
+/docs

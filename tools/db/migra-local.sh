@@ -22,7 +22,7 @@ set -euo pipefail
 : "${MIGRA_UNSAFE:=false}"
 
 # ----- expected DB(로컬 컨테이너) 설정 -----
-PG_IMAGE="postgres:16-alpine"
+PG_IMAGE="postgres:16.4-alpine"
 EXP_HOST="localhost"
 EXP_PORT="5433"
 EXP_DB="dormitory_expected"
@@ -44,17 +44,25 @@ for i in {1..40}; do
   sleep 1
 done
 
+FLYWAY_VERSION="10.17.0"
+FLYWAY_ROOT="${HOME}/.cache/flyway"
+FLYWAY_HOME="${FLYWAY_ROOT}/flyway-${FLYWAY_VERSION}"
+FLYWAY_BIN="${FLYWAY_HOME}/flyway"
+
 # ----- Flyway 설치 (없으면) -----
-if ! command -v flyway >/dev/null 2>&1; then
-  echo ">>> Installing Flyway CLI ..."
-  curl -L https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/10.17.0/flyway-commandline-10.17.0-linux-x64.tar.gz -o /tmp/flyway.tar.gz
-  tar -xzf /tmp/flyway.tar.gz -C /tmp
-  sudo mv /tmp/flyway-10.17.0/flyway /usr/local/bin/flyway
+if [ ! -x "${FLYWAY_BIN}" ]; then
+  echo ">>> Installing Flyway CLI ${FLYWAY_VERSION} ..."
+  mkdir -p "${FLYWAY_ROOT}"
+  curl -fsSL "https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}-linux-x64.tar.gz" -o /tmp/flyway.tar.gz
+  tar -xzf /tmp/flyway.tar.gz -C "${FLYWAY_ROOT}"
+  rm -f /tmp/flyway.tar.gz
 fi
+
+chmod +x "${FLYWAY_BIN}"
 
 # ----- 레포 마이그레이션 → expected DB 적용 -----
 echo ">>> Applying migrations to expected DB ..."
-flyway \
+"${FLYWAY_BIN}" \
   -url="jdbc:postgresql://${EXP_HOST}:${EXP_PORT}/${EXP_DB}" \
   -user="${EXP_USER}" \
   -password="${EXP_PASS}" \
@@ -72,7 +80,7 @@ flyway \
 : "${ACT_PASSWORD:?Set ACT_PASSWORD (e.g. export ACT_PASSWORD=dorm_password)}"
 
 echo ">>> Flyway validate on ACTUAL DB ..."
-flyway \
+"${FLYWAY_BIN}" \
   -url="jdbc:postgresql://${ACT_HOST}:${ACT_PORT}/${ACT_DB}" \
   -user="${ACT_USER}" \
   -password="${ACT_PASSWORD}" \

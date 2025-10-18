@@ -1,0 +1,64 @@
+#!/bin/bash
+set -euo pipefail
+
+usage() {
+  cat <<USAGE
+사용법: plan-design | plan-stubs | plan-review | plan-brainstorm
+현재 프로필 확인: plan-current
+USAGE
+}
+
+COMMAND=${1:-}
+if [ -z "$COMMAND" ]; then
+  usage
+  exit 1
+fi
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+CONFIG_PATH="$PROJECT_ROOT/.codex/config.toml"
+
+set_profile() {
+  python3 "$SCRIPT_DIR/set_profile.py" --config "$CONFIG_PATH" "$1"
+  plan-current
+}
+
+case "$COMMAND" in
+  plan-design)
+    set_profile "design"
+    ;;
+  plan-stubs)
+    set_profile "stubs"
+    ;;
+  plan-review)
+    set_profile "review"
+    ;;
+  plan-brainstorm)
+    set_profile "brainstorm"
+    ;;
+  plan-current)
+    current=$(grep -E '^active_profile' "$CONFIG_PATH" | sed -E 's/active_profile[[:space:]]*=[[:space:]]*"([^"]*)".*/\1/')
+    case "$current" in
+      design)
+        desc="설계 단계: 문서/재진술/계약 검증"
+        ;;
+      stubs)
+        desc="스텁 단계: 주석 뼈대/파일 생성"
+        ;;
+      review)
+        desc="리뷰 단계: 문서 대비 코드 점검/테스트 보강"
+        ;;
+      brainstorm)
+        desc="브레인스토밍: 이름/문구 아이디어 탐색 (코드 금지)"
+        ;;
+      *)
+        desc="알 수 없는 프로필"
+        ;;
+    esac
+    echo "현재 프로필: $current ($desc)"
+    ;;
+  *)
+    usage
+    exit 1
+    ;;
+}

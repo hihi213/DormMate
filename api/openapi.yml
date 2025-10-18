@@ -1,0 +1,78 @@
+# OpenAPI "Seed": 설계가 먼저인 얇은 기준서(SSoT). 코드가 이 계약을 따라가도록 CI에서 diff로 강제.
+# SSoT (Single Source of Truth): 이 파일이 API 명세의 유일한 진실 공급원이라는 의미입니다. 모든 코드, 테스트, 문서는 이 파일을 기준으로 정렬되어야 합니다.
+openapi: 3.0.3 # 사용할 OpenAPI 사양의 버전입니다. 3.0.3은 널리 쓰이는 안정적인 버전입니다.
+info:
+  title: DormMate API (MVP)        # 면접/문서에서 시스템 식별용. 이 API가 어떤 프로젝트인지 명확히 합니다.
+  version: 0.1.0              # 스냅샷 회귀 시점 구분(주차별 태그와 매칭). API의 변경 이력을 추적하고, 특정 버전의 명세를 기준으로 코드를 검증할 때 사용됩니다.
+servers:
+  # 이 API 서버에 접속할 수 있는 URL 목록입니다.
+  - url: http://localhost:8080 # 로컬 우선. 개발자가 자신의 컴퓨터에서 쉽게 테스트할 수 있도록 기본 URL을 로컬호스트로 지정합니다.
+
+components: # API 명세 전반에 걸쳐 재사용될 수 있는 구성요소(스키마, 보안 스킴 등)를 정의하는 곳입니다.
+  securitySchemes:
+    BearerAuth:                # 신입 과제에서 자주 묻는 JWT 보안스킴을 명시. 이 API가 어떤 인증 방식을 사용하는지 정의합니다.
+      type: http               # 인증 유형을 HTTP로 지정합니다.
+      scheme: bearer           # HTTP 인증 스킴으로 "Bearer"를 사용합니다. (예: Authorization: Bearer <token>)
+      bearerFormat: JWT        # Bearer 토큰의 형식이 JWT임을 명시합니다.
+  schemas: # API에서 사용되는 데이터 모델(DTO, 에러 객체 등)을 정의하는 곳입니다.
+    Problem:                   # RFC7807 표준 에러 스키마(일관된 에러 계약을 위해 seed에 고정). 어떤 에러가 발생하든 클라이언트는 항상 이 구조의 응답을 받게 되어 에러 처리가 단순해집니다.
+      type: object
+      properties:
+        type:   { type: string } # 에러 종류를 식별하는 URI. (예: /errors/item-label-conflict)
+        title:  { type: string } # 사람이 읽기 쉬운 에러 요약. (예: "Active label already in use")
+        status: { type: integer } # HTTP 상태 코드. (예: 409)
+        detail: { type: string } # 에러에 대한 구체적인 설명. (예: "label_no=101 is in use on resource_id=7")
+        instance: { type: string } # 에러가 발생한 요청 경로. (예: "/api/items")
+    PollEvent:                 # DB의 event_log 행을 클라이언트가 사용하기 편한 형태로 가공하여 노출하는 DTO(Data Transfer Object)입니다.
+      type: object
+      properties:
+        eventId:       { type: integer, format: int64 } # 이벤트의 고유 ID. 클라이언트가 마지막으로 받은 이벤트 ID를 기억했다가 다음 요청에 사용합니다 (커서 역할).
+        type:          { type: string } # 이벤트 유형. (예: "items.created", "inspection.submitted") 클라이언트가 이 값으로 분기 처리를 합니다.
+        resourceId:    { type: integer, format: int64, nullable: true } # 이벤트와 관련된 리소스의 ID (nullable: 특정 리소스와 무관한 이벤트일 수 있음).
+        floorCode:     { type: string, nullable: true } # 이벤트가 발생한 층 코드 (nullable: 층과 무관한 이벤트일 수 있음).
+        data:          { type: string } # MVP에선 문자열(JSON 텍스트)로 단순화. 이벤트의 상세 데이터를 담습니다. 복잡한 객체 대신 직렬화된 JSON 문자열로 전달하여 MVP 개발을 단순화합니다.
+        correlationId: { type: string, nullable: true } # 요청부터 이벤트 발생까지의 과정을 추적하기 위한 ID. 디버깅과 모니터링에 필수적입니다.
+      required: [eventId, type, data] # 이 세 필드는 PollEvent 객체에 반드시 포함되어야 함을 명시합니다.
+    PollResponse:              # 커서가 핵심이라 lastId를 최상위에 두어 사용성↑. /events/poll 엔드포인트의 최종 응답 구조입니다.
+      type: object
+      properties:
+        lastId: { type: integer, format: int64 } # 이번에 반환된 이벤트 목록 중 가장 마지막(큰) eventId. 클라이언트는 이 값을 저장했다가 다음 요청 시 'sinceId' 쿼리 파라미터로 사용해야 합니다.
+        events:
+          type: array
+          items: { $ref: '#/components/schemas/PollEvent' } # PollEvent 객체들의 배열. $ref는 위에서 정의한 PollEvent 스키마를 재사용하겠다는 의미입니다.
+      required: [lastId, events] # lastId와 events 필드는 PollResponse에 반드시 포함되어야 합니다.
+
+paths: # 실제 API 엔드포인트들을 정의하는 곳입니다.
+  /events/poll:
+    get:
+      summary: 폴링 커서 조회            # 10주차까지 실시간은 폴링이 표준(설계 원칙을 명문화). API의 핵심 기능과 제약을 요약합니다.
+      description: sinceId 이후 이벤트를 event_id ASC로 반환. **이것이 이 API의 가장 중요한 계약입니다.** 항상 event_id 오름차순으로 정렬하여 커서 기반 페이징이 일관되게 동작하도록 보장합니다.
+      parameters: # 이 엔드포인트가 받는 파라미터들을 정의합니다.
+        # sinceId: 단조 증가 키(event_id)를 커서로 사용(클라이언트가 저장하기 쉬움). 클라이언트는 직전 응답에서 받은 'lastId'를 여기에 담아 요청합니다.
+        - in: query # 파라미터의 위치가 쿼리 스트링임을 명시 (예: ?sinceId=123)
+          name: sinceId
+          schema: { type: integer, format: int64 }
+        # limit: DDoS/과부하 회피. 상한 200은 서버/DB 부담 기준선. 한 번에 너무 많은 데이터를 요청하여 서버에 부하를 주는 것을 방지합니다.
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 200, default: 50 } # 1~200 사이의 값만 허용하며, 명시하지 않으면 기본값 50을 사용합니다.
+        # 서버 사이드 필터; 클라가 필요한 이벤트만 좁혀 네트워크 비용 절감. 모든 이벤트를 다 받는 대신, 특정 리소스나 층에 대한 이벤트만 필터링합니다.
+        - in: query
+          name: resourceId
+          schema: { type: integer, format: int64 }
+        - in: query
+          name: floor
+          schema: { type: string }
+      responses: # 이 엔드포인트의 가능한 응답들을 HTTP 상태 코드별로 정의합니다.
+        '200':
+          description: OK
+          content:
+            application/json: # 응답의 미디어 타입이 JSON임을 명시합니다.
+              schema: { $ref: '#/components/schemas/PollResponse' } # 성공 시 응답 본문은 위에서 정의한 PollResponse 스키마를 따릅니다.
+        # 아래 상태코드는 "우리 프로젝트 규약"이라 seed에 못박아 팀 일관성 확보.
+        # 에러 발생 시 'application/problem+json' 미디어 타입을 사용하고, 본문은 'Problem' 스키마를 따르도록 강제합니다.
+        '409': { description: Conflict,          content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' }}}} # 상태/고유성 충돌 시 반환 (예: 라벨 중복)
+        '422': { description: Unprocessable,     content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' }}}} # 의미/규칙 위반 시 반환 (예: CHECK 제약 위반)
+        '423': { description: Locked,            content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' }}}} # 업무상 쓰기 금지 상태일 때 반환 (예: 검사 중)
+        '429': { description: Too Many Requests, content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' }}}} # 레이트 리밋 초과 시 반환
+      security: [ { BearerAuth: [] } ]  # 이 엔드포인트는 인증이 필요함을 명시합니다. 위에서 정의한 BearerAuth 보안 스킴을 적용하며, 클라이언트는 유효한 JWT를 헤더에 포함해야 합니다.

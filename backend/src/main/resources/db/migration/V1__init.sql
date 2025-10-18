@@ -1,474 +1,484 @@
--- ======================================================================
--- V1__init.sql (Unified Latest)
--- 이 파일 하나로 새 DB를 최신 상태로 세팅합니다.
--- ======================================================================
+-- =========================
+-- DormMate 초기 스키마 (PostgreSQL 전용)
+-- 목적: 냉장고 관리 MVP 핵심 테이블, 제약, 트리거 정의
+-- 정책: UTC 고정, snake_case 명명, ENUM 최소화, JSONB 사용
+-- =========================
 
--- 확장
+SET TIME ZONE 'UTC';
+
+-- 대소문자 구분 없는 텍스트 비교를 위한 확장
 CREATE EXTENSION IF NOT EXISTS citext;
-CREATE EXTENSION IF NOT EXISTS btree_gist;
 
+-- ============
 -- ENUM 타입 정의
-DO $$
-BEGIN
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'machine_type') THEN
-    CREATE TYPE machine_type AS ENUM ('WASHER','DRYER');
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'item_status') THEN
-    CREATE TYPE item_status AS ENUM ('STORED','DISCARDED');
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'session_status') THEN
-    CREATE TYPE session_status AS ENUM ('RUNNING','COMPLETED','CANCELED');
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'book_status') THEN
-    CREATE TYPE book_status AS ENUM ('AVAILABLE','ON_LOAN','RESERVED','LOST');
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'reservation_status') THEN
-    CREATE TYPE reservation_status AS ENUM ('RESERVED','CANCELED','COMPLETED','NO_SHOW');
-  END IF;
-  IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'report_status') THEN
-    CREATE TYPE report_status AS ENUM ('REPORTED','CONFIRMED','RESOLVED');
-  END IF;
-END$$;
+-- ============
+CREATE TYPE room_type AS ENUM ('SINGLE', 'TRIPLE');
+CREATE TYPE user_role AS ENUM ('RESIDENT', 'INSPECTOR', 'ADMIN');
+CREATE TYPE compartment_type AS ENUM ('FRIDGE', 'FREEZER');
+CREATE TYPE inspection_session_status AS ENUM ('OPEN', 'SUBMITTED', 'CANCELLED');
 
--- updated_at 자동 갱신 트리거 함수
-CREATE OR REPLACE FUNCTION set_updated_at()
-RETURNS trigger AS $$
-BEGIN
-  NEW.updated_at := now();
-  RETURN NEW;
-END;$$ LANGUAGE plpgsql;
-
--- ======================================================================
--- Ⅰ. 마스터 데이터
--- ======================================================================
-
-CREATE TABLE dorm_rooms (
-  dorm_room_id bigserial PRIMARY KEY,
-  room_number  integer NOT NULL,
-  floor        integer NOT NULL,
-  capacity     integer NOT NULL DEFAULT 1,
-  is_active    boolean NOT NULL DEFAULT true,
-  CONSTRAINT uk_room_number UNIQUE (room_number)
+-- ============
+-- 코드 테이블
+-- ============
+CREATE TABLE bundle_status (
+    code         VARCHAR(20) PRIMARY KEY,
+    display_name VARCHAR(50) NOT NULL,
+    description  TEXT,
+    is_terminal  BOOLEAN NOT NULL DEFAULT FALSE,
+    sort_order   INTEGER NOT NULL DEFAULT 0,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE roles (
-  role_id     bigserial PRIMARY KEY,
-  role_name   varchar(50) NOT NULL UNIQUE,
-  description varchar(255)
+CREATE TABLE item_state (
+    code         VARCHAR(20) PRIMARY KEY,
+    next_states  JSONB NOT NULL,
+    is_terminal  BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE machine_statuses (
-  status_id   bigserial PRIMARY KEY,
-  status_code varchar(50) NOT NULL UNIQUE,
-  description varchar(255)
+CREATE TABLE notification_kind (
+    code       VARCHAR(30) PRIMARY KEY,
+    module     VARCHAR(20) NOT NULL,
+    severity   SMALLINT NOT NULL,
+    ttl_hours  INTEGER NOT NULL,
+    template   TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TABLE notification_types (
-  type_code            varchar(50) PRIMARY KEY,
-  description          varchar(255) NOT NULL,
-  is_user_configurable boolean NOT NULL DEFAULT true
+CREATE TABLE inspection_action_type (
+    code             VARCHAR(30) PRIMARY KEY,
+    requires_reason  BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at       TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 
--- ======================================================================
--- Ⅱ. 코어 & 사용자
--- ======================================================================
+CREATE TABLE warning_reason (
+    code             VARCHAR(40) PRIMARY KEY,
+    action_type_code VARCHAR(30) NOT NULL,
+    CONSTRAINT fk_warning_reason_action
+        FOREIGN KEY (action_type_code) REFERENCES inspection_action_type(code)
+);
+
+-- ============
+-- 공통 도메인
+-- ============
+CREATE TABLE rooms (
+    id          BIGSERIAL PRIMARY KEY,
+    floor       SMALLINT NOT NULL,
+    room_number VARCHAR(10) NOT NULL,
+    capacity    SMALLINT NOT NULL,
+    type        room_type NOT NULL,
+    CONSTRAINT uq_rooms_floor_room UNIQUE (floor, room_number)
+);
+CREATE INDEX ix_rooms_floor ON rooms (floor);
 
 CREATE TABLE users (
-  user_id         bigserial PRIMARY KEY,
-  dorm_room_id    bigint NULL REFERENCES dorm_rooms(dorm_room_id) ON DELETE SET NULL,
-  personal_number integer NULL, -- 방 미배정이면 NULL 허용
-  username        citext NOT NULL UNIQUE,
-  password_hash   text NOT NULL,
-  email           citext NOT NULL UNIQUE,
-  role_id         bigint NOT NULL REFERENCES roles(role_id),
-  is_active       boolean NOT NULL DEFAULT true,
-  created_at      timestamptz NOT NULL DEFAULT now(),
-  updated_at      timestamptz NOT NULL DEFAULT now()
+    id                BIGSERIAL PRIMARY KEY,
+    login_id          CITEXT NOT NULL,
+    email             CITEXT,
+    password_hash     VARCHAR(255) NOT NULL,
+    room_id           BIGINT,
+    personal_no       SMALLINT,
+    role              user_role NOT NULL,
+    is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+    access_restricted BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at        TIMESTAMPTZ,
+    CONSTRAINT uq_users_login_id UNIQUE (login_id),
+    CONSTRAINT uq_users_email UNIQUE (email),
+    CONSTRAINT uq_users_room_person UNIQUE (room_id, personal_no),
+    CONSTRAINT fk_users_room FOREIGN KEY (room_id) REFERENCES rooms(id)
 );
-CREATE TRIGGER trg_users_updated_at
-BEFORE UPDATE ON users
-FOR EACH ROW EXECUTE FUNCTION set_updated_at();
--- 방이 지정된 경우에만 개인번호 유니크 강제 (부분 유니크 인덱스)
-CREATE UNIQUE INDEX IF NOT EXISTS ux_users_room_person_assigned
-  ON users(dorm_room_id, personal_number)
-  WHERE dorm_room_id IS NOT NULL AND personal_number IS NOT NULL;
--- 방별 사용자 조회 보조 인덱스
-CREATE INDEX IF NOT EXISTS ix_users_dorm_room ON users(dorm_room_id);
+CREATE INDEX ix_users_role_active ON users (role, is_active);
 
--- ======================================================================
--- Ⅲ. 자원 상세 & 접근 제어
--- ======================================================================
-
--- 냉장고
-CREATE TABLE refrigerators (
-  refrigerator_id bigserial PRIMARY KEY,
-  name            varchar(100) NOT NULL,
-  location        varchar(255) NOT NULL,
-  is_active       boolean NOT NULL DEFAULT true
+CREATE TABLE audit_logs (
+    id                    BIGSERIAL PRIMARY KEY,
+    actor_id              BIGINT,
+    actor_role_at_action  VARCHAR(20),
+    request_id            VARCHAR(36),
+    scope                 VARCHAR(50) NOT NULL,
+    ref_type              VARCHAR(50),
+    ref_id                BIGINT,
+    action                VARCHAR(100) NOT NULL,
+    before_json           JSONB,
+    after_json            JSONB,
+    ip_address            VARCHAR(45),
+    created_at            TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
+CREATE INDEX ix_audit_logs_actor_time ON audit_logs (actor_id, created_at DESC);
+CREATE INDEX ix_audit_logs_scope_ref ON audit_logs (scope, ref_id, created_at DESC);
+
+CREATE TABLE penalty_histories (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     BIGINT NOT NULL,
+    source      VARCHAR(40) NOT NULL,
+    points      SMALLINT NOT NULL,
+    description TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_penalty_histories_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX ix_penalty_histories_user_time ON penalty_histories (user_id, created_at DESC);
+
+-- ============
+-- 냉장고 자원
+-- ============
+CREATE TABLE fridge_units (
+    id        BIGSERIAL PRIMARY KEY,
+    building  VARCHAR(20),
+    floor     SMALLINT NOT NULL,
+    unit_no   SMALLINT NOT NULL,
+    CONSTRAINT uq_fridge_units_floor_no UNIQUE (floor, unit_no)
+);
+CREATE INDEX ix_fridge_units_floor ON fridge_units (floor);
 
 CREATE TABLE compartments (
-  compartment_id  bigserial PRIMARY KEY,
-  refrigerator_id bigint NOT NULL REFERENCES refrigerators(refrigerator_id),
-  label           varchar(50) NOT NULL,
-  type            varchar(16) NOT NULL CHECK (type IN ('REFRIGERATED','FREEZER')),
-  CONSTRAINT uk_compartment_per_fridge UNIQUE (refrigerator_id, label)
+    id                    BIGSERIAL PRIMARY KEY,
+    unit_id               BIGINT NOT NULL,
+    display_order         INTEGER NOT NULL,
+    type                  compartment_type NOT NULL,
+    label_range_start     INTEGER NOT NULL,
+    label_range_end       INTEGER NOT NULL,
+    lock_owner_session_id UUID,
+    lock_acquired_at      TIMESTAMPTZ,
+    lock_expires_at       TIMESTAMPTZ,
+    CONSTRAINT uq_compartments_unit_display_order UNIQUE (unit_id, display_order),
+    CONSTRAINT fk_compartments_unit FOREIGN KEY (unit_id) REFERENCES fridge_units(id)
 );
-CREATE INDEX IF NOT EXISTS ix_compartments_refrigerator_id ON compartments(refrigerator_id);
+CREATE INDEX ix_compartments_lock_owner ON compartments (lock_owner_session_id);
+CREATE INDEX ix_compartments_lock_exp ON compartments (lock_expires_at);
 
-CREATE TABLE compartment_access_rules (
-  rule_id            bigserial PRIMARY KEY,
-  compartment_id     bigint NOT NULL REFERENCES compartments(compartment_id) ON DELETE CASCADE,
-  start_room_number  integer NOT NULL,
-  end_room_number    integer NOT NULL,
-  room_range         int4range GENERATED ALWAYS AS (int4range(start_room_number, end_room_number, '[]')) STORED,
-  CHECK (end_room_number >= start_room_number)
+CREATE TABLE compartment_room_access (
+    id              BIGSERIAL PRIMARY KEY,
+    compartment_id  BIGINT NOT NULL,
+    room_id         BIGINT NOT NULL,
+    allocation_rule VARCHAR(50),
+    active_from     DATE NOT NULL,
+    active_to       DATE,
+    CONSTRAINT uq_cra_compartment_room UNIQUE (compartment_id, room_id),
+    CONSTRAINT fk_cra_compartment FOREIGN KEY (compartment_id) REFERENCES compartments(id),
+    CONSTRAINT fk_cra_room FOREIGN KEY (room_id) REFERENCES rooms(id)
 );
-CREATE INDEX IF NOT EXISTS ix_compartment_access_compartment_id ON compartment_access_rules(compartment_id);
-CREATE INDEX IF NOT EXISTS ix_compartment_access_room_range ON compartment_access_rules(start_room_number, end_room_number);
-ALTER TABLE compartment_access_rules
-  ADD CONSTRAINT no_overlap_compartment_access
-  EXCLUDE USING gist (
-    compartment_id WITH =,
-    room_range     WITH &&
-  );
+CREATE INDEX ix_cra_compartment_active ON compartment_room_access (compartment_id, active_to);
+CREATE INDEX ix_cra_room_active ON compartment_room_access (room_id, active_to);
 
-CREATE TABLE bundles (
-  bundle_id      bigserial PRIMARY KEY,
-  user_id        bigint NOT NULL REFERENCES users(user_id),
-  compartment_id bigint NOT NULL REFERENCES compartments(compartment_id),
-  bundle_name    varchar(100) NOT NULL,
-  memo           text,
-  registered_at  timestamptz NOT NULL DEFAULT now()
+CREATE TABLE label_pool (
+    compartment_id      BIGINT NOT NULL,
+    label_number        INTEGER NOT NULL,
+    status              SMALLINT NOT NULL DEFAULT 0,
+    last_used_bundle_id BIGINT,
+    last_used_at        TIMESTAMPTZ,
+    PRIMARY KEY (compartment_id, label_number),
+    CONSTRAINT fk_label_pool_compartment FOREIGN KEY (compartment_id) REFERENCES compartments(id)
 );
-CREATE INDEX IF NOT EXISTS ix_bundles_user_id ON bundles(user_id);
-CREATE INDEX IF NOT EXISTS ix_bundles_compartment_id ON bundles(compartment_id);
+CREATE INDEX ix_label_pool_status ON label_pool (compartment_id, status);
 
-CREATE TABLE items (
-  item_id        bigserial PRIMARY KEY,
-  bundle_id      bigint NOT NULL REFERENCES bundles(bundle_id) ON DELETE CASCADE,
-  item_name      varchar(100) NOT NULL,
-  expiry_date    date,
-  status         item_status NOT NULL DEFAULT 'STORED',
-  discarded_at   timestamptz NULL,
-  discard_reason varchar(255) NULL
+-- ============
+-- 냉장고 데이터
+-- ============
+CREATE TABLE fridge_bundles (
+    id               BIGSERIAL PRIMARY KEY,
+    owner_id         BIGINT NOT NULL,
+    compartment_id   BIGINT NOT NULL,
+    label_number     INTEGER NOT NULL,
+    bundle_name      VARCHAR(100),
+    status_code      VARCHAR(20) NOT NULL,
+    registered_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_modified_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_fridge_bundles_compartment_label UNIQUE (compartment_id, label_number),
+    CONSTRAINT fk_fridge_bundles_owner FOREIGN KEY (owner_id) REFERENCES users(id),
+    CONSTRAINT fk_fridge_bundles_compartment FOREIGN KEY (compartment_id) REFERENCES compartments(id),
+    CONSTRAINT fk_fridge_bundles_status FOREIGN KEY (status_code) REFERENCES bundle_status(code)
 );
-CREATE INDEX IF NOT EXISTS ix_items_bundle_id ON items(bundle_id);
-CREATE INDEX IF NOT EXISTS ix_items_expiry_date ON items(expiry_date);
+CREATE INDEX ix_fridge_bundles_owner_status_reg ON fridge_bundles (owner_id, status_code, registered_at DESC);
+CREATE INDEX ix_fridge_bundles_compartment_status ON fridge_bundles (compartment_id, status_code);
+CREATE INDEX ix_fridge_bundles_compartment_modified ON fridge_bundles (compartment_id, last_modified_at DESC);
 
--- 세탁 시설
-CREATE TABLE laundry_rooms (
-  laundry_room_id bigserial PRIMARY KEY,
-  name            varchar(100) NOT NULL,
-  location        varchar(255) NOT NULL
+CREATE TABLE fridge_items (
+    id          BIGSERIAL PRIMARY KEY,
+    bundle_id   BIGINT NOT NULL,
+    item_name   VARCHAR(100) NOT NULL,
+    expiry_date DATE,
+    state_code  VARCHAR(20) NOT NULL,
+    memo        TEXT,
+    CONSTRAINT fk_fridge_items_bundle FOREIGN KEY (bundle_id) REFERENCES fridge_bundles(id),
+    CONSTRAINT fk_fridge_items_state FOREIGN KEY (state_code) REFERENCES item_state(code)
 );
+CREATE INDEX ix_fridge_items_bundle ON fridge_items (bundle_id);
+CREATE INDEX ix_fridge_items_state_expiry ON fridge_items (state_code, expiry_date);
 
-CREATE TABLE laundry_machines (
-  machine_id         bigserial PRIMARY KEY,
-  laundry_room_id    bigint NOT NULL REFERENCES laundry_rooms(laundry_room_id),
-  name               varchar(100) NOT NULL,
-  type               machine_type NOT NULL,
-  status_id          bigint NOT NULL REFERENCES machine_statuses(status_id),
-  end_time           timestamptz NULL,
-  current_session_id bigint NULL,
-  CONSTRAINT uk_machine_per_room UNIQUE (laundry_room_id, name)
+-- ============
+-- 검사 시스템
+-- ============
+CREATE TABLE inspection_sessions (
+    id             BIGSERIAL PRIMARY KEY,
+    compartment_id BIGINT NOT NULL,
+    session_uuid   UUID NOT NULL,
+    status         inspection_session_status NOT NULL,
+    started_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at       TIMESTAMPTZ,
+    CONSTRAINT uq_inspection_sessions_uuid UNIQUE (session_uuid),
+    CONSTRAINT fk_inspection_sessions_compartment FOREIGN KEY (compartment_id) REFERENCES compartments(id)
 );
-CREATE INDEX IF NOT EXISTS ix_laundry_machines_room_id ON laundry_machines(laundry_room_id);
-CREATE INDEX IF NOT EXISTS ix_laundry_machines_status_id ON laundry_machines(status_id);
-CREATE INDEX IF NOT EXISTS ix_lm_room_status ON laundry_machines(laundry_room_id, status_id);
+CREATE INDEX ix_inspection_sessions_compartment_status ON inspection_sessions (compartment_id, status);
+CREATE INDEX ix_inspection_sessions_status_started ON inspection_sessions (status, started_at DESC);
 
-CREATE TABLE laundry_machine_access_rules (
-  rule_id            bigserial PRIMARY KEY,
-  machine_id         bigint NOT NULL REFERENCES laundry_machines(machine_id) ON DELETE CASCADE,
-  start_room_number  integer NOT NULL,
-  end_room_number    integer NOT NULL,
-  room_range         int4range GENERATED ALWAYS AS (int4range(start_room_number, end_room_number, '[]')) STORED,
-  CHECK (end_room_number >= start_room_number)
+CREATE TABLE inspection_inspectors (
+    id           BIGSERIAL PRIMARY KEY,
+    session_id   BIGINT NOT NULL,
+    inspector_id BIGINT NOT NULL,
+    joined_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT uq_inspection_inspectors_session_user UNIQUE (session_id, inspector_id),
+    CONSTRAINT fk_inspection_inspectors_session FOREIGN KEY (session_id) REFERENCES inspection_sessions(id),
+    CONSTRAINT fk_inspection_inspectors_user FOREIGN KEY (inspector_id) REFERENCES users(id)
 );
-CREATE INDEX IF NOT EXISTS ix_machine_access_machine_id ON laundry_machine_access_rules(machine_id);
-CREATE INDEX IF NOT EXISTS ix_machine_access_room_range ON laundry_machine_access_rules(start_room_number, end_room_number);
-ALTER TABLE laundry_machine_access_rules
-  ADD CONSTRAINT no_overlap_machine_access
-  EXCLUDE USING gist (
-    machine_id WITH =,
-    room_range WITH &&
-  );
+CREATE INDEX ix_inspection_inspectors_user ON inspection_inspectors (inspector_id);
 
-CREATE TABLE user_laundry_settings (
-  setting_id  bigserial PRIMARY KEY,
-  user_id     bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-  preset_name varchar(50) NOT NULL,
-  minutes     integer NOT NULL,
-  CONSTRAINT uk_user_preset UNIQUE (user_id, preset_name)
+CREATE TABLE inspection_actions (
+    id                   BIGSERIAL PRIMARY KEY,
+    session_id           BIGINT NOT NULL,
+    inspector_id         BIGINT NOT NULL,
+    bundle_id            BIGINT,
+    action_type_code     VARCHAR(30) NOT NULL,
+    reason_code          VARCHAR(40),
+    memo                 TEXT,
+    unregistered_item_name VARCHAR(100),
+    action_time          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_inspection_actions_session FOREIGN KEY (session_id) REFERENCES inspection_sessions(id),
+    CONSTRAINT fk_inspection_actions_user FOREIGN KEY (inspector_id) REFERENCES users(id),
+    CONSTRAINT fk_inspection_actions_bundle FOREIGN KEY (bundle_id) REFERENCES fridge_bundles(id),
+    CONSTRAINT fk_inspection_actions_type FOREIGN KEY (action_type_code) REFERENCES inspection_action_type(code),
+    CONSTRAINT fk_inspection_actions_reason FOREIGN KEY (reason_code) REFERENCES warning_reason(code)
 );
+CREATE INDEX ix_inspection_actions_session ON inspection_actions (session_id);
+CREATE INDEX ix_inspection_actions_bundle ON inspection_actions (bundle_id);
+CREATE INDEX ix_inspection_actions_type_time ON inspection_actions (action_type_code, action_time);
 
--- ======================================================================
--- Ⅳ. 기록/알림/설정
--- ======================================================================
-
--- 세탁기 세션
-CREATE TABLE machine_usage_log (
-  session_id      bigserial PRIMARY KEY,
-  machine_id      bigint NOT NULL REFERENCES laundry_machines(machine_id),
-  user_id         bigint NULL REFERENCES users(user_id) ON DELETE SET NULL,
-  proxy_user_id   bigint NULL REFERENCES users(user_id) ON DELETE SET NULL,
-  start_time      timestamptz NOT NULL,
-  end_time        timestamptz NOT NULL,
-  actual_end_time timestamptz NULL,
-  status          session_status NOT NULL DEFAULT 'RUNNING',
-  CHECK (end_time > start_time),
-  CHECK (actual_end_time IS NULL OR actual_end_time >= start_time),
-  CHECK ((status = 'COMPLETED' AND actual_end_time IS NOT NULL) OR (status <> 'COMPLETED' AND actual_end_time IS NULL))
-);
-CREATE INDEX IF NOT EXISTS ix_mul_machine_id ON machine_usage_log(machine_id);
-CREATE INDEX IF NOT EXISTS ix_mul_user_id    ON machine_usage_log(user_id);
-CREATE INDEX IF NOT EXISTS ix_mul_proxy_id   ON machine_usage_log(proxy_user_id);
--- 동시 RUNNING 세션 1개 제한(부분 유니크)
-CREATE UNIQUE INDEX IF NOT EXISTS ux_running_per_machine
-  ON machine_usage_log(machine_id)
-  WHERE status = 'RUNNING';
--- 곧 끝나는 세션 조회 최적화
-CREATE INDEX IF NOT EXISTS ix_running_end_time
-  ON machine_usage_log(end_time)
-  WHERE status = 'RUNNING';
--- 사용자 본인 RUNNING 세션 빠른 조회
-CREATE INDEX IF NOT EXISTS ix_mul_user_running
-  ON machine_usage_log(user_id)
-  WHERE status = 'RUNNING';
-
--- FK + 트리거: current_session_id 무결성 (RUNNING + 같은 기기)
-ALTER TABLE laundry_machines
-  ADD CONSTRAINT fk_current_session_id
-  FOREIGN KEY (current_session_id)
-  REFERENCES machine_usage_log(session_id)
-  ON DELETE SET NULL;
-
-CREATE OR REPLACE FUNCTION enforce_current_session_machine_match()
-RETURNS trigger AS $$
-DECLARE
-  sid_machine bigint;
-  sid_status  session_status;
-BEGIN
-  IF NEW.current_session_id IS NULL THEN
-    RETURN NEW;
-  END IF;
-
-  SELECT machine_id, status
-    INTO sid_machine, sid_status
-  FROM machine_usage_log
-  WHERE session_id = NEW.current_session_id;
-
-  IF sid_machine IS NULL OR sid_machine <> NEW.machine_id THEN
-    RAISE EXCEPTION 'current_session_id % does not belong to machine %',
-      NEW.current_session_id, NEW.machine_id;
-  END IF;
-  IF sid_status IS DISTINCT FROM 'RUNNING' THEN
-    RAISE EXCEPTION 'current_session_id % is not RUNNING (actual=%)',
-      NEW.current_session_id, sid_status;
-  END IF;
-  RETURN NEW;
-END;$$ LANGUAGE plpgsql;
-
-DROP TRIGGER IF EXISTS trg_machine_current_session ON laundry_machines;
-CREATE TRIGGER trg_machine_current_session
-BEFORE INSERT OR UPDATE OF current_session_id, machine_id
-ON laundry_machines
-FOR EACH ROW EXECUTE FUNCTION enforce_current_session_machine_match();
-
--- 세션 상호작용
-CREATE TABLE session_interactions (
-  interaction_id   bigserial PRIMARY KEY,
-  session_id       bigint NOT NULL REFERENCES machine_usage_log(session_id) ON DELETE CASCADE,
-  actor_user_id    bigint NOT NULL REFERENCES users(user_id),
-  interaction_type varchar(50) NOT NULL,
-  details          jsonb,
-  is_read          boolean NOT NULL DEFAULT false,
-  created_at       timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS ix_session_interactions_session_id ON session_interactions(session_id);
-CREATE INDEX IF NOT EXISTS ix_session_interactions_actor_id   ON session_interactions(actor_user_id);
-CREATE INDEX IF NOT EXISTS ix_session_interactions_details_gin ON session_interactions USING gin (details);
-
--- 도서
-CREATE TABLE books (
-  book_id        bigserial PRIMARY KEY,
-  title          varchar(255) NOT NULL,
-  author         varchar(100) NOT NULL,
-  publisher      varchar(100),
-  published_year integer,
-  status         book_status NOT NULL DEFAULT 'AVAILABLE'
-);
-CREATE INDEX IF NOT EXISTS ix_books_title  ON books(title);
-CREATE INDEX IF NOT EXISTS ix_books_author ON books(author);
-CREATE INDEX IF NOT EXISTS ix_books_status ON books(status);
-
--- 도서 대출
-CREATE TABLE book_loans (
-  loan_id         bigserial PRIMARY KEY,
-  book_id         bigint NOT NULL REFERENCES books(book_id),
-  user_id         bigint NOT NULL REFERENCES users(user_id),
-  loan_date       timestamptz NOT NULL DEFAULT now(),
-  due_date        timestamptz NOT NULL,
-  return_date     timestamptz NULL,
-  extension_count integer NOT NULL DEFAULT 0,
-  CHECK (due_date > loan_date)
-);
-CREATE INDEX IF NOT EXISTS ix_book_loans_book_id     ON book_loans(book_id);
-CREATE INDEX IF NOT EXISTS ix_book_loans_user_id     ON book_loans(user_id);
-CREATE INDEX IF NOT EXISTS ix_book_loans_return_date ON book_loans(return_date);
--- 같은 책 미반납 상태 중복 대출 금지
-CREATE UNIQUE INDEX IF NOT EXISTS ux_book_on_loan
-  ON book_loans(book_id)
-  WHERE return_date IS NULL;
-
--- 스터디룸
-
-CREATE TABLE study_rooms (
-  study_room_id bigserial PRIMARY KEY,
-  name          varchar(100) NOT NULL,
-  location      varchar(255) NOT NULL,
-  capacity      integer NOT NULL DEFAULT 4,
-  is_active     boolean NOT NULL DEFAULT true
-);
-
-CREATE TABLE study_room_reservations (
-  reservation_id bigserial PRIMARY KEY,
-  study_room_id  bigint NOT NULL REFERENCES study_rooms(study_room_id),
-  user_id        bigint NOT NULL REFERENCES users(user_id),
-  start_time     timestamptz NOT NULL,
-  end_time       timestamptz NOT NULL,
-  status         reservation_status NOT NULL DEFAULT 'RESERVED',
-  created_at     timestamptz NOT NULL DEFAULT now(),
-  CHECK (end_time > start_time)
-);
-CREATE INDEX IF NOT EXISTS ix_srr_room_id ON study_room_reservations(study_room_id);
-CREATE INDEX IF NOT EXISTS ix_srr_user_id ON study_room_reservations(user_id);
-CREATE INDEX IF NOT EXISTS ix_srr_time    ON study_room_reservations(start_time, end_time);
-ALTER TABLE study_room_reservations
-  ADD CONSTRAINT srr_no_overlap
-  EXCLUDE USING gist (
-    study_room_id WITH =,
-    tstzrange(start_time, end_time, '[)') WITH &&
-  )
-  WHERE (status = 'RESERVED');
--- 앞으로 시작하는 예약 조회 최적화 (now() 함수 제거)
-CREATE INDEX IF NOT EXISTS ix_srr_upcoming
-  ON study_room_reservations(start_time)
-  WHERE status = 'RESERVED';
-
--- 포인트
-CREATE TABLE points_log (
-  point_id  bigserial PRIMARY KEY,
-  user_id   bigint NOT NULL REFERENCES users(user_id),
-  issuer_id bigint NOT NULL REFERENCES users(user_id),
-  points    integer NOT NULL,
-  reason    varchar(255) NOT NULL,
-  issued_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS ix_points_user_id   ON points_log(user_id);
-CREATE INDEX IF NOT EXISTS ix_points_issuer_id ON points_log(issuer_id);
-
--- 기기 보고
-CREATE TABLE machine_reports (
-  report_id   bigserial PRIMARY KEY,
-  machine_id  bigint NOT NULL REFERENCES laundry_machines(machine_id),
-  reporter_id bigint NOT NULL REFERENCES users(user_id),
-  reason      text NOT NULL,
-  status      report_status NOT NULL DEFAULT 'REPORTED',
-  reported_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS ix_reports_machine_id  ON machine_reports(machine_id);
-CREATE INDEX IF NOT EXISTS ix_reports_reporter_id ON machine_reports(reporter_id);
-
--- 활동 로그
-CREATE TABLE activity_logs (
-  log_id      bigserial PRIMARY KEY,
-  user_id     bigint NULL REFERENCES users(user_id) ON DELETE SET NULL,
-  action_type varchar(100) NOT NULL,
-  details     jsonb,
-  occurred_at timestamptz NOT NULL DEFAULT now()
-);
-CREATE INDEX IF NOT EXISTS ix_activity_user_id ON activity_logs(user_id);
-CREATE INDEX IF NOT EXISTS ix_activity_action  ON activity_logs(action_type);
-
--- 알림
+-- ============
+-- 알림 테이블
+-- ============
 CREATE TABLE notifications (
-  notification_id        bigserial PRIMARY KEY,
-  recipient_id           bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-  content                text NOT NULL,
-  is_read                boolean NOT NULL DEFAULT false,
-  notification_type_code varchar(50) NOT NULL REFERENCES notification_types(type_code),
-  related_entity_type    varchar(50),
-  related_entity_id      bigint,
-  created_at             timestamptz NOT NULL DEFAULT now()
+    id                  BIGSERIAL PRIMARY KEY,
+    user_id             BIGINT NOT NULL,
+    kind_code           VARCHAR(30) NOT NULL,
+    title               VARCHAR(100) NOT NULL,
+    preview_json        JSONB,
+    preview_summary     TEXT GENERATED ALWAYS AS (preview_json ->> 'summary') STORED,
+    detail_json         JSONB,
+    related_bundle_id   BIGINT,
+    related_session_id  BIGINT,
+    dedupe_key          CHAR(64) NOT NULL,
+    is_read             BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ttl_at              TIMESTAMPTZ,
+    CONSTRAINT uq_notifications_dedupe UNIQUE (dedupe_key),
+    CONSTRAINT fk_notifications_user FOREIGN KEY (user_id) REFERENCES users(id),
+    CONSTRAINT fk_notifications_kind FOREIGN KEY (kind_code) REFERENCES notification_kind(code),
+    CONSTRAINT fk_notifications_bundle FOREIGN KEY (related_bundle_id) REFERENCES fridge_bundles(id) ON DELETE SET NULL,
+    CONSTRAINT fk_notifications_session FOREIGN KEY (related_session_id) REFERENCES inspection_sessions(id) ON DELETE SET NULL,
+    CONSTRAINT chk_notifications_related CHECK (
+        (kind_code = 'FRIDGE_EXPIRY' AND related_bundle_id IS NOT NULL)
+     OR (kind_code = 'FRIDGE_RESULT' AND related_session_id IS NOT NULL)
+     OR (kind_code NOT IN ('FRIDGE_EXPIRY', 'FRIDGE_RESULT'))
+    )
 );
-CREATE INDEX IF NOT EXISTS ix_notifications_recipient_read ON notifications(recipient_id, is_read);
-CREATE INDEX IF NOT EXISTS ix_notifications_type           ON notifications(notification_type_code);
-CREATE INDEX IF NOT EXISTS ix_notifications_user_read_created ON notifications(recipient_id, is_read, created_at DESC);
+CREATE INDEX ix_notifications_list ON notifications (user_id, is_read, created_at DESC, id, kind_code);
+CREATE INDEX ix_notifications_ttl ON notifications (ttl_at);
+CREATE INDEX ix_notifications_bundle ON notifications (related_bundle_id);
+CREATE INDEX ix_notifications_session ON notifications (related_session_id);
+CREATE INDEX ix_notifications_preview_json_gin ON notifications USING GIN (preview_json);
+CREATE INDEX ix_notifications_detail_json_gin ON notifications USING GIN (detail_json);
 
-CREATE TABLE user_notification_settings (
-  user_id                bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-  notification_type_code varchar(50) NOT NULL REFERENCES notification_types(type_code) ON DELETE CASCADE,
-  is_enabled             boolean NOT NULL DEFAULT true,
-  PRIMARY KEY (user_id, notification_type_code)
-);
+-- ============
+-- 트리거 함수 및 트리거
+-- ============
+CREATE OR REPLACE FUNCTION fn_check_compartment_lock_window()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF NEW.lock_expires_at IS NOT NULL
+       AND NEW.lock_acquired_at IS NOT NULL
+       AND NEW.lock_expires_at <= NEW.lock_acquired_at THEN
+        RAISE EXCEPTION 'lock_expires_at must be greater than lock_acquired_at';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
--- 시스템 설정
-CREATE TABLE system_settings (
-  setting_key   varchar(100) PRIMARY KEY,
-  setting_value varchar(255) NOT NULL
-);
+CREATE TRIGGER trg_compartments_lock_window_ins
+BEFORE INSERT ON compartments
+FOR EACH ROW EXECUTE FUNCTION fn_check_compartment_lock_window();
 
--- 통계(요약)
-CREATE TABLE user_stats (
-  user_id         bigint NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
-  stat_month      varchar(7) NOT NULL,  -- 'YYYY-MM'
-  laundry_count   integer NOT NULL DEFAULT 0,
-  study_minutes   integer NOT NULL DEFAULT 0,
-  book_loan_count integer NOT NULL DEFAULT 0,
-  PRIMARY KEY (user_id, stat_month)
-);
+CREATE TRIGGER trg_compartments_lock_window_upd
+BEFORE UPDATE ON compartments
+FOR EACH ROW EXECUTE FUNCTION fn_check_compartment_lock_window();
 
--- 접근 규칙 (도서/스터디룸)
-CREATE TABLE book_access_rules (
-  rule_id           bigserial PRIMARY KEY,
-  book_id           bigint NULL REFERENCES books(book_id) ON DELETE CASCADE,
-  start_room_number integer NOT NULL,
-  end_room_number   integer NOT NULL,
-  room_range        int4range GENERATED ALWAYS AS (int4range(start_room_number, end_room_number, '[]')) STORED,
-  CHECK (end_room_number >= start_room_number)
-);
-CREATE INDEX IF NOT EXISTS ix_book_access_book_id ON book_access_rules(book_id);
-CREATE INDEX IF NOT EXISTS ix_book_access_range   ON book_access_rules(start_room_number, end_room_number);
-ALTER TABLE book_access_rules
-  ADD CONSTRAINT no_overlap_book_access
-  EXCLUDE USING gist (
-    (COALESCE(book_id, -1)) WITH =,
-    room_range WITH &&
-  );
+CREATE OR REPLACE FUNCTION fn_prevent_cra_overlap()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF EXISTS (
+        SELECT 1
+        FROM compartment_room_access cra
+        WHERE cra.compartment_id = NEW.compartment_id
+          AND cra.room_id = NEW.room_id
+          AND (TG_OP = 'INSERT' OR cra.id <> NEW.id)
+          AND COALESCE(NEW.active_to, DATE '9999-12-31') >= cra.active_from
+          AND COALESCE(cra.active_to, DATE '9999-12-31') >= NEW.active_from
+    ) THEN
+        RAISE EXCEPTION 'overlapping access period for room and compartment';
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
 
-CREATE TABLE study_room_access_rules (
-  rule_id           bigserial PRIMARY KEY,
-  study_room_id     bigint NOT NULL REFERENCES study_rooms(study_room_id) ON DELETE CASCADE,
-  start_room_number integer NOT NULL,
-  end_room_number   integer NOT NULL,
-  room_range        int4range GENERATED ALWAYS AS (int4range(start_room_number, end_room_number, '[]')) STORED,
-  CHECK (end_room_number >= start_room_number)
-);
-CREATE INDEX IF NOT EXISTS ix_sr_access_room_id ON study_room_access_rules(study_room_id);
-CREATE INDEX IF NOT EXISTS ix_sr_access_range   ON study_room_access_rules(start_room_number, end_room_number);
-ALTER TABLE study_room_access_rules
-  ADD CONSTRAINT no_overlap_study_room_access
-  EXCLUDE USING gist (
-    study_room_id WITH =,
-    room_range    WITH &&
-  );
+CREATE TRIGGER trg_cra_no_overlap_ins
+BEFORE INSERT ON compartment_room_access
+FOR EACH ROW EXECUTE FUNCTION fn_prevent_cra_overlap();
 
--- 도서 가용성 뷰 (loan 상태 기반)
-CREATE OR REPLACE VIEW books_with_availability AS
-SELECT b.*,
-       NOT EXISTS (
-         SELECT 1 FROM book_loans bl
-         WHERE bl.book_id = b.book_id AND bl.return_date IS NULL
-       ) AS is_available
-FROM books b;
+CREATE TRIGGER trg_cra_no_overlap_upd
+BEFORE UPDATE ON compartment_room_access
+FOR EACH ROW EXECUTE FUNCTION fn_prevent_cra_overlap();
+
+CREATE OR REPLACE FUNCTION fn_seed_label_pool()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO label_pool (compartment_id, label_number, status)
+    SELECT NEW.id, generate_series(NEW.label_range_start, NEW.label_range_end), 0;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_compartments_seed_label_pool
+AFTER INSERT ON compartments
+FOR EACH ROW EXECUTE FUNCTION fn_seed_label_pool();
+
+CREATE OR REPLACE FUNCTION fn_ensure_bundle_label_in_range()
+RETURNS TRIGGER AS $$
+DECLARE
+    lb INTEGER;
+    ub INTEGER;
+BEGIN
+    SELECT label_range_start, label_range_end
+      INTO lb, ub
+    FROM compartments
+    WHERE id = NEW.compartment_id;
+
+    IF lb IS NULL OR ub IS NULL THEN
+        RAISE EXCEPTION 'compartment % not found for label validation', NEW.compartment_id;
+    END IF;
+
+    IF NEW.label_number < lb OR NEW.label_number > ub THEN
+        RAISE EXCEPTION 'label out of range';
+    END IF;
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_fridge_bundles_label_range_ins
+BEFORE INSERT ON fridge_bundles
+FOR EACH ROW EXECUTE FUNCTION fn_ensure_bundle_label_in_range();
+
+CREATE TRIGGER trg_fridge_bundles_label_range_upd
+BEFORE UPDATE ON fridge_bundles
+FOR EACH ROW EXECUTE FUNCTION fn_ensure_bundle_label_in_range();
+
+CREATE OR REPLACE FUNCTION fn_reserve_label_on_bundle_insert()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO label_pool (compartment_id, label_number, status, last_used_bundle_id, last_used_at)
+    VALUES (NEW.compartment_id, NEW.label_number, 1, NEW.id, CURRENT_TIMESTAMP)
+    ON CONFLICT (compartment_id, label_number)
+    DO UPDATE SET status = 1,
+                  last_used_bundle_id = EXCLUDED.last_used_bundle_id,
+                  last_used_at = EXCLUDED.last_used_at;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_fridge_bundles_reserve_label
+AFTER INSERT ON fridge_bundles
+FOR EACH ROW EXECUTE FUNCTION fn_reserve_label_on_bundle_insert();
+
+CREATE OR REPLACE FUNCTION fn_release_label_on_removed()
+RETURNS TRIGGER AS $$
+BEGIN
+    IF OLD.status_code <> 'REMOVED' AND NEW.status_code = 'REMOVED' THEN
+        UPDATE label_pool
+           SET status = 0,
+               last_used_bundle_id = NEW.id,
+               last_used_at = CURRENT_TIMESTAMP
+         WHERE compartment_id = NEW.compartment_id
+           AND label_number = NEW.label_number;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_fridge_bundles_release_label
+AFTER UPDATE ON fridge_bundles
+FOR EACH ROW EXECUTE FUNCTION fn_release_label_on_removed();
+
+CREATE OR REPLACE FUNCTION fn_touch_users_updated_at()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_users_touch_updated_at
+BEFORE UPDATE ON users
+FOR EACH ROW EXECUTE FUNCTION fn_touch_users_updated_at();
+
+CREATE OR REPLACE FUNCTION fn_touch_fridge_bundles_last_modified()
+RETURNS TRIGGER AS $$
+BEGIN
+    NEW.last_modified_at = CURRENT_TIMESTAMP;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_fridge_bundles_touch_last_modified
+BEFORE UPDATE ON fridge_bundles
+FOR EACH ROW EXECUTE FUNCTION fn_touch_fridge_bundles_last_modified();
+
+CREATE OR REPLACE FUNCTION fn_inspection_reason_validation()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_requires BOOLEAN;
+BEGIN
+    SELECT requires_reason INTO v_requires
+      FROM inspection_action_type WHERE code = NEW.action_type_code;
+
+    IF v_requires AND NEW.reason_code IS NULL THEN
+        RAISE EXCEPTION 'reason_code required for action type %', NEW.action_type_code;
+    END IF;
+
+    IF NEW.reason_code IS NOT NULL THEN
+        PERFORM 1
+          FROM warning_reason
+         WHERE code = NEW.reason_code
+           AND action_type_code = NEW.action_type_code;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'reason_code % not valid for action type %', NEW.reason_code, NEW.action_type_code;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_inspection_actions_reason_check
+BEFORE INSERT OR UPDATE ON inspection_actions
+FOR EACH ROW EXECUTE FUNCTION fn_inspection_reason_validation();
+
+-- ============
+-- 추가 제약
+-- ============
+CREATE UNIQUE INDEX uq_open_session_per_compartment
+    ON inspection_sessions (compartment_id)
+    WHERE status = 'OPEN';
+
+ALTER TABLE compartments
+    ADD CONSTRAINT fk_compartments_lock_owner_session
+    FOREIGN KEY (lock_owner_session_id)
+    REFERENCES inspection_sessions (session_uuid)
+    DEFERRABLE INITIALLY IMMEDIATE;

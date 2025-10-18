@@ -1,0 +1,99 @@
+// app/page.tsx
+import React from 'react';
+import { cn } from '@/utils/cn';
+
+const Page = () => {
+return (
+  <div className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
+    {/* rest of code here */}
+  </div>
+);
+};
+
+export default Page;
+
+// components/bottom-nav.tsx
+import React from 'react';
+import { cn } from '@/utils/cn';
+
+const BottomNav = () => {
+return (
+  <nav className={cn("fixed bottom-0 inset-x-0 z-40 border-t bg-white/90 backdrop-blur")}>
+    {/* rest of code here */}
+  </nav>
+);
+};
+
+export default BottomNav;
+
+// app/fridge/page.tsx
+import React from 'react';
+import { cn } from '@/utils/cn';
+
+const FridgePage = () => {
+const { items, slots, lastInspectionAt } = useFridge();
+
+return (
+  <div className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
+    {/* rest of code here */}
+  </div>
+);
+};
+
+export default FridgePage;
+
+// app/fridge/inspections/page.tsx
+import React from 'react';
+import { cn } from '@/utils/cn';
+
+const InspectionsPage = () => {
+return (
+  <div className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
+    {/* rest of code here */}
+  </div>
+);
+};
+
+export default InspectionsPage;
+
+// app/fridge/inspect/page.tsx
+import React from 'react';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/utils/cn';
+
+const InspectPage = () => {
+const handleDiscardExpired = (id) => {
+  // handle discard logic here
+};
+
+return (
+  <div className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
+    {/* rest of code here */}
+    <Button
+      size="sm"
+      className="bg-rose-600 hover:bg-rose-700 text-white"
+      onClick={() => handleDiscardExpired(it.id)}
+      aria-label="폐기 및 벌점"
+    >
+      폐기 및 벌점
+    </Button>
+  </div>
+);
+};
+
+export default InspectPage;
+
+// components/fridge/add-item-dialog.tsx
+import React from 'react';
+import { DialogContent } from '@/components/ui/dialog';
+import { cn } from '@/utils/cn';
+
+const AddItemDialog = () => {
+return (
+  <DialogContent className='sm:max-w-lg [&>button.absolute.right-4.top-4]:hidden [&_button[aria-label="Close"]]:hidden [&_[aria-label="Close"]]:hidden [&_button[title="Close"]]:hidden'>
+    {/* rest of code here */}
+  </DialogContent>
+);
+};
+
+export default AddItemDialog;

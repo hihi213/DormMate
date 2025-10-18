@@ -1,0 +1,27 @@
+# docker-compose.override.yml - 로컬 개발 환경 특화 설정
+# docker-compose up 실행 시 자동으로 적용됨
+
+services:
+  # PostgreSQL - 개발용 포트 노출 및 시간대 설정
+  db:
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    environment:
+      TZ: ${TZ:-Asia/Seoul} # 개발환경에서는 한국 시간대 사용
+
+  # Redis - 개발용 포트 노출
+  redis:
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+
+  # pgAdmin - 개발용 포트 노출 및 시간대 설정
+  pgadmin:
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    environment:
+      TZ: UTC # pgAdmin은 UTC 사용
+
+  # Flyway - 개발용 시간대 설정
+  migrate:
+    environment:
+      TZ: UTC
