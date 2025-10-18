@@ -1,4 +1,4 @@
-.PHONY: help up down ps logs db-up migrate schema seed reset-db client-dev client-build client-lint backend-build backend-test backend-clean db-shell pgadmin-url redis-cli clean dev dev-front dev-stop migrate-local schema-drift api-lint api-mock api-diff api-export api-compat plan plan-design plan-stubs plan-review plan-brainstorm plan-current
+.PHONY: help up down ps logs db-up migrate schema seed reset-db client-dev client-build client-lint backend-build backend-test backend-clean db-shell pgadmin-url redis-cli clean dev dev-front dev-stop migrate-local schema-drift api-lint api-mock api-diff api-export api-compat plan plan-design plan-stubs plan-review plan-brainstorm plan-current _ensure-local-node tests-core docs-pending task-lint playwright-install playwright-test
 
 # =============================================================
 # DormMate — 통합 개발/운영 Makefile
@@ -18,6 +18,28 @@ DB_CONTAINER := dorm_postgres
 DB_NAME := dormitory_db
 DB_USER := dorm_user
 NODE_IMAGE ?= node:20-alpine
+NODE_VERSION ?= 20.17.0
+NODE_OS := $(shell uname -s | tr '[:upper:]' '[:lower:]')
+NODE_ARCH := $(shell uname -m)
+ifeq ($(NODE_ARCH),x86_64)
+  NODE_DIST_ARCH := x64
+else ifeq ($(NODE_ARCH),amd64)
+  NODE_DIST_ARCH := x64
+else ifeq ($(NODE_ARCH),arm64)
+  NODE_DIST_ARCH := arm64
+else ifeq ($(NODE_ARCH),aarch64)
+  NODE_DIST_ARCH := arm64
+else
+  NODE_DIST_ARCH := $(NODE_ARCH)
+endif
+LOCAL_NODE_ROOT := $(PROJECT_ROOT)/.cache/node
+NODE_DIST_NAME := node-v$(NODE_VERSION)-$(NODE_OS)-$(NODE_DIST_ARCH)
+LOCAL_NODE_DIR := $(LOCAL_NODE_ROOT)/$(NODE_DIST_NAME)
+LOCAL_NODE_TARBALL := $(LOCAL_NODE_ROOT)/$(NODE_DIST_NAME).tar.gz
+LOCAL_NPX := $(LOCAL_NODE_DIR)/bin/npx
+# Playwright 실행은 CI 환경(CI=true/1/yes)에서는 자동으로 켜고, 로컬에서는 PLAYWRIGHT=1로 수동 토글한다.
+CI_BOOL := $(if $(filter 1 true TRUE yes YES,$(CI)),1,0)
+PLAYWRIGHT ?= $(CI_BOOL)
 
 help:
 	@echo "사용 가능한 타깃:"
@@ -40,6 +62,11 @@ help:
 	@echo "  backend-build- 백엔드 Gradle 빌드"
 	@echo "  backend-test - 백엔드 테스트"
 	@echo "  backend-clean- 백엔드 클린"
+	@echo "  tests-core   - Spectral + Backend + Frontend(+Playwright 옵션) 일괄 실행"
+	@echo "  docs-pending - docs/service/_drafts 초안과 본문 차이 확인"
+	@echo "  task-lint    - docs/tasks/*.yaml 필수 필드 검증"
+	@echo "  playwright-install - Playwright 브라우저 의존성 설치"
+	@echo "  playwright-test    - Playwright 테스트 실행(CI=1 또는 PLAYWRIGHT=1 권장)"
 	@echo "  clean        - 캐시/빌드 산출물 정리"
 	@echo "  dev          - 도커 기동 후 백엔드(Spring Boot) 실행"
 	@echo "  dev-front    - dev + 프론트(Next.js) 병행 실행"
@@ -48,7 +75,7 @@ help:
 	@echo "  api-docs      - Swagger UI 열기 (로컬 개발용)"
 	@echo "  api-diff      - Seed vs Runtime OpenAPI diff 체크"
 	@echo "  api-export    - Runtime OpenAPI 명세 덤프"
-	@echo "  api-compat    - API 버전 간 호환성 체크"
+	@echo "  api-compat    - API 버전 간 호환성 체크(현재 기본 워크플로 미사용)"
 
 # --- Docker Compose 관리 ---
 # 인프라 기동/중지/상태/로그
@@ -142,6 +169,35 @@ backend-test:
 backend-clean:
 	cd backend && ./gradlew clean
 
+# --- 통합 테스트 패키지 ---
+tests-core:
+	@echo "🔄 Running core test bundle..."
+	$(MAKE) api-lint
+	@echo "✅ Spectral lint 완료"
+	cd backend && ./gradlew clean test
+	@echo "✅ Backend tests 완료"
+	cd client && npm test
+	@echo "✅ Frontend tests 완료"
+	@if [ "$(PLAYWRIGHT)" = "1" ]; then \
+		echo "🎭 Including Playwright tests (PLAYWRIGHT=$(PLAYWRIGHT))"; \
+		$(MAKE) --no-print-directory PLAYWRIGHT=$(PLAYWRIGHT) playwright-test; \
+		echo "✅ Playwright tests 완료"; \
+	else \
+		echo "➡️  Skipping Playwright tests (set PLAYWRIGHT=1 to enable)"; \
+	fi
+
+docs-pending:
+	python3 tools/codex/drafts_status.py
+
+task-lint:
+	python3 tools/codex/task_lint.py
+
+playwright-install:
+	cd client && npm run playwright:install
+
+playwright-test:
+	@echo "🎭 Running Playwright tests..."
+	cd client && npm run playwright:test
 # --- 보조 ---
 # redis-cli: 컨테이너 내부 Redis CLI 접속
 redis-cli:
@@ -183,6 +239,19 @@ schema-drift:
 	# 필요 환경변수: ACT_URL, ACT_HOST, ACT_PORT, ACT_DB, ACT_USER, ACT_PASSWORD
 	bash tools/db/migra-local.sh
 
+# --- 로컬 도구 부트스트랩 ---
+_ensure-local-node:
+	@if [ ! -x "$(LOCAL_NPX)" ]; then \
+		echo "⬇️  Downloading Node $(NODE_VERSION) into local cache..."; \
+		mkdir -p "$(LOCAL_NODE_ROOT)"; \
+		rm -rf "$(LOCAL_NODE_DIR)"; \
+		curl -fsSL "https://nodejs.org/dist/v$(NODE_VERSION)/$(NODE_DIST_NAME).tar.gz" -o "$(LOCAL_NODE_TARBALL)"; \
+		tar -xzf "$(LOCAL_NODE_TARBALL)" -C "$(LOCAL_NODE_ROOT)"; \
+		rm -f "$(LOCAL_NODE_TARBALL)"; \
+	else \
+		echo "✅ Using cached Node runtime at $(LOCAL_NODE_DIR)"; \
+	fi
+
 # --- OpenAPI 관리 ---
 # Swagger UI 열기 (로컬 개발용)
 api-docs:
@@ -199,10 +268,24 @@ api-export:
 # Seed vs Runtime OpenAPI diff 체크 (설계 우선 강제)
 api-lint:
 	@echo "🧐 Running spectral lint..."
-	npx @stoplight/spectral lint docs/openapi/fridge-mvp.yaml
+	@if command -v npx >/dev/null 2>&1; then \
+		npx @stoplight/spectral-cli lint docs/openapi/fridge-mvp.yaml --ruleset .spectral.yaml; \
+	elif command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then \
+		echo "⚠️  npx not found. Using Docker ($(NODE_IMAGE)) to run spectral lint..."; \
+		docker run --rm \
+			-v "$(PROJECT_ROOT)":/workspace \
+			-w /workspace \
+			$(NODE_IMAGE) \
+			sh -lc 'npx @stoplight/spectral-cli lint docs/openapi/fridge-mvp.yaml --ruleset .spectral.yaml'; \
+	else \
+		echo "⚙️  Bootstrapping local Node runtime for spectral lint..."; \
+		$(MAKE) --no-print-directory _ensure-local-node; \
+		PATH="$(LOCAL_NODE_DIR)/bin:$$PATH" "$(LOCAL_NPX)" @stoplight/spectral-cli lint docs/openapi/fridge-mvp.yaml --ruleset .spectral.yaml; \
+	fi
 
 api-mock:
 	@echo "🧪 Starting prism mock server (ctrl+c to stop)..."
+	@echo "   ⚠️  현재 공식 워크플로에는 포함되지 않으며, 필요 시 수동으로 실행하세요."
 	npx @stoplight/prism mock docs/openapi/fridge-mvp.yaml
 
 api-diff:
@@ -213,6 +296,7 @@ api-diff:
 # API 버전 간 호환성 체크 (하위 호환성 유지)
 api-compat:
 	@echo "🔍 API 호환성 체크를 진행하고 있습니다..."
+	@echo "   ⚠️  실사용 시에는 최신 스크립트 유효성을 직접 확인한 뒤 실행하세요."
 	@bash scripts/check-api-compatibility.sh
 
 # --- Codex 프로필 전환 ---

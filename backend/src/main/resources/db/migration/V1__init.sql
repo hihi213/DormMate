@@ -6,7 +6,7 @@
 
 SET TIME ZONE 'UTC';
 
--- 대소문자 구분 없는 텍스트 비교를 위한 확장 (슈퍼유저 권한 필요)
+-- 대소문자 구분 없는 텍스트 비교를 위한 확장
 CREATE EXTENSION IF NOT EXISTS citext;
 
 -- ============
@@ -72,16 +72,19 @@ CREATE TABLE rooms (
 CREATE INDEX ix_rooms_floor ON rooms (floor);
 
 CREATE TABLE users (
-    id            BIGSERIAL PRIMARY KEY,
-    email         VARCHAR(120) NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    room_id       BIGINT,
-    personal_no   SMALLINT,
-    role          user_role NOT NULL,
-    is_active     BOOLEAN NOT NULL DEFAULT TRUE,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    deleted_at    TIMESTAMPTZ,
+    id                BIGSERIAL PRIMARY KEY,
+    login_id          CITEXT NOT NULL,
+    email             CITEXT,
+    password_hash     VARCHAR(255) NOT NULL,
+    room_id           BIGINT,
+    personal_no       SMALLINT,
+    role              user_role NOT NULL,
+    is_active         BOOLEAN NOT NULL DEFAULT TRUE,
+    access_restricted BOOLEAN NOT NULL DEFAULT FALSE,
+    created_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at        TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    deleted_at        TIMESTAMPTZ,
+    CONSTRAINT uq_users_login_id UNIQUE (login_id),
     CONSTRAINT uq_users_email UNIQUE (email),
     CONSTRAINT uq_users_room_person UNIQUE (room_id, personal_no),
     CONSTRAINT fk_users_room FOREIGN KEY (room_id) REFERENCES rooms(id)
@@ -104,6 +107,17 @@ CREATE TABLE audit_logs (
 );
 CREATE INDEX ix_audit_logs_actor_time ON audit_logs (actor_id, created_at DESC);
 CREATE INDEX ix_audit_logs_scope_ref ON audit_logs (scope, ref_id, created_at DESC);
+
+CREATE TABLE penalty_histories (
+    id          BIGSERIAL PRIMARY KEY,
+    user_id     BIGINT NOT NULL,
+    source      VARCHAR(40) NOT NULL,
+    points      SMALLINT NOT NULL,
+    description TEXT,
+    created_at  TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_penalty_histories_user FOREIGN KEY (user_id) REFERENCES users(id)
+);
+CREATE INDEX ix_penalty_histories_user_time ON penalty_histories (user_id, created_at DESC);
 
 -- ============
 -- 냉장고 자원
@@ -130,29 +144,6 @@ CREATE TABLE compartments (
     CONSTRAINT uq_compartments_unit_display_order UNIQUE (unit_id, display_order),
     CONSTRAINT fk_compartments_unit FOREIGN KEY (unit_id) REFERENCES fridge_units(id)
 );
-
-CREATE OR REPLACE FUNCTION set_compartment_display_order()
-RETURNS TRIGGER AS $$
-DECLARE
-    next_order INTEGER;
-BEGIN
-    IF NEW.display_order IS NULL THEN
-        SELECT COALESCE(MAX(display_order), 0) + 1
-        INTO next_order
-        FROM compartments
-        WHERE unit_id = NEW.unit_id;
-
-        NEW.display_order := next_order;
-    END IF;
-
-    RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
-CREATE TRIGGER trg_compartments_set_display_order
-BEFORE INSERT ON compartments
-FOR EACH ROW
-EXECUTE FUNCTION set_compartment_display_order();
 CREATE INDEX ix_compartments_lock_owner ON compartments (lock_owner_session_id);
 CREATE INDEX ix_compartments_lock_exp ON compartments (lock_expires_at);
 
@@ -163,6 +154,7 @@ CREATE TABLE compartment_room_access (
     allocation_rule VARCHAR(50),
     active_from     DATE NOT NULL,
     active_to       DATE,
+    CONSTRAINT uq_cra_compartment_room UNIQUE (compartment_id, room_id),
     CONSTRAINT fk_cra_compartment FOREIGN KEY (compartment_id) REFERENCES compartments(id),
     CONSTRAINT fk_cra_room FOREIGN KEY (room_id) REFERENCES rooms(id)
 );
@@ -218,12 +210,12 @@ CREATE INDEX ix_fridge_items_state_expiry ON fridge_items (state_code, expiry_da
 -- 검사 시스템
 -- ============
 CREATE TABLE inspection_sessions (
-    id            BIGSERIAL PRIMARY KEY,
+    id             BIGSERIAL PRIMARY KEY,
     compartment_id BIGINT NOT NULL,
-    session_uuid  UUID NOT NULL,
-    status        inspection_session_status NOT NULL,
-    started_at    TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    ended_at      TIMESTAMPTZ,
+    session_uuid   UUID NOT NULL,
+    status         inspection_session_status NOT NULL,
+    started_at     TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    ended_at       TIMESTAMPTZ,
     CONSTRAINT uq_inspection_sessions_uuid UNIQUE (session_uuid),
     CONSTRAINT fk_inspection_sessions_compartment FOREIGN KEY (compartment_id) REFERENCES compartments(id)
 );
@@ -242,15 +234,15 @@ CREATE TABLE inspection_inspectors (
 CREATE INDEX ix_inspection_inspectors_user ON inspection_inspectors (inspector_id);
 
 CREATE TABLE inspection_actions (
-    id               BIGSERIAL PRIMARY KEY,
-    session_id       BIGINT NOT NULL,
-    inspector_id     BIGINT NOT NULL,
-    bundle_id        BIGINT,
-    action_type_code VARCHAR(30) NOT NULL,
-    reason_code      VARCHAR(40),
-    memo             TEXT,
+    id                   BIGSERIAL PRIMARY KEY,
+    session_id           BIGINT NOT NULL,
+    inspector_id         BIGINT NOT NULL,
+    bundle_id            BIGINT,
+    action_type_code     VARCHAR(30) NOT NULL,
+    reason_code          VARCHAR(40),
+    memo                 TEXT,
     unregistered_item_name VARCHAR(100),
-    action_time      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    action_time          TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_inspection_actions_session FOREIGN KEY (session_id) REFERENCES inspection_sessions(id),
     CONSTRAINT fk_inspection_actions_user FOREIGN KEY (inspector_id) REFERENCES users(id),
     CONSTRAINT fk_inspection_actions_bundle FOREIGN KEY (bundle_id) REFERENCES fridge_bundles(id),
@@ -284,9 +276,9 @@ CREATE TABLE notifications (
     CONSTRAINT fk_notifications_bundle FOREIGN KEY (related_bundle_id) REFERENCES fridge_bundles(id) ON DELETE SET NULL,
     CONSTRAINT fk_notifications_session FOREIGN KEY (related_session_id) REFERENCES inspection_sessions(id) ON DELETE SET NULL,
     CONSTRAINT chk_notifications_related CHECK (
-        (kind_code IN ('FRIDGE_EXPIRY', 'FRIDGE_OTHER') AND related_bundle_id IS NOT NULL) OR
-        (kind_code IN ('INSPECTION_RESULT', 'INSPECTION_OTHER') AND related_session_id IS NOT NULL) OR
-        (kind_code NOT IN ('FRIDGE_EXPIRY', 'FRIDGE_OTHER', 'INSPECTION_RESULT', 'INSPECTION_OTHER'))
+        (kind_code = 'FRIDGE_EXPIRY' AND related_bundle_id IS NOT NULL)
+     OR (kind_code = 'FRIDGE_RESULT' AND related_session_id IS NOT NULL)
+     OR (kind_code NOT IN ('FRIDGE_EXPIRY', 'FRIDGE_RESULT'))
     )
 );
 CREATE INDEX ix_notifications_list ON notifications (user_id, is_read, created_at DESC, id, kind_code);
@@ -345,16 +337,25 @@ CREATE TRIGGER trg_cra_no_overlap_upd
 BEFORE UPDATE ON compartment_room_access
 FOR EACH ROW EXECUTE FUNCTION fn_prevent_cra_overlap();
 
+CREATE OR REPLACE FUNCTION fn_seed_label_pool()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO label_pool (compartment_id, label_number, status)
+    SELECT NEW.id, generate_series(NEW.label_range_start, NEW.label_range_end), 0;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_compartments_seed_label_pool
+AFTER INSERT ON compartments
+FOR EACH ROW EXECUTE FUNCTION fn_seed_label_pool();
+
 CREATE OR REPLACE FUNCTION fn_ensure_bundle_label_in_range()
 RETURNS TRIGGER AS $$
 DECLARE
     lb INTEGER;
     ub INTEGER;
 BEGIN
-    IF NEW.label_number IS NULL THEN
-        RAISE EXCEPTION 'label_number must be provided';
-    END IF;
-
     SELECT label_range_start, label_range_end
       INTO lb, ub
     FROM compartments
@@ -380,21 +381,33 @@ CREATE TRIGGER trg_fridge_bundles_label_range_upd
 BEFORE UPDATE ON fridge_bundles
 FOR EACH ROW EXECUTE FUNCTION fn_ensure_bundle_label_in_range();
 
+CREATE OR REPLACE FUNCTION fn_reserve_label_on_bundle_insert()
+RETURNS TRIGGER AS $$
+BEGIN
+    INSERT INTO label_pool (compartment_id, label_number, status, last_used_bundle_id, last_used_at)
+    VALUES (NEW.compartment_id, NEW.label_number, 1, NEW.id, CURRENT_TIMESTAMP)
+    ON CONFLICT (compartment_id, label_number)
+    DO UPDATE SET status = 1,
+                  last_used_bundle_id = EXCLUDED.last_used_bundle_id,
+                  last_used_at = EXCLUDED.last_used_at;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_fridge_bundles_reserve_label
+AFTER INSERT ON fridge_bundles
+FOR EACH ROW EXECUTE FUNCTION fn_reserve_label_on_bundle_insert();
+
 CREATE OR REPLACE FUNCTION fn_release_label_on_removed()
 RETURNS TRIGGER AS $$
-DECLARE
-    numeric_label INTEGER;
 BEGIN
     IF OLD.status_code <> 'REMOVED' AND NEW.status_code = 'REMOVED' THEN
-        numeric_label := NEW.label_number;
-
         UPDATE label_pool
            SET status = 0,
                last_used_bundle_id = NEW.id,
                last_used_at = CURRENT_TIMESTAMP
          WHERE compartment_id = NEW.compartment_id
-           AND label_number = numeric_label
-           AND (status = 1 OR last_used_bundle_id IS NULL OR last_used_bundle_id = NEW.id);
+           AND label_number = NEW.label_number;
     END IF;
     RETURN NEW;
 END;
@@ -427,3 +440,45 @@ $$ LANGUAGE plpgsql;
 CREATE TRIGGER trg_fridge_bundles_touch_last_modified
 BEFORE UPDATE ON fridge_bundles
 FOR EACH ROW EXECUTE FUNCTION fn_touch_fridge_bundles_last_modified();
+
+CREATE OR REPLACE FUNCTION fn_inspection_reason_validation()
+RETURNS TRIGGER AS $$
+DECLARE
+    v_requires BOOLEAN;
+BEGIN
+    SELECT requires_reason INTO v_requires
+      FROM inspection_action_type WHERE code = NEW.action_type_code;
+
+    IF v_requires AND NEW.reason_code IS NULL THEN
+        RAISE EXCEPTION 'reason_code required for action type %', NEW.action_type_code;
+    END IF;
+
+    IF NEW.reason_code IS NOT NULL THEN
+        PERFORM 1
+          FROM warning_reason
+         WHERE code = NEW.reason_code
+           AND action_type_code = NEW.action_type_code;
+        IF NOT FOUND THEN
+            RAISE EXCEPTION 'reason_code % not valid for action type %', NEW.reason_code, NEW.action_type_code;
+        END IF;
+    END IF;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_inspection_actions_reason_check
+BEFORE INSERT OR UPDATE ON inspection_actions
+FOR EACH ROW EXECUTE FUNCTION fn_inspection_reason_validation();
+
+-- ============
+-- 추가 제약
+-- ============
+CREATE UNIQUE INDEX uq_open_session_per_compartment
+    ON inspection_sessions (compartment_id)
+    WHERE status = 'OPEN';
+
+ALTER TABLE compartments
+    ADD CONSTRAINT fk_compartments_lock_owner_session
+    FOREIGN KEY (lock_owner_session_id)
+    REFERENCES inspection_sessions (session_uuid)
+    DEFERRABLE INITIALLY IMMEDIATE;
