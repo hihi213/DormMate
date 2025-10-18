@@ -11,8 +11,8 @@
 
 # 기본 설정
 #  - DB_CONTAINER/DB_NAME/DB_USER는 docker-compose.yml의 값과 일치해야 함
-#  - zsh 쉘 사용(맥OS 기본) — bash 사용 시 SHELL 경로를 바꾸세요
-SHELL := /bin/zsh
+#  - 로컬(Mac)·CI 환경 모두에서 동작하도록 zsh→bash 순으로 사용할 쉘을 탐색한다.
+SHELL := $(shell command -v zsh 2>/dev/null || command -v bash 2>/dev/null || echo /bin/sh)
 PROJECT_ROOT := $(PWD)
 DB_CONTAINER := dorm_postgres
 DB_NAME := dormitory_db
