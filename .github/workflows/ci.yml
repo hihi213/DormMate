@@ -51,6 +51,18 @@ jobs:
         working-directory: client
         run: npm install
 
+      - name: Start database services
+        run: |
+          docker compose up -d db
+          for i in {1..30}; do
+            if docker compose exec -T db pg_isready -U "${POSTGRES_USER:-dorm_user}" -d "${POSTGRES_DB:-dormitory_db}"; then
+              break
+            fi
+            echo "Waiting for database to become ready..."
+            sleep 2
+          done
+          docker compose run --rm migrate
+
       - name: Core Tests (Makefile bundle)
         run: |
           if [ "${{ env.CI_ENABLE_E2E }}" = "true" ]; then
@@ -58,11 +70,6 @@ jobs:
           else
             make tests-core
           fi
-
-      - name: Prepare database for schema drift
-        run: |
-          docker compose up -d db
-          docker compose run --rm migrate
 
       - name: Schema drift check
         env:
