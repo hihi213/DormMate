@@ -46,7 +46,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration`에
 - `make backend-build` / `make backend-test`: Gradle 빌드 및 테스트
 - `make client-dev` / `make client-build`: 프론트엔드 개발 서버 및 프로덕션 빌드
 - `make client-lint`: 프론트엔드 ESLint 검사 (로컬에 Node.js가 없으면 자동으로 Docker `node:20-alpine` 이미지를 사용해 실행)
-- `make tests-core`: Spectral + 백엔드 + 프론트 테스트 일괄 실행 (Step 6 권장)
+- `python tools/automation/cli.py tests core`: Spectral + 백엔드 + 프론트 테스트 일괄 실행 (Step 6 권장)
 - `make playwright-install` / `make playwright-test`: Playwright 설치 및 E2E 테스트 실행 (선택)
 
 자세한 옵션은 `make help`를 확인하세요.
@@ -58,11 +58,11 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration`에
    make playwright-install
    # 또는 cd client && npm run playwright:install
    ```
-2. 로컬에서 스모크 테스트는 기본 `make tests-core`로 실행됩니다.
+2. 로컬에서 스모크 테스트는 기본 `python tools/automation/cli.py tests core`로 실행됩니다.
    ```bash
-   make tests-core
+   python tools/automation/cli.py tests core
    ```
-3. 확장 e2e를 돌리려면 `PLAYWRIGHT=1 make tests-core` 또는 `npm run playwright:test`를 사용하세요. CI에서는 `CI_ENABLE_E2E`가 true일 때 확장 Playwright가 추가되며, 베이스 URL은 `PLAYWRIGHT_BASE_URL` 환경 변수로 덮어쓸 수 있습니다(기본값 `http://localhost:3000`).
+3. 확장 e2e를 돌리려면 `python tools/automation/cli.py tests core --full-playwright` 또는 `npm run playwright:test`를 사용하세요. CI에서는 Playwright 브라우저를 설치한 뒤 동일 명령을 실행하며, 베이스 URL은 `PLAYWRIGHT_BASE_URL` 환경 변수로 덮어쓸 수 있습니다(기본값 `http://localhost:3000`).
 
 > ❗️ 모든 Playwright 실행은 Next.js 앱이 기동된 상태를 전제로 합니다. `docker compose up` 또는 `npm run dev` 등으로 서비스가 준비됐는지 확인하세요.
 
@@ -88,7 +88,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration`에
    docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app --build --no-cache  # 안정 버전으로 재배포
    ```
 
-> 운영 배포 전에는 `make tests-core`(Playwright 스모크 포함)와 `make schema-drift`를 통과했는지 확인하세요.
+> 운영 배포 전에는 `python tools/automation/cli.py tests core --full-playwright`와 `python tools/automation/cli.py openapi lint` 결과를 확인하세요. (OpenAPI diff 도구는 3.1 지원 버전 도입 후 재안내 예정)
 
 ## 추가 문서
 

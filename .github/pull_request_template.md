@@ -5,7 +5,7 @@
 
 ## Step 6 Checklist
 
-- [ ] make tests-core
+- [ ] python tools/automation/cli.py tests core
 - [ ] 추가 테스트/툴 (필요 시 아래에 명시)
 
 ```
