@@ -25,7 +25,7 @@ def load_state(path: Path) -> dict:
 def main() -> None:
     parser = argparse.ArgumentParser(description="Update Codex workflow state.")
     parser.add_argument("--state-file", required=True, help="Path to state JSON file")
-    parser.add_argument("--profile", help="Current Codex profile (design/stubs/review/brainstorm)")
+    parser.add_argument("--profile", help="Current Codex profile (develop/wrap-up/brainstorm)")
     parser.add_argument("--task-id", help="Currently active Taskmaster ID (e.g., AUTH-01)")
     parser.add_argument("--loop-step", type=int, help="Current loop step (0-7)")
     parser.add_argument("--last-tests", help="Comma separated list of last executed test commands")

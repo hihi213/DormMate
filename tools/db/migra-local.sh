@@ -10,8 +10,52 @@ set -euo pipefail
 # ===========================================
 
 # ----- 필수: 실제 DB 접속 URL (libpq 형식) -----
-# 예) export ACT_URL='postgresql://user:pass@host:5432/dbname'
+# 없음 -> .env 로드 시도 -> DATABASE_URL fallback
+if [ -z "${ACT_URL:-}" ]; then
+  if [ -f ".env" ]; then
+    echo ">>> Loading .env for database defaults..."
+    # shellcheck disable=SC2046
+    set -a
+    . ./.env
+    set +a
+  fi
+  if [ -z "${ACT_URL:-}" ] && [ -n "${DATABASE_URL:-}" ]; then
+    ACT_URL="${DATABASE_URL}"
+    export ACT_URL
+  fi
+else
+  export ACT_URL
+fi
+
 : "${ACT_URL:?Set ACT_URL, e.g. export ACT_URL='postgresql://dorm_user:dorm_password@localhost:5432/dormitory_db'}"
+
+# ACT_URL에서 host/db/user/password/port 추출(비어있는 항목만 채움)
+if [ -z "${ACT_HOST:-}" ] || [ -z "${ACT_DB:-}" ] || [ -z "${ACT_USER:-}" ] || [ -z "${ACT_PASSWORD:-}" ] || [ -z "${ACT_PORT:-}" ]; then
+  if [ -z "${ACT_URL:-}" ]; then
+    echo "ACT_URL is still empty after loading .env; export ACT_URL or DATABASE_URL with connection info."
+    exit 1
+  fi
+  eval "$(python3 - <<'PY'
+import os
+from urllib.parse import urlparse
+parsed = urlparse(os.environ["ACT_URL"])
+def export(name, value):
+    value = value or ""
+    escaped = value.replace("'", "'\"'\"'")
+    print(f"ACT_AUTO_{name}='{escaped}'")
+export("HOST", parsed.hostname)
+export("PORT", str(parsed.port or ""))
+export("DB", (parsed.path or "").lstrip("/"))
+export("USER", parsed.username)
+export("PASSWORD", parsed.password)
+PY
+)"
+  [ -z "${ACT_HOST:-}" ] && ACT_HOST="${ACT_AUTO_HOST}"
+  [ -z "${ACT_PORT:-}" ] && ACT_PORT="${ACT_AUTO_PORT:-5432}"
+  [ -z "${ACT_DB:-}" ] && ACT_DB="${ACT_AUTO_DB}"
+  [ -z "${ACT_USER:-}" ] && ACT_USER="${ACT_AUTO_USER}"
+  [ -z "${ACT_PASSWORD:-}" ] && ACT_PASSWORD="${ACT_AUTO_PASSWORD}"
+fi
 
 # ----- 선택: migra 옵션 -----
 # 비교할 스키마 (빈 값이면 전체). 보통 public.
@@ -46,14 +90,25 @@ done
 
 FLYWAY_VERSION="10.17.0"
 FLYWAY_ROOT="${HOME}/.cache/flyway"
+FLYWAY_ARCH="$(uname -m)"
+FLYWAY_OS="$(uname -s)"
+if [ "${FLYWAY_OS}" = "Darwin" ]; then
+  if [ "${FLYWAY_ARCH}" = "arm64" ] || [ "${FLYWAY_ARCH}" = "aarch64" ]; then
+    FLYWAY_DIST="macosx-arm64"
+  else
+    FLYWAY_DIST="macosx-x64"
+  fi
+else
+  FLYWAY_DIST="linux-x64"
+fi
 FLYWAY_HOME="${FLYWAY_ROOT}/flyway-${FLYWAY_VERSION}"
 FLYWAY_BIN="${FLYWAY_HOME}/flyway"
 
 # ----- Flyway 설치 (없으면) -----
 if [ ! -x "${FLYWAY_BIN}" ]; then
-  echo ">>> Installing Flyway CLI ${FLYWAY_VERSION} ..."
+  echo ">>> Installing Flyway CLI ${FLYWAY_VERSION} (${FLYWAY_DIST}) ..."
   mkdir -p "${FLYWAY_ROOT}"
-  curl -fsSL "https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}-linux-x64.tar.gz" -o /tmp/flyway.tar.gz
+  curl -fsSL "https://repo1.maven.org/maven2/org/flywaydb/flyway-commandline/${FLYWAY_VERSION}/flyway-commandline-${FLYWAY_VERSION}-${FLYWAY_DIST}.tar.gz" -o /tmp/flyway.tar.gz
   tar -xzf /tmp/flyway.tar.gz -C "${FLYWAY_ROOT}"
   rm -f /tmp/flyway.tar.gz
 fi
