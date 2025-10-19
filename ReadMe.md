@@ -36,7 +36,7 @@ cd client && npm install && npm run dev
 
 > CI 런너(예: GitHub Actions)는 Java 21, Node.js 20, Docker(Compose), PostgreSQL 16, Redis 7.2 이미지를 사용할 수 있는 환경이어야 합니다. 기본 워크플로(`.github/workflows/ci.yml`)는 이러한 런타임을 기준으로 구성되어 있습니다.
 
-Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration`에 `V1__init.sql`, `R__Seed.sql` 두 개만 유지합니다. 기존 버전 아카이브는 `docs/legacy/` 하위로 이동했습니다.
+Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration`에 `V1__init.sql`, `R__Seed.sql` 두 개만 유지합니다.
 
 ## Makefile 주요 명령
 
@@ -58,19 +58,43 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration`에
    make playwright-install
    # 또는 cd client && npm run playwright:install
    ```
-2. 로컬에서 스모크 테스트를 실행하려면 `PLAYWRIGHT=1` 플래그를 켜고 통합 테스트 번들을 호출합니다.
+2. 로컬에서 스모크 테스트는 기본 `make tests-core`로 실행됩니다.
    ```bash
-   PLAYWRIGHT=1 make tests-core
-   # 또는 cd client && npm run playwright:test
+   make tests-core
    ```
-3. CI에서는 `CI=true`가 자동으로 전달되어 Playwright가 포함되며, 베이스 URL은 `PLAYWRIGHT_BASE_URL` 환경 변수로 덮어쓸 수 있습니다(기본값 `http://localhost:3000`).
+3. 확장 e2e를 돌리려면 `PLAYWRIGHT=1 make tests-core` 또는 `npm run playwright:test`를 사용하세요. CI에서는 `CI_ENABLE_E2E`가 true일 때 확장 Playwright가 추가되며, 베이스 URL은 `PLAYWRIGHT_BASE_URL` 환경 변수로 덮어쓸 수 있습니다(기본값 `http://localhost:3000`).
 
 > ❗️ 모든 Playwright 실행은 Next.js 앱이 기동된 상태를 전제로 합니다. `docker compose up` 또는 `npm run dev` 등으로 서비스가 준비됐는지 확인하세요.
+
+## 배포 체크리스트 (MVP)
+
+1. 프론트/백엔드 빌드  
+   ```bash
+   cd client && npm run build
+   cd ../backend && ./gradlew bootJar
+   ```
+2. Docker 이미지 태깅  
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml build app
+   docker tag dorm_app:latest dormmate/app:<TAG>
+   ```
+3. 배포/업데이트  
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app
+   ```
+4. 실패 시 롤백  
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app --build --no-cache  # 안정 버전으로 재배포
+   ```
+
+> 운영 배포 전에는 `make tests-core`(Playwright 스모크 포함)와 `make schema-drift`를 통과했는지 확인하세요.
 
 ## 추가 문서
 
 - `backend/ENV_SETUP.md`: 환경 변수와 보안 체크리스트
-- `docs/legacy/`: 과거 버전 문서 및 백업 자료
 - `api/openapi.yml`: OpenAPI seed 명세
+- `tools/db/README.md`: 스키마 드리프트 감지 및 `make schema-drift` 사용 가이드
+- `docs/service/service-definition.md#6-테스트-및-완료-기준`: Step 6 테스트 번들·로그 기록 지침
 
 운영/배포 절차, 검증 체크리스트 등은 이후 문서화를 진행하면서 `docs/` 이하에 보강할 예정입니다.

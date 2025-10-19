@@ -110,6 +110,26 @@ sudo reboot
 docker run --env-file .env.prod your-app-image
 ```
 
+## 🚢 **배포 절차 요약**
+1. 앱 빌드  
+   ```bash
+   cd client && npm run build
+   cd ../backend && ./gradlew bootJar
+   ```
+2. 이미지 태그 및 배포  
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml build app
+   docker tag dorm_app:latest dormmate/app:<TAG>
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app
+   ```
+3. 롤백  
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app --build --no-cache
+   ```
+
+배포 전에는 `make tests-core`(Playwright 스모크 포함)와 `make schema-drift` 결과를 확인하고, `.env.prod`가 최신인지 점검하세요.
+
 ## 🧊 냉장고 라벨 시드 참고
 
 - `R__Seed.sql`은 각 보관 칸당 라벨 번호 1~999를 한 번에 채우기 위해 `generate_series`와 `CROSS JOIN`을 사용합니다.

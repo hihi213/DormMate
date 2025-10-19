@@ -11,7 +11,7 @@ import sys
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Update Codex active_profile")
-    parser.add_argument("profile", help="Profile name (design, stubs, review, brainstorm, ...)")
+    parser.add_argument("profile", help="Profile name (develop, wrap-up, brainstorm, ...)")
     parser.add_argument(
         "--config",
         type=pathlib.Path,

@@ -21,7 +21,7 @@ services:
       # Spring Boot 애플리케이션에 필요한 환경 변수를 주입합니다.
       # 운영 환경에서는 이 값들을 .env 파일이나 CI/CD 시스템을 통해 안전하게 주입해야 합니다.
       SPRING_PROFILES_ACTIVE: prod # Spring Boot의 실행 프로필을 'prod'로 설정합니다. `application-prod.properties` 설정을 활성화합니다.
-      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGES_DB:-dormitory_db} # DB 연결 URL. 'db'는 docker-compose 네트워크 내의 DB 서비스 이름입니다.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/${POSTGRES_DB:-dormitory_db} # DB 연결 URL. 'db'는 docker-compose 네트워크 내의 DB 서비스 이름입니다.
       SPRING_DATASOURCE_USERNAME: ${POSTGRES_USER:-dorm_user} # DB 사용자 이름
       SPRING_DATASOURCE_PASSWORD: ${POSTGRES_PASSWORD:-dorm_password} # DB 비밀번호
       # JWT(JSON Web Token) 관련 보안 설정. 이 값들은 절대로 코드에 하드코딩하면 안 됩니다.

@@ -1,4 +1,4 @@
-.PHONY: help up down ps logs db-up migrate schema seed reset-db client-dev client-build client-lint backend-build backend-test backend-clean db-shell pgadmin-url redis-cli clean dev dev-front dev-stop migrate-local schema-drift api-lint api-mock api-diff api-export api-compat plan plan-design plan-stubs plan-review plan-brainstorm plan-current _ensure-local-node tests-core docs-pending task-lint playwright-install playwright-test
+.PHONY: help up down ps logs db-up migrate schema seed reset-db client-dev client-build client-lint backend-build backend-test backend-clean db-shell pgadmin-url redis-cli clean dev dev-front dev-stop migrate-local schema-drift api-lint api-mock api-diff api-export api-compat plan plan-develop plan-wrap plan-brainstorm plan-current _ensure-local-node tests-core docs-pending task-lint playwright-install playwright-test
 
 # =============================================================
 # DormMate — 통합 개발/운영 Makefile
@@ -40,6 +40,7 @@ LOCAL_NPX := $(LOCAL_NODE_DIR)/bin/npx
 # Playwright 실행은 CI 환경(CI=true/1/yes)에서는 자동으로 켜고, 로컬에서는 PLAYWRIGHT=1로 수동 토글한다.
 CI_BOOL := $(if $(filter 1 true TRUE yes YES,$(CI)),1,0)
 PLAYWRIGHT ?= $(CI_BOOL)
+PLAYWRIGHT_SMOKE_CMD ?= npm run playwright:test -- --grep "@smoke"
 
 help:
 	@echo "사용 가능한 타깃:"
@@ -62,7 +63,7 @@ help:
 	@echo "  backend-build- 백엔드 Gradle 빌드"
 	@echo "  backend-test - 백엔드 테스트"
 	@echo "  backend-clean- 백엔드 클린"
-	@echo "  tests-core   - Spectral + Backend + Frontend(+Playwright 옵션) 일괄 실행"
+	@echo "  tests-core   - Spectral + Backend + Frontend + Playwright 스모크(확장 e2e 옵션, 자세한 절차: docs/service/service-definition.md §6)"
 	@echo "  docs-pending - docs/service/_drafts 초안과 본문 차이 확인"
 	@echo "  task-lint    - docs/tasks/*.yaml 필수 필드 검증"
 	@echo "  playwright-install - Playwright 브라우저 의존성 설치"
@@ -178,12 +179,15 @@ tests-core:
 	@echo "✅ Backend tests 완료"
 	cd client && npm test
 	@echo "✅ Frontend tests 완료"
+	@echo "🎭 Running Playwright smoke (PLAYWRIGHT_SMOKE_CMD=$(PLAYWRIGHT_SMOKE_CMD))"
+	cd client && $(PLAYWRIGHT_SMOKE_CMD)
+	@echo "✅ Playwright smoke 완료"
 	@if [ "$(PLAYWRIGHT)" = "1" ]; then \
-		echo "🎭 Including Playwright tests (PLAYWRIGHT=$(PLAYWRIGHT))"; \
+		echo "🎭 Including Playwright extended tests (PLAYWRIGHT=$(PLAYWRIGHT))"; \
 		$(MAKE) --no-print-directory PLAYWRIGHT=$(PLAYWRIGHT) playwright-test; \
-		echo "✅ Playwright tests 완료"; \
+		echo "✅ Playwright extended tests 완료"; \
 	else \
-		echo "➡️  Skipping Playwright tests (set PLAYWRIGHT=1 to enable)"; \
+		echo "➡️  Skipping Playwright extended tests (set PLAYWRIGHT=1 to enable)"; \
 	fi
 
 docs-pending:
@@ -221,6 +225,7 @@ dev-front:
 dev-stop:
 	@echo "🔻 Stopping DormMate dev processes..."
 	- pkill -f "gradlew bootRun" >/dev/null 2>&1 || true
+	- pkill -f "org.springframework.boot.loader.JarLauncher" >/dev/null 2>&1 || true
 	- pkill -f "npm run dev" >/dev/null 2>&1 || true
 	- pkill -f "next dev" >/dev/null 2>&1 || true
 	- pkill -f "node .*pj_DormMate/client" >/dev/null 2>&1 || true
@@ -301,20 +306,16 @@ api-compat:
 
 # --- Codex 프로필 전환 ---
 plan:
-	@echo "make plan-design      # 설계 모드"
-	@echo "make plan-stubs       # 스텁(주석 뼈대) 모드"
-	@echo "make plan-review      # 리뷰/테스트 보강 모드"
-	@echo "make plan-brainstorm  # 아이디어(브레인스토밍) 모드"
+	@echo "make plan-develop     # develop 프로필 (Step 0~6)"
+	@echo "make plan-wrap        # wrap-up 프로필 (Step 7)"
+	@echo "make plan-brainstorm  # brainstorm 프로필 (선택)"
 	@echo "make plan-current     # 현재 프로필 확인"
 
-plan-design:
-	./plan 설계
+plan-develop:
+	./plan develop
 
-plan-stubs:
-	./plan 스텁
-
-plan-review:
-	./plan 리뷰
+plan-wrap:
+	./plan wrap-up
 
 plan-brainstorm:
 	./plan 아이디어
