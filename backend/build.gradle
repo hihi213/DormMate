@@ -12,6 +12,8 @@ plugins {
     // Git 커밋 정보(.git 디렉토리)를 읽어서 'git.properties' 파일을 생성해주는 플러그인입니다.
     // 이 정보는 Spring Boot Actuator의 /info 엔드포인트를 통해 노출되어, 현재 배포된 버전의 정확한 커밋 ID를 확인할 수 있게 해줍니다. (운영 환경에서 디버깅 시 매우 유용)
     id 'com.gorylenko.gradle-git-properties' version '2.4.1'
+    // Flyway Gradle 플러그인: CLI에서도 마이그레이션을 실행할 수 있도록 태스크 제공
+    id 'org.flywaydb.flyway' version '10.17.0'
 }
 
 // group, version: Maven이나 Ivy 같은 저장소에서 이 프로젝트를 고유하게 식별하기 위한 좌표입니다.
@@ -116,4 +118,14 @@ springBoot {
     // 이 설정을 추가하면, 빌드 시점에 'META-INF/build-info.properties' 파일이 생성됩니다.
     // 이 파일에는 프로젝트 버전, 빌드 시간 등의 정보가 담겨 있으며, Actuator의 /info 엔드포인트를 통해 외부로 노출할 수 있습니다.
     buildInfo()
+}
+
+flyway {
+    url = System.getenv('DB_URL') ?: 'jdbc:postgresql://localhost:5432/dormitory_db'
+    user = System.getenv('DB_USERNAME') ?: 'dorm_user'
+    password = System.getenv('DB_PASSWORD') ?: 'dorm_password'
+    schemas = ['public']
+    baselineOnMigrate = true
+    locations = ["filesystem:${projectDir}/src/main/resources/db/migration"]
+    configurations = ['runtimeClasspath'] // reuse app runtime classpath so Flyway tasks see the JDBC driver
 }

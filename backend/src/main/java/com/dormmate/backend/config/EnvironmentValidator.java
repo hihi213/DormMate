@@ -45,7 +45,7 @@ public class EnvironmentValidator {
 
         // JWT_SECRET 보안 검증
         String jwtSecret = environment.getProperty("jwt.secret");
-        if (jwtSecret != null && jwtSecret.equals("dev-jwt-secret-key-change-in-production-2024")) {
+        if (jwtSecret != null && jwtSecret.equals("dev-jwt-secret-key-change-in-production-2025")) {
             invalidVars.add("jwt.secret: 기본값을 실제 랜덤 문자열로 변경하세요");
         }
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Unified automation CLI for the DormMate project.
 
-기존 Makefile · shell 스크립트를 대체해 7-스텝 루프에서 필요한
+기존 Makefile · shell 스크립트를 대체해 스텝 루프에서 필요한
 명령을 일관적으로 제공한다. 모든 명령은 프로젝트 루트에서 실행한다.
 """
 
@@ -21,7 +21,6 @@ from typing import Iterable, Optional
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STATE_PATH = PROJECT_ROOT / ".codex" / "state.json"
-OPENAPI_SEED = PROJECT_ROOT / "docs" / "openapi" / "fridge-mvp.yaml"
 BUILD_DIR = PROJECT_ROOT / "build"
 CLIENT_DIR = PROJECT_ROOT / "client"
 BACKEND_DIR = PROJECT_ROOT / "backend"
@@ -50,6 +49,18 @@ def run_command(
         merged_env.update(env)
     completed = subprocess.run(cmd_list, cwd=cwd, env=merged_env, check=check)
     return CommandResult(command=cmd_list, returncode=completed.returncode)
+
+
+def run_gradle_task(*tasks: str, clean: bool = False, check: bool = True) -> CommandResult:
+    cmd = ["./gradlew"]
+    if clean:
+        cmd.append("clean")
+    cmd.extend(tasks)
+    return run_command(cmd, cwd=BACKEND_DIR, check=check)
+
+
+def run_npm_command(*args: str, check: bool = True) -> CommandResult:
+    return run_command(["npm", *args], cwd=CLIENT_DIR, check=check)
 
 
 # ---------------------------------------------------------------------------
@@ -96,11 +107,12 @@ def show_state() -> None:
 # ---------------------------------------------------------------------------
 
 _ENV_CACHE: Optional[dict[str, str]] = None
+_ENV_WARNING_EMITTED = False
 
 
 def load_env_cache() -> dict[str, str]:
     """Load .env (if present) once and reuse for all subprocess calls."""
-    global _ENV_CACHE
+    global _ENV_CACHE, _ENV_WARNING_EMITTED
     if _ENV_CACHE is not None:
         return _ENV_CACHE
 
@@ -117,6 +129,9 @@ def load_env_cache() -> dict[str, str]:
                 continue
             key, value = line.split("=", 1)
             env[key.strip()] = value.strip()
+    elif not _ENV_WARNING_EMITTED:
+        print("ℹ️  .env 파일이 없어 기본 시스템 환경 변수를 사용합니다.")
+        _ENV_WARNING_EMITTED = True
     _ENV_CACHE = env
     return _ENV_CACHE
 
@@ -128,43 +143,45 @@ def load_env_cache() -> dict[str, str]:
 
 def cmd_tests_core(args: argparse.Namespace) -> None:
     print("▶️  Step 6 핵심 테스트 번들을 실행합니다.")
-    spectral()
-    gradle_tests(clean=True)
-    npm_tests()
-    playwright_smoke()
-    if args.full_playwright:
-        playwright_full()
-    persist_state(last_tests="python tools/automation/cli.py tests core")
+    if args.skip_backend:
+        print("↪️  백엔드 테스트를 건너뜁니다.")
+    else:
+        gradle_tests(clean=True)
+
+    if args.skip_frontend:
+        print("↪️  프론트엔드 테스트를 건너뜁니다.")
+    else:
+        npm_tests()
+
+    if args.skip_playwright:
+        print("↪️  Playwright 테스트를 건너뜁니다.")
+    else:
+        if args.full_playwright:
+            playwright_full()
+        else:
+            playwright_smoke()
+
+    persist_state(last_tests="auto tests core")
     print("✅ tests core 완료")
 
 
-def spectral() -> None:
-    run_command(
-        [
-            "npx",
-            "@stoplight/spectral-cli",
-            "lint",
-            str(OPENAPI_SEED),
-            "--ruleset",
-            ".spectral.yaml",
-        ]
-    )
-
-
 def gradle_tests(*, clean: bool) -> None:
-    cmd = ["./gradlew"]
-    if clean:
-        cmd.append("clean")
-    cmd.append("test")
-    run_command(cmd, cwd=BACKEND_DIR)
+    run_gradle_task("test", clean=clean)
 
 
 def npm_tests() -> None:
-    run_command(["npm", "test"], cwd=CLIENT_DIR)
+    run_npm_command("test")
 
 
 def playwright_smoke() -> None:
-    command = ["npm", "run", "playwright:test", "--", "--grep", "@smoke"]
+    run_playwright(smoke_only=True)
+
+
+def run_playwright(smoke_only: bool, allow_empty: bool = True) -> None:
+    command: list[str] = ["npm", "run", "playwright:test"]
+    if smoke_only:
+        command.extend(["--", "--grep", "@smoke"])
+    print(f"$ {' '.join(command)} [{CLIENT_DIR}]")
     env = load_env_cache()
     process = subprocess.run(
         command,
@@ -179,46 +196,61 @@ def playwright_smoke() -> None:
         sys.stderr.write(process.stderr)
     if process.returncode != 0:
         combined = (process.stdout or "") + (process.stderr or "")
-        if "No tests found" in combined:
-            print("ℹ️  Playwright @smoke 테스트가 없어 스킵했습니다.")
+        if allow_empty and "No tests found" in combined:
+            print("ℹ️  Playwright 테스트가 없어 스킵했습니다.")
             return
         raise subprocess.CalledProcessError(process.returncode, command)
 
 
 def playwright_full() -> None:
-    run_command(["npm", "run", "playwright:test"], cwd=CLIENT_DIR)
+    run_playwright(smoke_only=False, allow_empty=False)
 
 
 def cmd_tests_backend(_: argparse.Namespace) -> None:
     gradle_tests(clean=False)
-    persist_state(last_tests="python tools/automation/cli.py tests backend")
+    persist_state(last_tests="auto tests backend")
 
 
 def cmd_tests_frontend(_: argparse.Namespace) -> None:
     npm_tests()
-    persist_state(last_tests="python tools/automation/cli.py tests frontend")
+    persist_state(last_tests="auto tests frontend")
+
+
+def cmd_tests_all_alias(_: argparse.Namespace) -> None:
+    cmd_tests_core(
+        argparse.Namespace(
+            skip_backend=False,
+            skip_frontend=False,
+            skip_playwright=False,
+            full_playwright=False,
+        )
+    )
+
+
+def cmd_tests_all_full_alias(_: argparse.Namespace) -> None:
+    cmd_tests_core(
+        argparse.Namespace(
+            skip_backend=False,
+            skip_frontend=False,
+            skip_playwright=False,
+            full_playwright=True,
+        )
+    )
 
 
 def cmd_tests_playwright(args: argparse.Namespace) -> None:
     if args.full:
         playwright_full()
-        label = "python tools/automation/cli.py tests playwright --full"
+        label = "auto tests playwright --full"
     else:
         playwright_smoke()
-        label = "python tools/automation/cli.py tests playwright"
+        label = "auto tests playwright"
     persist_state(last_tests=label)
 
 
-def cmd_openapi_lint(_: argparse.Namespace) -> None:
-    spectral()
-
-
-def cmd_openapi_diff(args: argparse.Namespace) -> None:
-    print("⚠️  openapi diff 명령은 현재 비활성화되었습니다. OpenAPI 3.1을 지원하는 도구가 준비되면 다시 안내드릴게요.")
-
-
 def cmd_db_migrate(_: argparse.Namespace) -> None:
-    run_command(["docker", "compose", "run", "--rm", "migrate"])
+    print("ℹ️  Gradle Flyway 마이그레이션을 실행합니다.")
+    run_gradle_task("flywayMigrate")
 
 
 def cmd_dev_up(args: argparse.Namespace) -> None:
@@ -242,6 +274,26 @@ def cmd_dev_backend(_: argparse.Namespace) -> None:
 def cmd_dev_frontend(_: argparse.Namespace) -> None:
     print("ℹ️  Next.js 개발 서버를 실행합니다. 종료하려면 Ctrl+C.")
     run_command(["npm", "run", "dev"], cwd=CLIENT_DIR, check=False)
+
+
+def cmd_dev_backend_alias(_: argparse.Namespace) -> None:
+    cmd_dev_backend(argparse.Namespace())
+
+
+def cmd_dev_frontend_alias(_: argparse.Namespace) -> None:
+    cmd_dev_frontend(argparse.Namespace())
+
+
+def cmd_dev_up_alias(_: argparse.Namespace) -> None:
+    cmd_dev_up(argparse.Namespace(services=None))
+
+
+def cmd_dev_down_alias(_: argparse.Namespace) -> None:
+    cmd_dev_down(argparse.Namespace())
+
+
+def cmd_dev_status_alias(_: argparse.Namespace) -> None:
+    cmd_dev_status(argparse.Namespace())
 
 
 def cmd_cleanup(_: argparse.Namespace) -> None:
@@ -289,7 +341,10 @@ def build_parser() -> argparse.ArgumentParser:
     tests = subparsers.add_parser("tests", help="테스트 명령")
     tests_sub = tests.add_subparsers(dest="tests_command")
 
-    tests_core = tests_sub.add_parser("core", help="Spectral+백엔드+프론트+Playwright 스모크")
+    tests_core = tests_sub.add_parser("core", help="백엔드+프론트+Playwright 테스트 번들 실행")
+    tests_core.add_argument("--skip-backend", action="store_true", help="Gradle 테스트를 건너뜀")
+    tests_core.add_argument("--skip-frontend", action="store_true", help="프론트엔드 테스트를 건너뜀")
+    tests_core.add_argument("--skip-playwright", action="store_true", help="Playwright 테스트를 건너뜀")
     tests_core.add_argument("--full-playwright", action="store_true", help="Playwright 전체 테스트까지 실행")
     tests_core.set_defaults(func=cmd_tests_core)
 
@@ -303,20 +358,11 @@ def build_parser() -> argparse.ArgumentParser:
     tests_playwright.add_argument("--full", action="store_true", help="Playwright 전체 테스트 실행")
     tests_playwright.set_defaults(func=cmd_tests_playwright)
 
-    # openapi
-    openapi = subparsers.add_parser("openapi", help="OpenAPI 관련 명령")
-    openapi_sub = openapi.add_subparsers(dest="openapi_command")
+    tests_all = subparsers.add_parser("tests-all", help="tests core와 동일 (alias)")
+    tests_all.set_defaults(func=cmd_tests_all_alias)
 
-    openapi_lint = openapi_sub.add_parser("lint", help="Spectral lint 실행")
-    openapi_lint.set_defaults(func=cmd_openapi_lint)
-
-    openapi_diff = openapi_sub.add_parser("diff", help="(비활성화) Seed와 런타임 명세 diff")
-    openapi_diff.add_argument(
-        "--url",
-        default="http://localhost:8080/v3/api-docs",
-        help="런타임 OpenAPI를 가져올 URL (기본: %(default)s)",
-    )
-    openapi_diff.set_defaults(func=cmd_openapi_diff)
+    tests_all_full = subparsers.add_parser("tests-all-full", help="tests core --full-playwright (alias)")
+    tests_all_full.set_defaults(func=cmd_tests_all_full_alias)
 
     # db
     db = subparsers.add_parser("db", help="데이터베이스 관련 명령")
@@ -344,6 +390,21 @@ def build_parser() -> argparse.ArgumentParser:
 
     dev_frontend = dev_sub.add_parser("frontend", help="Next.js dev 서버 실행")
     dev_frontend.set_defaults(func=cmd_dev_frontend)
+
+    dev_backend_alias = subparsers.add_parser("dev-backend", help="dev backend alias")
+    dev_backend_alias.set_defaults(func=cmd_dev_backend_alias)
+
+    dev_frontend_alias = subparsers.add_parser("dev-frontend", help="dev frontend alias")
+    dev_frontend_alias.set_defaults(func=cmd_dev_frontend_alias)
+
+    dev_up_alias = subparsers.add_parser("dev-up", help="dev up alias")
+    dev_up_alias.set_defaults(func=cmd_dev_up_alias)
+
+    dev_down_alias = subparsers.add_parser("dev-down", help="dev down alias")
+    dev_down_alias.set_defaults(func=cmd_dev_down_alias)
+
+    dev_status_alias = subparsers.add_parser("dev-status", help="dev status alias")
+    dev_status_alias.set_defaults(func=cmd_dev_status_alias)
 
     # 기타
     cleanup = subparsers.add_parser("cleanup", help="빌드 산출물 정리")
