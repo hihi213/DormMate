@@ -2,8 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react"
 import type { AuthUser } from "@/lib/auth"
-import { getCurrentUser, logout as doLogout, setCurrentUser, subscribeAuth } from "@/lib/auth"
-import { resetAndSeedAll } from "@/lib/demo-seed"
+import { fetchProfile, getCurrentUser, loginWithCredentials, logout as doLogout, subscribeAuth } from "@/lib/auth"
 
 const SCHED_KEY = "fridge-inspections-schedule-v1"
 
@@ -47,6 +46,11 @@ export function useHomeState() {
   }, [])
 
   useEffect(() => {
+    if (!mounted) return
+    void fetchProfile()
+  }, [mounted])
+
+  useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(SCHED_KEY) || "null") as Schedule[] | null
       if (Array.isArray(saved) && saved.length) {
@@ -72,23 +76,21 @@ export function useHomeState() {
     }
   }, [])
 
-  const logout = () => {
-    doLogout()
+  const logout = async () => {
+    await doLogout()
   }
 
-  const resetDemoForUser = () => {
-    if (!user?.id) return
-    resetAndSeedAll(user.id)
-    if (typeof window !== "undefined") {
-      window.location.reload()
-    }
+  const resetDemoForUser = async () => {
+    await doLogout()
+    if (typeof window !== "undefined") window.location.reload()
   }
 
-  const startDemoWithDefaultUser = () => {
-    setCurrentUser("1")
-    resetAndSeedAll("1")
-    if (typeof window !== "undefined") {
-      window.location.reload()
+  const startDemoWithDefaultUser = async () => {
+    try {
+      await loginWithCredentials({ id: "alice", password: "alice" })
+      if (typeof window !== "undefined") window.location.reload()
+    } catch (error) {
+      console.error("demo login failed", error)
     }
   }
 

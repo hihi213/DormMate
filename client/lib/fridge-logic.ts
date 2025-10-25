@@ -23,7 +23,7 @@ export function earliestDays(group: Item[]) {
 export function resolveStatus(expiryISO: string): "expired" | "expiring" | "ok" {
   const d = daysLeft(expiryISO)
   if (d < 0) return "expired"
-  if (d <= 1) return "expiring"
+  if (d <= 3) return "expiring"
   return "ok"
 }
 

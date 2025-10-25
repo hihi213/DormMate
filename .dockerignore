@@ -20,13 +20,17 @@ venv/
 secrets/
 api/
 docs/
+playground/
 workflow/
+with-java
+with-java-env.sh
 
 # 빌드 아티팩트
 artifacts/
 db_data/
 db_data_postgres15_backup/
 backend/build/
+.gradle-cache/
 client/node_modules/
 client/dist/
 

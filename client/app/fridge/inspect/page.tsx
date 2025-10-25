@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { FridgeProvider, useFridge } from "@/features/fridge/hooks/fridge-context"
 import { formatBundleLabel } from "@/features/fridge/utils/data-shaping"
 import { Check, Trash2, Tag, Info, ClipboardCheck, Filter, X, Search, Plus, RotateCcw } from "lucide-react"
-import { getCurrentUserId } from "@/lib/auth"
+import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
 import type { Item, Slot } from "@/features/fridge/types"
 import SearchBar from "@/features/fridge/components/search-bar"
 import WarnMenu from "@/features/fridge/components/warn-menu"
@@ -71,8 +71,9 @@ function InspectInner() {
   const [schedule, setSchedule] = useState<Schedule | null>(null)
 
   useEffect(() => {
-    const uid = getCurrentUserId()
-    if (uid !== "1") {
+    const current = getCurrentUser()
+    const canInspect = current?.roles.includes("FLOOR_MANAGER") || current?.roles.includes("ADMIN")
+    if (!canInspect) {
       router.replace("/fridge")
       return
     }

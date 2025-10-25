@@ -21,7 +21,7 @@ export default function ProfileDialog({ open, onOpenChange, isLoggedIn, user }: 
           <div className="text-sm space-y-1">
             <p>
               <span className="text-muted-foreground">{"아이디: "}</span>
-              <span className="font-medium">{user?.id}</span>
+              <span className="font-medium">{user?.loginId}</span>
             </p>
             <p>
               <span className="text-muted-foreground">{"이름: "}</span>

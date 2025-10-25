@@ -12,7 +12,16 @@ import type {
   Slot,
 } from "@/features/fridge/types"
 import { useFridgeLogic } from "@/hooks/use-fridge-logic"
-import { createInitialData, formatBundleLabel, normalizeSlot, toItems } from "@/features/fridge/utils/data-shaping"
+import {
+  createInitialData,
+  formatBundleLabel,
+  normalizeSlot,
+  toItems,
+  FRIDGE_SLOTS_KEY,
+  FRIDGE_BUNDLES_KEY,
+  FRIDGE_UNITS_KEY,
+  loadFridgeDataFromStorage,
+} from "@/features/fridge/utils/data-shaping"
 import { getCurrentUserId } from "@/lib/auth"
 
 type AddBundlePayload = {
@@ -60,14 +69,73 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const { slots: initialSlots, bundles: initialBundles, units: initialUnits } = useMemo(() => createInitialData(), [])
 
   const [slots, setSlots] = useState<Slot[]>(initialSlots)
-  const [bundles, setBundles] = useState<Bundle[]>(initialBundles)
+  const [bundleState, setBundleState] = useState<Bundle[]>(initialBundles)
   const [units, setUnits] = useState<ItemUnit[]>(initialUnits)
   const [lastInspectionAt, setLastInspectionAt] = useState<number>(0)
   const [isInspector, setIsInspector] = useState(false)
+  const [hydrated, setHydrated] = useState(false)
 
-  const items = useMemo(() => toItems(bundles, units), [bundles, units])
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const persisted = loadFridgeDataFromStorage()
+    if (persisted) {
+      setSlots(persisted.slots)
+      setBundleState(persisted.bundles)
+      setUnits(persisted.units)
+    }
+    setHydrated(true)
+  }, [])
 
-  const logic = useFridgeLogic(items, slots)
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return
+    localStorage.setItem(FRIDGE_SLOTS_KEY, JSON.stringify(slots))
+  }, [slots, hydrated])
+
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return
+    localStorage.setItem(FRIDGE_BUNDLES_KEY, JSON.stringify(bundleState))
+  }, [bundleState, hydrated])
+
+  useEffect(() => {
+    if (!hydrated || typeof window === "undefined") return
+    localStorage.setItem(FRIDGE_UNITS_KEY, JSON.stringify(units))
+  }, [units, hydrated])
+
+  const bundles = useMemo(() => {
+    return bundleState.map((bundle) => {
+      const ownerId = bundle.ownerId
+      if (!ownerId) {
+        if (bundle.owner) return bundle
+        return { ...bundle, owner: "other" }
+      }
+
+      if (!currentUserId) {
+        if (bundle.owner) return bundle
+        return { ...bundle, owner: "other" }
+      }
+
+      const mine = ownerId === currentUserId
+      const expectedOwner = mine ? "me" : "other"
+      if (bundle.owner === expectedOwner) return bundle
+      return { ...bundle, owner: expectedOwner }
+    })
+  }, [bundleState, currentUserId])
+
+  const items = useMemo(() => {
+    const base = toItems(bundles, units)
+    if (!currentUserId) {
+      return base.map((item) => (item.owner ? item : { ...item, owner: item.owner ?? "other" }))
+    }
+
+    return base.map((item) => {
+      const mine = item.ownerId === currentUserId
+      const expectedOwner = mine ? "me" : "other"
+      if (item.owner === expectedOwner) return item
+      return { ...item, owner: expectedOwner }
+    })
+  }, [bundles, units, currentUserId])
+
+  const logic = useFridgeLogic(items, slots, currentUserId)
 
   useEffect(() => {
     const controller = new AbortController()
@@ -163,7 +231,6 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       const bundleId = crypto.randomUUID?.() ?? `bundle-${Date.now()}`
       const nowIso = new Date().toISOString()
       const ownerId = currentUserId
-      const ownerUserId = ownerId ? Number(ownerId) : undefined
       const labelDisplay = formatBundleLabel(slot.code, labelNumber)
 
       const newBundle: Bundle = {
@@ -175,7 +242,6 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         labelDisplay,
         bundleName: payload.bundleName,
         memo: payload.memo?.trim() || undefined,
-        ownerUserId,
         ownerDisplayName: ownerId ? "나" : undefined,
         owner: ownerId ? "me" : "other",
         ownerId,
@@ -196,7 +262,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         updatedAt: nowIso,
       }))
 
-      setBundles((prev) => [newBundle, ...prev])
+      setBundleState((prev) => [newBundle, ...prev])
       setUnits((prev) => [...newUnits, ...prev])
 
       return {
@@ -289,7 +355,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         if (patch.memo !== undefined && targetUnit) {
           const targetUnitsBundleId = targetUnit.bundleId
           if (targetUnitsBundleId) {
-            setBundles((prev) =>
+            setBundleState((prev) =>
               prev.map((bundle) =>
                 bundle.bundleId === targetUnitsBundleId
                   ? { ...bundle, memo: patch.memo ?? bundle.memo, updatedAt: nowIso }
@@ -322,7 +388,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         setUnits((prev) => prev.filter((unit) => unit.unitId !== unitId))
 
         if (remaining.length === 0) {
-          setBundles((prev) => prev.filter((bundle) => bundle.bundleId !== target.bundleId))
+          setBundleState((prev) => prev.filter((bundle) => bundle.bundleId !== target.bundleId))
         }
 
         return { success: true, message: "물품이 삭제되었습니다." }

@@ -1,3 +1,4 @@
+import { ensureValidAccessToken, forceRefreshAccessToken } from "@/lib/auth"
 import { ApiError, ApiErrorDictionary, resolveApiError } from "./api-errors"
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
@@ -11,6 +12,7 @@ export type ApiRequestOptions = Omit<RequestInit, "body" | "method" | "headers">
   parseResponseAs?: ParseMode
   errorMessages?: Partial<ApiErrorDictionary>
   baseUrl?: string
+  skipAuth?: boolean
 }
 
 export type ApiSuccess<T> = {
@@ -67,18 +69,40 @@ export async function apiClient<T>(path: string, options: ApiRequestOptions = {}
     parseResponseAs = "json",
     errorMessages,
     baseUrl = DEFAULT_BASE_URL,
+    skipAuth = false,
     ...rest
   } = options
 
   const headers = new Headers(headersInit)
   const requestUrl = `${baseUrl}${path}`
+  let requestBody = buildBody(body, headers)
 
-  const response = await fetch(requestUrl, {
+  if (!skipAuth) {
+    const accessToken = await ensureValidAccessToken()
+    if (accessToken) {
+      headers.set("authorization", `Bearer ${accessToken}`)
+    }
+  }
+
+  let response = await fetch(requestUrl, {
     ...rest,
     method,
     headers,
-    body: buildBody(body, headers),
+    body: requestBody,
   })
+
+  if (response.status === 401 && !skipAuth) {
+    const refreshed = await forceRefreshAccessToken()
+    if (refreshed) {
+      headers.set("authorization", `Bearer ${refreshed}`)
+      response = await fetch(requestUrl, {
+        ...rest,
+        method,
+        headers,
+        body: requestBody,
+      })
+    }
+  }
 
   if (!response.ok) {
     const error = await resolveApiError(response, errorMessages)

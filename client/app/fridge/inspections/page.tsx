@@ -5,7 +5,7 @@ import { ArrowLeft, Plus, CalendarDays, MoreVertical, Edit3, Trash2, CheckCircle
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { getCurrentUserId } from "@/lib/auth"
+import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -37,7 +37,7 @@ export default function InspectionsPage() {
 
 function InspectionsInner() {
   const [schedules, setSchedules] = useState<Schedule[]>([])
-  const [isFloorLead, setIsFloorLead] = useState(false) // 1번 계정 = 층별장 특수 역할
+  const [isFloorLead, setIsFloorLead] = useState(false)
   const uid = getCurrentUserId()
 
   // 에디터 상태
@@ -65,9 +65,10 @@ function InspectionsInner() {
       setSchedules(demoS)
     }
 
-    // 권한: 1번 계정은 층별장
-    setIsFloorLead(uid === "1")
-  }, [uid])
+    const current = getCurrentUser()
+    const canManage = current?.roles.includes("FLOOR_MANAGER") || current?.roles.includes("ADMIN")
+    setIsFloorLead(Boolean(canManage))
+  }, [])
 
   const save = (list: Schedule[]) => {
     setSchedules(list)

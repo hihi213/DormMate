@@ -78,7 +78,7 @@ export default function HomeHeader({
                   <DropdownMenuLabel>{"로그인이 필요합니다"}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={navigateToLogin}>{"로그인"}</DropdownMenuItem>
-                  <DropdownMenuItem onClick={onStartDemo}>{"데모 시작(1번 계정)"}</DropdownMenuItem>
+                  <DropdownMenuItem onClick={onStartDemo}>{"데모 시작(alice 계정)"}</DropdownMenuItem>
                 </>
               )}
             </DropdownMenuContent>

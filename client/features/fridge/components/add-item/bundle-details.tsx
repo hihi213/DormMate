@@ -93,7 +93,7 @@ export function BundleDetails({
                     })
                   }}
                   helperText={changedDate ? "대표값에서 변경됨" : "대표값과 동일"}
-                  warningThresholdDays={1}
+                  warningThresholdDays={3}
                   presets={[]}
                   className="flex-1"
                 />
