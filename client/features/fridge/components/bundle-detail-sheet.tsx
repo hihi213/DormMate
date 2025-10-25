@@ -236,7 +236,7 @@ function EditRow({
         value={v.expiry}
         onChange={(next) => setV((p) => ({ ...p, expiry: next }))}
         presets={[]}
-        warningThresholdDays={1}
+        warningThresholdDays={3}
       />
       <div className="sm:col-span-2 flex justify-end">
         <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onSave(v)}>

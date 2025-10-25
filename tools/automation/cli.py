@@ -24,6 +24,9 @@ STATE_PATH = PROJECT_ROOT / ".codex" / "state.json"
 BUILD_DIR = PROJECT_ROOT / "build"
 CLIENT_DIR = PROJECT_ROOT / "client"
 BACKEND_DIR = PROJECT_ROOT / "backend"
+JAVA_HOME_DEFAULT = Path.home() / "Library/Java/JavaVirtualMachines/ms-21.0.8/Contents/Home"
+GRADLE_CACHE_DIR = PROJECT_ROOT / ".gradle-cache"
+NODE_CACHE_ROOT = PROJECT_ROOT / ".cache" / "node"
 
 
 @dataclass
@@ -108,11 +111,23 @@ def show_state() -> None:
 
 _ENV_CACHE: Optional[dict[str, str]] = None
 _ENV_WARNING_EMITTED = False
+_JAVA_WARNING_EMITTED = False
+_NODE_WARNING_EMITTED = False
+
+
+def _detect_node_bin() -> Optional[Path]:
+    if not NODE_CACHE_ROOT.exists():
+        return None
+    for candidate in sorted(NODE_CACHE_ROOT.iterdir(), reverse=True):
+        bin_dir = candidate / "bin"
+        if bin_dir.is_dir():
+            return bin_dir
+    return None
 
 
 def load_env_cache() -> dict[str, str]:
     """Load .env (if present) once and reuse for all subprocess calls."""
-    global _ENV_CACHE, _ENV_WARNING_EMITTED
+    global _ENV_CACHE, _ENV_WARNING_EMITTED, _JAVA_WARNING_EMITTED, _NODE_WARNING_EMITTED
     if _ENV_CACHE is not None:
         return _ENV_CACHE
 
@@ -132,6 +147,37 @@ def load_env_cache() -> dict[str, str]:
     elif not _ENV_WARNING_EMITTED:
         print("ℹ️  .env 파일이 없어 기본 시스템 환경 변수를 사용합니다.")
         _ENV_WARNING_EMITTED = True
+
+    path_entries = env.get("PATH", "").split(os.pathsep) if env.get("PATH") else []
+
+    java_home = env.get("JAVA_HOME")
+    java_home_path = Path(java_home) if java_home else JAVA_HOME_DEFAULT
+    java_bin_path = java_home_path / "bin"
+    if java_bin_path.is_dir():
+        env["JAVA_HOME"] = str(java_home_path)
+        if str(java_bin_path) not in path_entries:
+            path_entries.insert(0, str(java_bin_path))
+    elif not _JAVA_WARNING_EMITTED:
+        print("⚠️  JAVA_HOME 경로를 찾을 수 없어 기본 Gradle 테스트가 실패할 수 있습니다.")
+        print(f"    확인된 경로: {java_home_path}")
+        _JAVA_WARNING_EMITTED = True
+
+    if "GRADLE_USER_HOME" not in env:
+        env["GRADLE_USER_HOME"] = str(GRADLE_CACHE_DIR)
+    Path(env["GRADLE_USER_HOME"]).mkdir(parents=True, exist_ok=True)
+
+    node_bin_dir = _detect_node_bin()
+    if node_bin_dir:
+        node_bin_str = str(node_bin_dir)
+        if node_bin_str not in path_entries:
+            path_entries.insert(0, node_bin_str)
+    elif not _NODE_WARNING_EMITTED:
+        print("ℹ️  .cache/node 아래에서 Node.js 바이너리를 찾지 못했습니다. 시스템 PATH를 사용합니다.")
+        _NODE_WARNING_EMITTED = True
+
+    if path_entries:
+        env["PATH"] = os.pathsep.join(path_entries)
+
     _ENV_CACHE = env
     return _ENV_CACHE
 

@@ -7,6 +7,7 @@ import type {
   Owner,
   Slot,
 } from "@/features/fridge/types"
+import { addDays, startOfDayLocal, toYMD } from "@/lib/date-utils"
 
 export const FLOOR_CODES: FloorCode[] = ["2F", "3F", "4F", "5F"]
 
@@ -142,20 +143,28 @@ export function normalizeBundle(raw: any, slots: Slot[], index: number, currentU
         ? new Date(raw.updatedAt).toISOString()
         : createdAt
 
-  const ownerUserId =
-    typeof raw?.ownerUserId === "number" && !Number.isNaN(raw.ownerUserId)
-      ? raw.ownerUserId
-      : typeof raw?.ownerId === "string" && raw.ownerId.length > 0
-        ? Number(raw.ownerId)
-        : undefined
-  const ownerId = ownerUserId != null ? String(ownerUserId) : undefined
+  let ownerId: string | undefined
+  let ownerUserId: number | undefined
+
+  if (typeof raw?.ownerId === "string" && raw.ownerId.trim().length > 0) {
+    ownerId = raw.ownerId.trim()
+    const numericCandidate = Number(ownerId)
+    if (!Number.isNaN(numericCandidate) && Number.isFinite(numericCandidate)) {
+      ownerUserId = numericCandidate
+    }
+  } else if (typeof raw?.ownerUserId === "number" && !Number.isNaN(raw.ownerUserId)) {
+    ownerUserId = raw.ownerUserId
+    ownerId = String(raw.ownerUserId)
+  }
 
   const owner: Owner =
     raw?.owner === "me" || raw?.owner === "other"
       ? raw.owner
       : ownerId && currentUserId && ownerId === currentUserId
         ? "me"
-        : undefined
+        : ownerId
+          ? "other"
+          : undefined
 
   return {
     bundleId:
@@ -171,8 +180,8 @@ export function normalizeBundle(raw: any, slots: Slot[], index: number, currentU
     memo: typeof raw?.memo === "string" ? raw.memo : undefined,
     ownerUserId,
     ownerDisplayName: typeof raw?.ownerDisplayName === "string" ? raw.ownerDisplayName : undefined,
-    owner: owner ?? (currentUserId ? "me" : "other"),
-    ownerId: ownerId ?? currentUserId,
+    owner: owner ?? "other",
+    ownerId,
     createdAt,
     updatedAt,
     removedAt:
@@ -265,15 +274,242 @@ export function toItems(bundles: Bundle[], units: ItemUnit[]): Item[] {
   })
 }
 
-export function createInitialSlots(): Slot[] {
-  return []
+export const FRIDGE_SLOTS_KEY = "fridge-slots-v1"
+export const FRIDGE_BUNDLES_KEY = "fridge-bundles-v1"
+export const FRIDGE_UNITS_KEY = "fridge-units-v1"
+
+type FridgeSeed = {
+  slots: Slot[]
+  bundles: Bundle[]
+  units: ItemUnit[]
+}
+
+export function generateDefaultFridgeData(): FridgeSeed {
+  const today = startOfDayLocal(new Date())
+  const createdAt = addDays(today, -3).toISOString()
+
+  const slots: Slot[] = [
+    {
+      resourceId: 2001,
+      code: "2F-A",
+      displayOrder: 1,
+      labelRangeStart: 1,
+      labelRangeEnd: 60,
+      label: "2층 냉장 A",
+      floorCode: "2F",
+      type: "FRIDGE_COMP",
+      status: "ACTIVE",
+      createdAt,
+      description: "2층 거주자 공용 냉장고 A",
+      temperature: "refrigerator",
+      capacity: 24,
+      isActive: true,
+    },
+    {
+      resourceId: 2002,
+      code: "2F-B",
+      displayOrder: 2,
+      labelRangeStart: 1,
+      labelRangeEnd: 60,
+      label: "2층 냉장 B",
+      floorCode: "2F",
+      type: "FRIDGE_COMP",
+      status: "ACTIVE",
+      createdAt,
+      description: "2층 거주자 공용 냉장고 B",
+      temperature: "refrigerator",
+      capacity: 24,
+      isActive: true,
+    },
+    {
+      resourceId: 2003,
+      code: "2F-F",
+      displayOrder: 3,
+      labelRangeStart: 1,
+      labelRangeEnd: 40,
+      label: "2층 냉동실",
+      floorCode: "2F",
+      type: "FRIDGE_COMP",
+      status: "ACTIVE",
+      createdAt,
+      description: "2층 공용 냉동실",
+      temperature: "freezer",
+      capacity: 20,
+      isActive: true,
+    },
+  ]
+
+  const bundles: Bundle[] = [
+    {
+      bundleId: "seed-alice-001",
+      resourceId: slots[0].resourceId,
+      slotCode: slots[0].code,
+      labelNo: 1,
+      labelNumber: 1,
+      labelDisplay: formatBundleLabel(slots[0].code, 1),
+      bundleName: "주간 식재료",
+      memo: "우유는 3일 내 소비",
+      owner: "other",
+      ownerId: "alice",
+      ownerDisplayName: "김도미",
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      bundleId: "seed-bob-001",
+      resourceId: slots[1].resourceId,
+      slotCode: slots[1].code,
+      labelNo: 5,
+      labelNumber: 5,
+      labelDisplay: formatBundleLabel(slots[1].code, 5),
+      bundleName: "김치 보관",
+      memo: "김치 단지",
+      owner: "other",
+      ownerId: "bob",
+      ownerDisplayName: "박태일",
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      bundleId: "seed-charlie-frozen",
+      resourceId: slots[2].resourceId,
+      slotCode: slots[2].code,
+      labelNo: 3,
+      labelNumber: 3,
+      labelDisplay: formatBundleLabel(slots[2].code, 3),
+      bundleName: "동결 만두",
+      memo: "야식용",
+      owner: "other",
+      ownerId: "charlie",
+      ownerDisplayName: "최나래",
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      bundleId: "seed-alice-expired",
+      resourceId: slots[0].resourceId,
+      slotCode: slots[0].code,
+      labelNo: 8,
+      labelNumber: 8,
+      labelDisplay: formatBundleLabel(slots[0].code, 8),
+      bundleName: "간식 보관",
+      memo: "유통기한 확인 필요",
+      owner: "other",
+      ownerId: "alice",
+      ownerDisplayName: "김도미",
+      createdAt,
+      updatedAt: createdAt,
+    },
+  ]
+
+  const units: ItemUnit[] = [
+    {
+      unitId: "seed-unit-1001",
+      bundleId: "seed-alice-001",
+      seqNo: 1,
+      name: "우유",
+      expiry: toYMD(addDays(today, 5)),
+      quantity: 1,
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      unitId: "seed-unit-1002",
+      bundleId: "seed-alice-001",
+      seqNo: 2,
+      name: "계란",
+      expiry: toYMD(addDays(today, 2)),
+      quantity: 10,
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      unitId: "seed-unit-1010",
+      bundleId: "seed-bob-001",
+      seqNo: 1,
+      name: "김치",
+      expiry: toYMD(addDays(today, 7)),
+      quantity: 1,
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      unitId: "seed-unit-1020",
+      bundleId: "seed-charlie-frozen",
+      seqNo: 1,
+      name: "갈비만두",
+      expiry: toYMD(addDays(today, 30)),
+      quantity: 1,
+      createdAt,
+      updatedAt: createdAt,
+    },
+    {
+      unitId: "seed-unit-1030",
+      bundleId: "seed-alice-expired",
+      seqNo: 1,
+      name: "요거트",
+      expiry: toYMD(addDays(today, -1)),
+      quantity: 2,
+      createdAt,
+      updatedAt: createdAt,
+    },
+  ]
+
+  return { slots, bundles, units }
 }
 
 export function createInitialData() {
-  const slots: Slot[] = []
-  const bundles: Bundle[] = []
-  const units: ItemUnit[] = []
-  const items: Item[] = []
+  const base = generateDefaultFridgeData()
+  return { ...base, items: toItems(base.bundles, base.units) }
+}
 
-  return { slots, bundles, units, items }
+export function loadFridgeDataFromStorage(): FridgeSeed | null {
+  if (typeof window === "undefined") return null
+
+  let slots: Slot[] | null = null
+  let bundles: Bundle[] | null = null
+  let units: ItemUnit[] | null = null
+
+  try {
+    const rawSlots = JSON.parse(localStorage.getItem(FRIDGE_SLOTS_KEY) || "null")
+    if (Array.isArray(rawSlots) && rawSlots.length) {
+      slots = rawSlots.map((slot: any, index: number) => normalizeSlot(slot, index))
+    }
+  } catch {
+    slots = null
+  }
+
+  if (!slots) return null
+
+  try {
+    const rawBundles = JSON.parse(localStorage.getItem(FRIDGE_BUNDLES_KEY) || "null")
+    if (Array.isArray(rawBundles) && rawBundles.length) {
+      bundles = rawBundles.map((bundle: any, index: number) => normalizeBundle(bundle, slots!, index))
+    }
+  } catch {
+    bundles = null
+  }
+
+  if (!bundles) return null
+
+  try {
+    const rawUnits = JSON.parse(localStorage.getItem(FRIDGE_UNITS_KEY) || "null")
+    if (Array.isArray(rawUnits) && rawUnits.length) {
+      const normalizedUnits: ItemUnit[] = []
+      rawUnits.forEach((unit: any, index: number) => {
+        const parentBundle = bundles!.find((bundle) => bundle.bundleId === unit?.bundleId)
+        if (!parentBundle) return
+        normalizedUnits.push(normalizeUnit(unit, parentBundle, index))
+      })
+      if (normalizedUnits.length) {
+        units = normalizedUnits
+      }
+    }
+  } catch {
+    units = null
+  }
+
+  if (!units) return null
+
+  return { slots, bundles, units }
 }

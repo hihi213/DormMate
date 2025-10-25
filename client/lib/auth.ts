@@ -1,61 +1,144 @@
-export type AuthUser = { id: string; name: string; room: string }
+import { safeApiCall } from "@/lib/api-client"
 
-type StoredUser = AuthUser & {
-  password: string
-  email?: string
-  phone?: string
-  personalNo?: string
-  createdAt: number
-  normalizedId: string
+export type UserRole = "RESIDENT" | "FLOOR_MANAGER" | "ADMIN"
+
+export type AuthUser = {
+  userId: string
+  loginId: string
+  name: string
+  room?: string
+  roles: UserRole[]
+  isFloorManager: boolean
+  isAdmin: boolean
 }
 
-type PersistedUser = Omit<StoredUser, "normalizedId">
+type TokenStorage = {
+  accessToken: string
+  tokenType: string
+  accessExpiresAt: number
+  refreshToken: string
+  refreshExpiresAt: number
+}
 
-const SEED_USERS: PersistedUser[] = [
-  { id: "1", password: "1", name: "김승현", room: "301호", createdAt: Date.parse("2024-01-01") },
-  { id: "2", password: "2", name: "이번", room: "202호", createdAt: Date.parse("2024-01-02") },
-  { id: "3", password: "3", name: "삼번", room: "203호", createdAt: Date.parse("2024-01-03") },
-]
+type TokenPair = {
+  accessToken: string
+  tokenType: "Bearer"
+  expiresIn: number
+  refreshToken: string
+  refreshExpiresIn: number
+  issuedAt: string
+}
 
-const PROFILE_KEY = "user-profile"
-const AUTH_USER_KEY = "auth-user"
-const CUSTOM_USERS_KEY = "custom-users-v1"
+type RoomAssignment = {
+  roomId: string
+  floor: number
+  roomNumber: string
+  personalNo: number
+  assignedAt: string
+}
+
+type UserProfile = {
+  userId: string
+  loginId: string
+  displayName: string
+  email?: string | null
+  roles: UserRole[]
+  primaryRoom?: RoomAssignment | null
+  isFloorManager: boolean
+  isAdmin: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+type LoginResponse = {
+  tokens: TokenPair
+  user: UserProfile
+}
+
+const TOKENS_KEY = "dm.auth.tokens"
+const PROFILE_KEY = "dm.auth.profile"
+
+const ACCESS_TOKEN_SKEW_MS = 5_000
 
 const authListeners = new Set<(user: AuthUser | null) => void>()
 
-const normalizeLoginId = (value: string) => value.trim().toLowerCase()
+let refreshPromise: Promise<boolean> | null = null
 
-const toStoredUser = (user: PersistedUser): StoredUser => ({
-  ...user,
-  normalizedId: normalizeLoginId(user.id),
-})
+export const DEMO_ACCOUNTS: Array<{ id: string; password: string; label: string }> = [
+  { id: "alice", password: "alice", label: "거주자 alice" },
+  { id: "bob", password: "bob", label: "층별장 후보 bob" },
+  { id: "charlie", password: "charlie", label: "거주자 charlie" },
+  { id: "admin", password: "admin", label: "관리자 admin" },
+]
 
-const BASE_USERS = SEED_USERS.map(toStoredUser)
-
-function readCustomUsers(): StoredUser[] {
-  try {
-    const raw = JSON.parse(localStorage.getItem(CUSTOM_USERS_KEY) || "[]") as PersistedUser[]
-    if (!Array.isArray(raw)) return []
-    return raw.map(toStoredUser)
-  } catch {
-    return []
+function mapUserProfile(profile: UserProfile): AuthUser {
+  return {
+    userId: profile.userId,
+    loginId: profile.loginId,
+    name: profile.displayName,
+    room: formatRoom(profile.primaryRoom ?? undefined),
+    roles: profile.roles ?? [],
+    isFloorManager: profile.isFloorManager,
+    isAdmin: profile.isAdmin,
   }
 }
 
-function writeCustomUsers(users: StoredUser[]) {
-  const persistable: PersistedUser[] = users.map(({ normalizedId: _ignored, ...rest }) => rest)
-  localStorage.setItem(CUSTOM_USERS_KEY, JSON.stringify(persistable))
+function formatRoom(room?: RoomAssignment | null): string | undefined {
+  if (!room) return undefined
+  const base = room.roomNumber ? `${room.roomNumber}호` : ""
+  const personal = room.personalNo ? ` ${room.personalNo}번` : ""
+  return `${room.floor}층 ${base}${personal}`.trim()
 }
 
-function getAllUsers(): StoredUser[] {
-  return [...BASE_USERS, ...readCustomUsers()]
+function toTokenStorage(pair: TokenPair): TokenStorage {
+  const issuedAt = Date.parse(pair.issuedAt)
+  return {
+    accessToken: pair.accessToken,
+    tokenType: pair.tokenType,
+    accessExpiresAt: issuedAt + pair.expiresIn * 1000,
+    refreshToken: pair.refreshToken,
+    refreshExpiresAt: issuedAt + pair.refreshExpiresIn * 1000,
+  }
 }
 
-function findUserRecord(loginId: string): StoredUser | undefined {
-  const normalized = normalizeLoginId(loginId)
-  const inCustom = readCustomUsers().find((user) => user.normalizedId === normalized)
-  if (inCustom) return inCustom
-  return BASE_USERS.find((user) => user.normalizedId === normalized)
+function readTokens(): TokenStorage | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(TOKENS_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as TokenStorage
+  } catch {
+    return null
+  }
+}
+
+function writeTokens(tokens: TokenStorage | null) {
+  if (typeof window === "undefined") return
+  if (!tokens) {
+    localStorage.removeItem(TOKENS_KEY)
+    return
+  }
+  localStorage.setItem(TOKENS_KEY, JSON.stringify(tokens))
+}
+
+function readUser(): AuthUser | null {
+  if (typeof window === "undefined") return null
+  try {
+    const raw = localStorage.getItem(PROFILE_KEY)
+    if (!raw) return null
+    return JSON.parse(raw) as AuthUser
+  } catch {
+    return null
+  }
+}
+
+function writeUser(user: AuthUser | null) {
+  if (typeof window === "undefined") return
+  if (!user) {
+    localStorage.removeItem(PROFILE_KEY)
+    return
+  }
+  localStorage.setItem(PROFILE_KEY, JSON.stringify(user))
 }
 
 function notifyAuth(user: AuthUser | null) {
@@ -68,7 +151,74 @@ function notifyAuth(user: AuthUser | null) {
   })
 }
 
-export const DEMO_ACCOUNTS = SEED_USERS.map(({ id, name, room }) => ({ id, name, room }))
+function applySession(response: LoginResponse) {
+  const tokenStorage = toTokenStorage(response.tokens)
+  const user = mapUserProfile(response.user)
+  writeTokens(tokenStorage)
+  writeUser(user)
+  notifyAuth(user)
+}
+
+function clearSession() {
+  writeTokens(null)
+  writeUser(null)
+  notifyAuth(null)
+}
+
+function isAccessTokenExpired(tokens: TokenStorage): boolean {
+  return Date.now() + ACCESS_TOKEN_SKEW_MS >= tokens.accessExpiresAt
+}
+
+function isRefreshTokenExpired(tokens: TokenStorage): boolean {
+  return Date.now() >= tokens.refreshExpiresAt
+}
+
+async function ensureTokens(forceRefresh: boolean): Promise<boolean> {
+  const tokens = readTokens()
+  if (!tokens) return false
+
+  if (isRefreshTokenExpired(tokens)) {
+    clearSession()
+    return false
+  }
+
+  if (!forceRefresh && !isAccessTokenExpired(tokens)) {
+    return true
+  }
+
+  if (refreshPromise) {
+    return refreshPromise
+  }
+
+  refreshPromise = (async () => {
+    const current = readTokens()
+    if (!current) return false
+    if (isRefreshTokenExpired(current)) {
+      clearSession()
+      return false
+    }
+
+    const { data, error } = await safeApiCall<LoginResponse>("/auth/refresh", {
+      method: "POST",
+      body: { refreshToken: current.refreshToken },
+      skipAuth: true,
+    })
+
+    if (error || !data) {
+      clearSession()
+      return false
+    }
+
+    applySession(data)
+    return true
+  })()
+
+  try {
+    return await refreshPromise
+  } finally {
+    refreshPromise = null
+  }
+}
 
 export function subscribeAuth(listener: (user: AuthUser | null) => void) {
   authListeners.add(listener)
@@ -76,87 +226,92 @@ export function subscribeAuth(listener: (user: AuthUser | null) => void) {
 }
 
 export function getCurrentUser(): AuthUser | null {
-  try {
-    const saved = JSON.parse(localStorage.getItem(PROFILE_KEY) || "null") as AuthUser | null
-    if (saved?.id) return saved
-    const savedId = localStorage.getItem(AUTH_USER_KEY)
-    if (!savedId) return null
-    const found = findUserRecord(savedId)
-    if (!found) return null
-    return { id: found.id, name: found.name, room: found.room }
-  } catch {
-    return null
-  }
+  return readUser()
 }
 
 export function getCurrentUserId(): string | null {
-  return getCurrentUser()?.id ?? null
+  return readUser()?.userId ?? null
 }
 
-export function setCurrentUser(id: string) {
-  const record = findUserRecord(id)
-  if (!record) {
-    throw new Error("Unknown user")
-  }
-  const profile: AuthUser = { id: record.id, name: record.name, room: record.room }
-  localStorage.setItem(PROFILE_KEY, JSON.stringify(profile))
-  localStorage.setItem(AUTH_USER_KEY, record.id)
-  notifyAuth(profile)
+export function getCurrentUserLoginId(): string | null {
+  return readUser()?.loginId ?? null
 }
 
-export function logout() {
-  localStorage.removeItem(PROFILE_KEY)
-  localStorage.removeItem(AUTH_USER_KEY)
-  notifyAuth(null)
+export async function ensureValidAccessToken(): Promise<string | null> {
+  const tokens = readTokens()
+  if (!tokens) return null
+  const success = await ensureTokens(false)
+  if (!success) return null
+  return readTokens()?.accessToken ?? null
+}
+
+export async function forceRefreshAccessToken(): Promise<string | null> {
+  const success = await ensureTokens(true)
+  if (!success) return null
+  return readTokens()?.accessToken ?? null
 }
 
 export async function loginWithCredentials({ id, password }: { id: string; password: string }) {
-  const record = findUserRecord(id)
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  if (!record || record.password !== password) {
-    throw new Error("아이디 또는 비밀번호가 올바르지 않습니다.")
+  const { data, error } = await safeApiCall<LoginResponse>("/auth/login", {
+    method: "POST",
+    body: { loginId: id, password },
+    skipAuth: true,
+  })
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "로그인에 실패했습니다. 다시 시도해 주세요.")
   }
-  setCurrentUser(record.id)
-  return { id: record.id, name: record.name, room: record.room }
+
+  applySession(data)
+  return getCurrentUser()
 }
 
-export type RegisterInput = {
-  id: string
-  password: string
-  name: string
-  room: string
-  email?: string
-  phone?: string
-  personalNo?: string
+export async function logout() {
+  const tokens = readTokens()
+  if (tokens) {
+    await safeApiCall("/auth/logout", {
+      method: "POST",
+      body: { refreshToken: tokens.refreshToken },
+      skipAuth: true,
+      parseResponseAs: "none",
+    })
+  }
+  clearSession()
 }
 
-export async function registerUser(input: RegisterInput) {
-  const normalized = normalizeLoginId(input.id)
-  const existing = getAllUsers()
-  if (existing.some((user) => user.normalizedId === normalized)) {
-    throw new Error("이미 사용 중인 아이디입니다.")
+export async function fetchProfile(): Promise<AuthUser | null> {
+  const { data, error } = await safeApiCall<UserProfile>("/profile/me", {
+    method: "GET",
+  })
+
+  if (error || !data) {
+    if (error?.status === 401) {
+      clearSession()
+    }
+    return null
   }
 
-  const newUser: StoredUser = {
-    id: input.id,
-    name: input.name,
-    room: input.room,
-    password: input.password,
-    email: input.email,
-    phone: input.phone,
-    personalNo: input.personalNo,
-    createdAt: Date.now(),
-    normalizedId: normalized,
-  }
+  const user = mapUserProfile(data)
+  writeUser(user)
+  notifyAuth(user)
+  return user
+}
 
-  const customUsers = readCustomUsers()
-  customUsers.push(newUser)
-  writeCustomUsers(customUsers)
-  await new Promise((resolve) => setTimeout(resolve, 300))
-  return { id: newUser.id, name: newUser.name, room: newUser.room }
+export function getAuthorizationHeader(): string | null {
+  const tokens = readTokens()
+  if (!tokens) return null
+  return `${tokens.tokenType} ${tokens.accessToken}`
 }
 
 export function resetAuthDemo() {
-  localStorage.removeItem(CUSTOM_USERS_KEY)
-  authListeners.clear()
+  clearSession()
+}
+
+export function getAllAuthUsers(): AuthUser[] {
+  const user = getCurrentUser()
+  return user ? [user] : []
+}
+
+export async function registerUser(): Promise<AuthUser> {
+  throw new Error("회원가입은 현재 관리자 승인 절차를 통해서만 가능합니다.")
 }

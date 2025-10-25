@@ -91,7 +91,7 @@ export default function DetailsEditorDialog({
                         })
                       }
                       presets={[]}
-                      warningThresholdDays={1}
+                      warningThresholdDays={3}
                       helperText="개별 유통기한을 설정하세요."
                     />
                   </div>

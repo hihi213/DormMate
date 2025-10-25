@@ -148,7 +148,7 @@ export default function ItemDetailSheet({
                       label="유통기한"
                       value={form.expiry}
                       onChange={(next) => setForm((f) => ({ ...f, expiry: next }))}
-                      warningThresholdDays={1}
+                      warningThresholdDays={3}
                     />
                     <div className="grid gap-2">
                       <Label htmlFor="memo">{"메모(선택)"}</Label>

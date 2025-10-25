@@ -139,6 +139,7 @@ docker-data/
 
 # Gradle
 .gradle/
+.gradle-cache/
 gradle-app.setting
 !gradle-wrapper.jar
 !gradle-wrapper.properties
@@ -165,6 +166,10 @@ artifacts/
 
 # Mac zips etc
 *.zip
+
+# Local helper scripts (developer-specific)
+with-java
+with-java-env.sh
 
 # --- 새로 추가된 항목들 ---
 
@@ -316,6 +321,9 @@ pg_hba.conf.backup
 .env.test
 .envrc
 .direnv/
+
+# 학습/실험 공간
+playground/
 
 # 캐시 및 임시 파일
 .cache/

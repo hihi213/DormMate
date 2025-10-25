@@ -2,11 +2,16 @@ import { useMemo, useCallback } from "react"
 import type { Item, Slot, FilterOptions, FridgeStats, ItemStatus } from "@/features/fridge/types"
 import { daysLeft } from "@/lib/date-utils"
 
-export function useFridgeLogic(items: Item[], slots: Slot[]) {
+const isMineFor = (item: Item, currentUserId?: string) => {
+  if (currentUserId) return item.ownerId === currentUserId
+  return item.owner === "me"
+}
+
+export function useFridgeLogic(items: Item[], slots: Slot[], currentUserId?: string) {
   const getItemStatus = useCallback((expiry: string): ItemStatus => {
     const days = daysLeft(expiry)
     if (days < 0) return "expired"
-    if (days <= 2) return "expiring"
+    if (days <= 3) return "expiring"
     return "ok"
   }, [])
 
@@ -22,9 +27,10 @@ export function useFridgeLogic(items: Item[], slots: Slot[]) {
       const query = options.searchQuery?.trim().toLowerCase() ?? ""
 
       const matchesBaseFilters = (item: typeof itemsWithStatus[number]) => {
+        const mine = isMineFor(item, currentUserId)
         switch (options.tab) {
           case "mine":
-            if (item.owner !== "me") return false
+            if (!mine) return false
             break
           case "expiring":
             if (item.status !== "expiring") return false
@@ -40,7 +46,7 @@ export function useFridgeLogic(items: Item[], slots: Slot[]) {
           if (!slot || slot.resourceId !== options.resourceId) return false
         }
 
-        if (options.myOnly && item.owner !== "me") return false
+        if (options.myOnly && !mine) return false
         return true
       }
 
@@ -95,13 +101,13 @@ export function useFridgeLogic(items: Item[], slots: Slot[]) {
 
       return filtered
     },
-    [itemsWithStatus, slots],
+    [itemsWithStatus, slots, currentUserId],
   )
 
   const getStats = useCallback((): FridgeStats => {
     const stats: FridgeStats = {
       totalItems: items.length,
-      myItems: items.filter((item) => item.owner === "me").length,
+      myItems: items.filter((item) => isMineFor(item, currentUserId)).length,
       expiringItems: itemsWithStatus.filter((item) => item.status === "expiring").length,
       expiredItems: itemsWithStatus.filter((item) => item.status === "expired").length,
       bySlot: {},
@@ -118,7 +124,7 @@ export function useFridgeLogic(items: Item[], slots: Slot[]) {
     })
 
     return stats
-  }, [items, itemsWithStatus])
+  }, [items, itemsWithStatus, currentUserId])
 
   const getBundles = useCallback(() => {
     const bundles = new Map<string, Item[]>()
@@ -152,7 +158,7 @@ export function useFridgeLogic(items: Item[], slots: Slot[]) {
   }, [])
 
   const getExpiringItems = useCallback(
-    (daysThreshold = 2) => {
+    (daysThreshold = 3) => {
       return itemsWithStatus.filter((item) => {
         const days = daysLeft(item.expiry)
         return days >= 0 && days <= daysThreshold

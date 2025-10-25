@@ -51,6 +51,8 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 > 원하는 경우 `alias auto='python3 tools/automation/cli.py'`를 셸 설정에 추가하면 `auto …`로 바로 실행할 수 있습니다.
 
+`./auto` 자동화 CLI는 Java 21 런타임, 로컬 Gradle 캐시(`.gradle-cache`), Corepack(Node 20) 바이너리를 자동으로 PATH에 등록하므로 별도의 `with-java-env.sh`를 매 세션마다 수동으로 불러오지 않아도 바로 `./auto tests …` 명령을 사용할 수 있습니다.
+
 ### Playwright E2E 테스트 가이드
 
 1. 최초 한 번 브라우저 바이너리를 설치합니다.

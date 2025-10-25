@@ -35,7 +35,7 @@ export function ExpiryInput({
   minDate,
   helperText,
   className,
-  warningThresholdDays = 2,
+  warningThresholdDays = 3,
   presets,
   disabled = false,
   required = false,

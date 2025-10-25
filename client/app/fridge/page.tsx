@@ -87,7 +87,7 @@ function FridgeInner() {
           break
         case "expiring": {
           const d = Math.floor((new Date(item.expiry).getTime() - today) / 86400000)
-          if (!(d >= 0 && d <= 2)) return false
+          if (!(d >= 0 && d <= 3)) return false
           break
         }
         case "expired": {
@@ -133,7 +133,7 @@ function FridgeInner() {
       if (myOnly && !(uid ? it.ownerId === uid : it.owner === "me")) return
       const d = Math.floor((new Date(it.expiry).getTime() - new Date(now.toDateString()).getTime()) / 86400000)
       if (uid ? it.ownerId === uid : it.owner === "me") mine++
-      if (d >= 0 && d <= 2) expiring++
+      if (d >= 0 && d <= 3) expiring++
       if (d < 0) expired++
     })
     return { mine, expiring, expired }

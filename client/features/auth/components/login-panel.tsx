@@ -75,9 +75,9 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
     })
   }
 
-  const fillDemoAccount = (id: string) => {
+  const fillDemoAccount = (id: string, pwd: string) => {
     setLoginId(id)
-    setPassword(id)
+    setPassword(pwd)
     setError("")
   }
 
@@ -169,10 +169,10 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
             <button
               key={account.id}
               type="button"
-              onClick={() => fillDemoAccount(account.id)}
+              onClick={() => fillDemoAccount(account.id, account.password)}
               className="rounded-full border border-emerald-200 bg-white px-3 py-1 font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100"
             >
-              {`${account.id} / ${account.id} · ${account.room}`}
+              {account.label}
             </button>
           ))}
         </div>

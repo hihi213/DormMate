@@ -104,6 +104,8 @@ dependencies {
     // testRuntimeOnly: 테스트를 실행하는 시점에만 필요한 의존성입니다.
     // JUnit Platform을 실행하는 런처 역할을 합니다.
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:postgresql'
 }
 
 // tasks: Gradle이 수행하는 작업(Task)의 설정을 변경합니다.
