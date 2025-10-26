@@ -59,7 +59,7 @@ export default function AuthGuard({ children, fallback }: AuthGuardProps) {
                 </Button>
                 <p className="text-sm text-gray-500">
                   테스트 계정:{" "}
-                  {DEMO_ACCOUNTS.map((account) => `${account.id}/${account.id} (${account.name} ${account.room})`).join(", ")}
+                  {DEMO_ACCOUNTS.map((account) => `${account.id}/${account.password} (${account.roleLabel})`).join(", ")}
                 </p>
               </div>
             </CardContent>

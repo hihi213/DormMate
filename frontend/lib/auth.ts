@@ -64,11 +64,17 @@ const authListeners = new Set<(user: AuthUser | null) => void>()
 
 let refreshPromise: Promise<boolean> | null = null
 
-export const DEMO_ACCOUNTS: Array<{ id: string; password: string; label: string }> = [
-  { id: "alice", password: "alice", label: "거주자 alice" },
-  { id: "bob", password: "bob", label: "층별장 후보 bob" },
-  { id: "charlie", password: "charlie", label: "거주자 charlie" },
-  { id: "admin", password: "admin", label: "관리자 admin" },
+type DemoAccount = {
+  id: string
+  password: string
+  displayName: string
+  roleLabel: string
+}
+
+export const DEMO_ACCOUNTS: DemoAccount[] = [
+  { id: "alice", password: "alice123!", displayName: "Alice Kim", roleLabel: "거주자" },
+  { id: "bob", password: "bob123!", displayName: "Bob Lee", roleLabel: "층별장" },
+  { id: "carol", password: "carol123!", displayName: "Carol Park", roleLabel: "거주자" },
 ]
 
 function mapUserProfile(profile: UserProfile): AuthUser {

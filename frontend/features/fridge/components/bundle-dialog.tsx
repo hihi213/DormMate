@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useMemo } from "react"
 import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Trash2, X } from "lucide-react"
+import { Loader2, Trash2, X } from "lucide-react"
 import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import type { Item } from "@/features/fridge/types"
 import { useToast } from "@/hooks/use-toast"
@@ -24,6 +24,7 @@ export default function BundleDialog({
   const { items, deleteItem } = useFridge()
   const { toast } = useToast()
   const closeDialog = useCallback(() => onOpenChange(false), [onOpenChange])
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const sortedItems = useMemo(() => {
     if (!bundleId) return []
@@ -45,19 +46,22 @@ export default function BundleDialog({
   }, [open, bundleId, sortedItems.length, closeDialog])
 
   const handleDelete = useCallback(
-    (unitId: string) => {
-      if (!confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) return
-      const result = deleteItem(unitId)
+    async (unitId: string) => {
+      if (deletingId || !confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) return
+      setDeletingId(unitId)
+      const result = await deleteItem(unitId)
+      setDeletingId(null)
       if (result.success) {
         toast({ title: "삭제됨", description: result.message ?? "세부 물품이 삭제되었습니다." })
       } else {
         toast({
           title: "삭제 실패",
           description: result.error ?? "세부 물품 삭제 중 오류가 발생했습니다.",
+          variant: "destructive",
         })
       }
     },
-    [deleteItem, toast],
+    [deleteItem, toast, deletingId],
   )
 
   return (
@@ -90,6 +94,7 @@ export default function BundleDialog({
                 item={item}
                 bundleName={bundleName}
                 canDelete={canManage && (!item.ownerId || item.ownerId === uid)}
+                isDeleting={deletingId === item.unitId}
                 onDelete={handleDelete}
               />
             ))}
@@ -120,10 +125,11 @@ type BundleItemRowProps = {
   item: Item
   bundleName: string
   canDelete: boolean
+  isDeleting: boolean
   onDelete: (id: string) => void
 }
 
-function BundleItemRow({ item, bundleName, canDelete, onDelete }: BundleItemRowProps) {
+function BundleItemRow({ item, bundleName, canDelete, isDeleting, onDelete }: BundleItemRowProps) {
   return (
     <li className="flex items-center justify-between rounded-md border p-2">
       <div>
@@ -136,9 +142,10 @@ function BundleItemRow({ item, bundleName, canDelete, onDelete }: BundleItemRowP
           size="sm"
           className="text-rose-600"
           onClick={() => onDelete(item.unitId)}
+          disabled={isDeleting}
           aria-label="세부 물품 삭제"
         >
-          <Trash2 className="w-4 h-4 mr-1" />
+          {isDeleting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" aria-hidden /> : <Trash2 className="w-4 h-4 mr-1" />}
           {"삭제"}
         </Button>
       )}

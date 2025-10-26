@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { CalendarDays, Pencil, Trash2, X } from "lucide-react"
+import { CalendarDays, Loader2, Pencil, Trash2, X } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import { useToast } from "@/hooks/use-toast"
@@ -37,6 +37,8 @@ export default function ItemDetailSheet({
   const canEdit = !!(it && (it.ownerId ? uid === it.ownerId : it.owner === "me"))
 
   const [form, setForm] = useState({ name: "", expiry: "", memo: "" })
+  const [saving, setSaving] = useState(false)
+  const [removing, setRemoving] = useState(false)
   useEffect(() => {
     if (it) setForm({ name: it.name, expiry: it.expiry, memo: it.memo || "" })
   }, [it])
@@ -83,18 +85,27 @@ export default function ItemDetailSheet({
                 variant="ghost"
                 size="icon"
                 aria-label="삭제"
-                onClick={() => {
-                  if (!it || !canEdit) return
-                  if (confirm("해당 물품을 삭제하시겠어요? (되돌릴 수 없음)")) {
-                    deleteItem(it.unitId)
+                onClick={async () => {
+                  if (!it || !canEdit || removing) return
+                  if (!confirm("해당 물품을 삭제하시겠어요? (되돌릴 수 없음)")) return
+                  setRemoving(true)
+                  const result = await deleteItem(it.unitId)
+                  setRemoving(false)
+                  if (result.success) {
                     toast({ title: "삭제됨", description: `${it.name} 항목이 삭제되었습니다.` })
                     onOpenChange(false)
+                  } else {
+                    toast({
+                      title: "삭제 실패",
+                      description: result.error ?? "물품 삭제 중 오류가 발생했습니다.",
+                      variant: "destructive",
+                    })
                   }
                 }}
-                disabled={!canEdit}
+                disabled={!canEdit || removing}
                 title={canEdit ? "삭제" : "소유자만 삭제"}
               >
-                <Trash2 className="size-5 text-rose-600" />
+                {removing ? <Loader2 className="size-4 animate-spin text-rose-600" /> : <Trash2 className="size-5 text-rose-600" />}
               </Button>
             </div>
           </div>
@@ -161,13 +172,30 @@ export default function ItemDetailSheet({
                     <div className="flex justify-end">
                       <Button
                         className="bg-emerald-600 hover:bg-emerald-700"
-                        onClick={() => {
+                        onClick={async () => {
+                          if (saving) return
                           const updatedName = form.name.trim() || it.name
-                          updateItem(it.unitId, { name: form.name, expiry: form.expiry, memo: form.memo || undefined })
-                          toast({ title: "수정 완료", description: `${updatedName} 항목이 업데이트되었습니다.` })
-                          setEdit(false)
+                          setSaving(true)
+                          const result = await updateItem(it.unitId, {
+                            name: form.name,
+                            expiry: form.expiry,
+                            memo: form.memo || undefined,
+                          })
+                          setSaving(false)
+                          if (result.success) {
+                            toast({ title: "수정 완료", description: `${updatedName} 항목이 업데이트되었습니다.` })
+                            setEdit(false)
+                          } else {
+                            toast({
+                              title: "수정 실패",
+                              description: result.error ?? "물품 수정 중 오류가 발생했습니다.",
+                              variant: "destructive",
+                            })
+                          }
                         }}
+                        disabled={saving}
                       >
+                        {saving && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
                         {"저장"}
                       </Button>
                     </div>

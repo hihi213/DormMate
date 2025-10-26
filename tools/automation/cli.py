@@ -11,8 +11,11 @@ import argparse
 import json
 import os
 import shutil
+import signal
 import subprocess
 import sys
+import textwrap
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,6 +30,7 @@ BACKEND_DIR = PROJECT_ROOT / "backend"
 JAVA_HOME_DEFAULT = Path.home() / "Library/Java/JavaVirtualMachines/ms-21.0.8/Contents/Home"
 GRADLE_CACHE_DIR = PROJECT_ROOT / ".gradle-cache"
 NODE_CACHE_ROOT = PROJECT_ROOT / ".cache" / "node"
+DEFAULT_DEV_PORTS = (3000, 3001, 3002, 3003, 8080)
 
 
 @dataclass
@@ -301,28 +305,6 @@ def cmd_tests_frontend(_: argparse.Namespace) -> None:
     persist_state(last_tests="auto tests frontend")
 
 
-def cmd_tests_all_alias(_: argparse.Namespace) -> None:
-    cmd_tests_core(
-        argparse.Namespace(
-            skip_backend=False,
-            skip_frontend=False,
-            skip_playwright=False,
-            full_playwright=False,
-        )
-    )
-
-
-def cmd_tests_all_full_alias(_: argparse.Namespace) -> None:
-    cmd_tests_core(
-        argparse.Namespace(
-            skip_backend=False,
-            skip_frontend=False,
-            skip_playwright=False,
-            full_playwright=True,
-        )
-    )
-
-
 def cmd_tests_playwright(args: argparse.Namespace) -> None:
     if args.full:
         playwright_full()
@@ -361,24 +343,125 @@ def cmd_dev_frontend(_: argparse.Namespace) -> None:
     run_command(["npm", "run", "dev"], cwd=FRONTEND_DIR, check=False)
 
 
-def cmd_dev_backend_alias(_: argparse.Namespace) -> None:
-    cmd_dev_backend(argparse.Namespace())
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
 
 
-def cmd_dev_frontend_alias(_: argparse.Namespace) -> None:
-    cmd_dev_frontend(argparse.Namespace())
+def _collect_pids_for_port(port: int) -> set[int]:
+    result = subprocess.run(
+        ["lsof", "-ti", f"tcp:{port}"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode not in (0, 1):
+        stderr = result.stderr.strip()
+        if stderr:
+            print(f"⚠️  포트 {port} 조사 중 lsof 오류: {stderr}")
+        return set()
+    if not result.stdout.strip():
+        return set()
+    return {int(pid) for pid in result.stdout.split()}
 
 
-def cmd_dev_up_alias(_: argparse.Namespace) -> None:
-    cmd_dev_up(argparse.Namespace(services=None))
+def _build_port_process_map(ports: Iterable[int]) -> dict[int, set[int]]:
+    port_processes: dict[int, set[int]] = {}
+    for port in ports:
+        pids = _collect_pids_for_port(port)
+        if pids:
+            port_processes[port] = pids
+    return port_processes
 
 
-def cmd_dev_down_alias(_: argparse.Namespace) -> None:
-    cmd_dev_down(argparse.Namespace())
+def cmd_dev_kill_ports(args: argparse.Namespace) -> None:
+    resolved_ports: list[int] = []
+    if args.ports:
+        for raw in args.ports:
+            try:
+                resolved_ports.append(int(raw))
+            except ValueError:
+                print(f"⚠️  무시된 포트 값: {raw}")
+    else:
+        resolved_ports.extend(DEFAULT_DEV_PORTS)
+        print("ℹ️  포트를 지정하지 않아 기본 포트 목록을 사용합니다:", ", ".join(str(p) for p in resolved_ports))
 
+    if not resolved_ports:
+        print("ℹ️  종료할 포트가 지정되지 않았습니다.")
+        return
 
-def cmd_dev_status_alias(_: argparse.Namespace) -> None:
-    cmd_dev_status(argparse.Namespace())
+    try:
+        port_processes = _build_port_process_map(resolved_ports)
+    except FileNotFoundError:
+        print("⚠️  lsof 명령을 찾을 수 없습니다. 포트 정리를 수행하려면 lsof를 설치하세요.")
+        return
+
+    if not port_processes:
+        print("ℹ️  대상 포트에서 실행 중인 프로세스를 찾지 못했습니다.")
+        return
+
+    pid_to_ports: dict[int, set[int]] = {}
+    for port, pids in port_processes.items():
+        for pid in pids:
+            pid_to_ports.setdefault(pid, set()).add(port)
+
+    if not pid_to_ports:
+        print("ℹ️  대상 포트에서 실행 중인 프로세스를 찾지 못했습니다.")
+        return
+
+    print("🔍 종료 대상 프로세스:")
+    for pid, port_set in pid_to_ports.items():
+        ports_str = ", ".join(str(p) for p in sorted(port_set))
+        print(f"  - PID {pid} (ports: {ports_str})")
+
+    permission_denied: set[int] = set()
+    for pid in pid_to_ports:
+        try:
+            os.kill(pid, signal.SIGTERM)
+            print(f"⏹  PID {pid}에 SIGTERM 전송")
+        except ProcessLookupError:
+            print(f"ℹ️  PID {pid}는 이미 종료되었습니다.")
+        except PermissionError:
+            permission_denied.add(pid)
+            print(f"⚠️  PID {pid}에 대한 종료 권한이 없습니다.")
+
+    time.sleep(0.5)
+    still_running = [
+        pid for pid in pid_to_ports if pid not in permission_denied and _pid_alive(pid)
+    ]
+
+    if still_running:
+        print("💥 SIGTERM 이후에도 실행 중인 프로세스를 강제 종료합니다.")
+        for pid in still_running:
+            try:
+                os.kill(pid, signal.SIGKILL)
+                print(f"💥  PID {pid}에 SIGKILL 전송")
+            except ProcessLookupError:
+                print(f"ℹ️  PID {pid}는 이미 종료되었습니다.")
+            except PermissionError:
+                permission_denied.add(pid)
+                print(f"⚠️  PID {pid}에 대한 강제 종료 권한이 없습니다.")
+
+    lingering = [
+        pid for pid in pid_to_ports if pid not in permission_denied and _pid_alive(pid)
+    ]
+    if lingering:
+        print("⚠️  일부 프로세스를 종료하지 못했습니다:")
+        for pid in lingering:
+            ports_str = ", ".join(str(p) for p in sorted(pid_to_ports[pid]))
+            print(f"  - PID {pid} (ports: {ports_str})")
+        print("    수동으로 종료하거나 관리자 권한이 필요한지 확인하세요.")
+    else:
+        print("✅ 지정된 포트의 프로세스를 정리했습니다.")
+
+    if permission_denied:
+        denied_str = ", ".join(str(pid) for pid in sorted(permission_denied))
+        print(f"⚠️  다음 PID는 권한 부족으로 종료하지 못했습니다: {denied_str}")
 
 
 def cmd_cleanup(_: argparse.Namespace) -> None:
@@ -418,13 +501,48 @@ def cmd_state_update(args: argparse.Namespace) -> None:
 # ---------------------------------------------------------------------------
 
 
+def print_top_level_summary(parser: argparse.ArgumentParser) -> None:
+    parser.print_help()
+    summary = """
+자주 쓰는 명령 요약
+  ./auto dev warmup [--refresh]      Gradle·Node·Playwright 캐시 예열
+  ./auto dev up                      개발용 Docker 서비스 기동
+  ./auto dev down                    개발용 Docker 서비스 중지
+  ./auto dev status                  개발용 Docker 서비스 상태 확인
+  ./auto dev backend                 Spring Boot 서버 실행
+  ./auto dev frontend                Next.js 개발 서버 실행
+  ./auto dev kill-ports              지정한 포트(기본 3000~3003, 8080) 정리
+  ./auto tests core                  백엔드·프론트·Playwright 테스트 번들
+  ./auto tests backend               백엔드 테스트만 실행
+  ./auto tests frontend              프론트엔드 테스트만 실행
+  ./auto tests playwright [--full]   Playwright 스모크/전체 실행
+  ./auto db migrate                  Flyway 마이그레이션
+  ./auto cleanup                     빌드 산출물 정리
+
+세부 옵션은 각 명령 뒤에 `--help`를 붙여 확인하세요. 예) `./auto dev --help`, `./auto tests core --help`
+"""
+    print(textwrap.dedent(summary).strip())
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="DormMate Automation CLI")
-    subparsers = parser.add_subparsers(dest="command")
+    parser = argparse.ArgumentParser(
+        description=(
+            "DormMate Automation CLI\n"
+            "\n"
+            "주요 플로우 예시:\n"
+            "  ./auto dev warmup [--refresh]  # Gradle/Node/Playwright 캐시 준비\n"
+            "  ./auto dev up                  # 개발용 Docker 서비스 기동\n"
+            "  ./auto dev backend             # Spring Boot 서버 실행\n"
+            "  ./auto dev kill-ports          # 지정한 포트를 한 번에 정리\n"
+            "  ./auto tests core              # 백엔드·프론트·Playwright 번들 테스트\n"
+        ),
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers = parser.add_subparsers(dest="command", metavar="command")
 
     # tests
     tests = subparsers.add_parser("tests", help="테스트 명령")
-    tests_sub = tests.add_subparsers(dest="tests_command")
+    tests_sub = tests.add_subparsers(dest="tests_command", metavar="tests-command")
 
     tests_core = tests_sub.add_parser("core", help="백엔드+프론트+Playwright 테스트 번들 실행")
     tests_core.add_argument("--skip-backend", action="store_true", help="Gradle 테스트를 건너뜀")
@@ -443,12 +561,6 @@ def build_parser() -> argparse.ArgumentParser:
     tests_playwright.add_argument("--full", action="store_true", help="Playwright 전체 테스트 실행")
     tests_playwright.set_defaults(func=cmd_tests_playwright)
 
-    tests_all = subparsers.add_parser("tests-all", help="tests core와 동일 (alias)")
-    tests_all.set_defaults(func=cmd_tests_all_alias)
-
-    tests_all_full = subparsers.add_parser("tests-all-full", help="tests core --full-playwright (alias)")
-    tests_all_full.set_defaults(func=cmd_tests_all_full_alias)
-
     # db
     db = subparsers.add_parser("db", help="데이터베이스 관련 명령")
     db_sub = db.add_subparsers(dest="db_command")
@@ -458,7 +570,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     # dev
     dev = subparsers.add_parser("dev", help="개발 환경 제어")
-    dev_sub = dev.add_subparsers(dest="dev_command")
+    dev_sub = dev.add_subparsers(dest="dev_command", metavar="dev-command")
 
     dev_warmup = dev_sub.add_parser("warmup", help="Gradle/Node/Playwright 캐시 예열")
     dev_warmup.add_argument("--refresh", action="store_true", help="Gradle 의존성을 강제로 갱신합니다.")
@@ -480,24 +592,13 @@ def build_parser() -> argparse.ArgumentParser:
     dev_frontend = dev_sub.add_parser("frontend", help="Next.js dev 서버 실행")
     dev_frontend.set_defaults(func=cmd_dev_frontend)
 
-    dev_backend_alias = subparsers.add_parser("dev-backend", help="dev backend alias")
-    dev_backend_alias.set_defaults(func=cmd_dev_backend_alias)
-
-    dev_frontend_alias = subparsers.add_parser("dev-frontend", help="dev frontend alias")
-    dev_frontend_alias.set_defaults(func=cmd_dev_frontend_alias)
-
-    dev_warmup_alias = subparsers.add_parser("dev-warmup", help="dev warmup alias")
-    dev_warmup_alias.add_argument("--refresh", action="store_true", help="Gradle 의존성을 강제로 갱신합니다.")
-    dev_warmup_alias.set_defaults(func=cmd_dev_warmup)
-
-    dev_up_alias = subparsers.add_parser("dev-up", help="dev up alias")
-    dev_up_alias.set_defaults(func=cmd_dev_up_alias)
-
-    dev_down_alias = subparsers.add_parser("dev-down", help="dev down alias")
-    dev_down_alias.set_defaults(func=cmd_dev_down_alias)
-
-    dev_status_alias = subparsers.add_parser("dev-status", help="dev status alias")
-    dev_status_alias.set_defaults(func=cmd_dev_status_alias)
+    dev_kill_ports = dev_sub.add_parser("kill-ports", help="지정한 포트(기본 3000~3003, 8080) 정리")
+    dev_kill_ports.add_argument(
+        "--ports",
+        nargs="+",
+        help=f"정리할 포트 목록 (기본: {', '.join(str(p) for p in DEFAULT_DEV_PORTS)})",
+    )
+    dev_kill_ports.set_defaults(func=cmd_dev_kill_ports)
 
     # 기타
     cleanup = subparsers.add_parser("cleanup", help="빌드 산출물 정리")
@@ -525,8 +626,8 @@ def main(argv: Optional[list[str]] = None) -> int:
     args = parser.parse_args(argv)
     func = getattr(args, "func", None)
     if func is None:
-        parser.print_help()
-        return 1
+        print_top_level_summary(parser)
+        return 0
     try:
         func(args)
     except subprocess.CalledProcessError as exc:

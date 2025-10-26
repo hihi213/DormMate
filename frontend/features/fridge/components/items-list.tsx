@@ -1,10 +1,10 @@
 "use client"
 
-import { useMemo, memo } from "react"
+import { useMemo, memo, useState } from "react"
 import type { Item } from "@/features/fridge/types"
 import { Card, CardContent } from "@/components/ui/card"
 import SwipeableCard from "./swipeable-card"
-import { Trash2 } from "lucide-react"
+import { Loader2, Trash2 } from "lucide-react"
 import { getCurrentUserId } from "@/lib/auth"
 import { useToast } from "@/hooks/use-toast"
 import { useFridge } from "@/features/fridge/hooks/fridge-context"
@@ -67,6 +67,7 @@ function MergedByUrgency({
   const { deleteItem } = useFridge()
   const { toast } = useToast()
   const uid = getCurrentUserId()
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   // Build typed list
   type Row = { kind: "single"; item: Item } | { kind: "bundle"; items: Item[] }
@@ -107,21 +108,35 @@ function MergedByUrgency({
                 <button
                   type="button"
                   className="inline-flex items-center justify-center h-9 w-9 rounded-md border text-rose-600 bg-white"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation()
-                    if (!isMine) return
-                    if (confirm("해당 물품을 삭제하시겠어요? (되돌릴 수 없음)")) {
-                      deleteItem(it.unitId)
+                    if (!isMine || pendingDeleteId) return
+                    if (!confirm("해당 물품을 삭제하시겠어요? (되돌릴 수 없음)")) return
+                    setPendingDeleteId(it.unitId)
+                    const result = await deleteItem(it.unitId)
+                    setPendingDeleteId(null)
+                    if (result.success) {
                       toast({
                         title: "삭제됨",
                         description: `${it.bundleLabelDisplay || it.displayCode} 항목이 삭제되었습니다.`,
                       })
+                    } else {
+                      toast({
+                        title: "삭제 실패",
+                        description: result.error ?? "물품 삭제 중 오류가 발생했습니다.",
+                        variant: "destructive",
+                      })
                     }
                   }}
+                  disabled={!isMine || pendingDeleteId === it.unitId}
                   aria-label="삭제"
                   title="삭제"
                 >
-                  <Trash2 className="size-4" />
+                  {pendingDeleteId === it.unitId ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
                 </button>
               }
             >
@@ -146,21 +161,37 @@ function MergedByUrgency({
                 <button
                   type="button"
                   className="inline-flex items-center justify-center h-9 w-9 rounded-md border text-rose-600 bg-white"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.stopPropagation()
-                    if (!isMine) return
-                    if (confirm("묶음의 모든 세부 물품을 삭제할까요? (되돌릴 수 없음)")) {
-                      for (const unit of grp) deleteItem(unit.unitId)
+                    if (!isMine || pendingDeleteId) return
+                    if (!confirm("묶음의 모든 세부 물품을 삭제할까요? (되돌릴 수 없음)")) return
+                    const deleteKey = `bundle-${first.bundleId}`
+                    setPendingDeleteId(deleteKey)
+                    const results = await Promise.all(grp.map((unit) => deleteItem(unit.unitId)))
+                    setPendingDeleteId(null)
+                    const allOk = results.every((res) => res.success)
+                    if (allOk) {
                       toast({
                         title: "삭제됨",
                         description: `묶음 ${first.bundleLabelDisplay || first.bundleName || ""} (총 ${count})이 삭제되었습니다.`,
                       })
+                    } else {
+                      toast({
+                        title: "삭제 실패",
+                        description: "일부 세부 물품 삭제에 실패했습니다. 새로고침 후 다시 시도해 주세요.",
+                        variant: "destructive",
+                      })
                     }
                   }}
+                  disabled={!isMine || pendingDeleteId === `bundle-${first.bundleId}`}
                   aria-label="묶음 삭제"
                   title="묶음 삭제"
                 >
-                  <Trash2 className="size-4" />
+                  {pendingDeleteId === `bundle-${first.bundleId}` ? (
+                    <Loader2 className="size-4 animate-spin" aria-hidden />
+                  ) : (
+                    <Trash2 className="size-4" />
+                  )}
                 </button>
               }
             >

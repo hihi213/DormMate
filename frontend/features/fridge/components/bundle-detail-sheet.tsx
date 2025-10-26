@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from "react"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { CalendarDays, Pencil, Trash2, X } from "lucide-react"
+import { CalendarDays, Loader2, Pencil, Trash2, X } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import { useToast } from "@/hooks/use-toast"
@@ -42,28 +42,42 @@ export default function BundleDetailSheet({
 
   const sorted = useMemo(() => group.slice().sort((a, b) => daysLeft(a.expiry) - daysLeft(b.expiry)), [group])
   const [memoDraft, setMemoDraft] = useState(representativeMemo)
+  const [memoSaving, setMemoSaving] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     setMemoDraft(representativeMemo)
   }, [representativeMemo])
 
-  const handleSaveMemo = () => {
+  const handleSaveMemo = async () => {
+    if (memoSaving) return
     const trimmed = memoDraft.trim()
-    let allOk = true
-    for (const it of sorted) {
-      const result = updateItem(it.unitId, { memo: trimmed || undefined })
-      if (!result.success) {
-        allOk = false
+    if (!sorted.length) return
+
+    try {
+      setMemoSaving(true)
+      const results = await Promise.all(
+        sorted.map((it) => updateItem(it.unitId, { memo: trimmed || undefined })),
+      )
+      const allOk = results.every((res) => res.success)
+      setMemoDraft(trimmed)
+      if (allOk) {
+        toast({ title: "대표 메모가 저장되었습니다." })
+      } else {
+        toast({
+          title: "일부 메모 저장에 실패했습니다.",
+          description: "다시 시도하거나 새로고침 해주세요.",
+          variant: "destructive",
+        })
       }
-    }
-    setMemoDraft(trimmed)
-    if (allOk) {
-      toast({ title: "대표 메모가 저장되었습니다." })
-    } else {
+    } catch (error) {
       toast({
-        title: "일부 메모 저장에 실패했습니다.",
-        description: "다시 시도하거나 새로고침 해주세요.",
+        title: "메모 저장 실패",
+        description: error instanceof Error ? error.message : "대표 메모 저장 중 오류가 발생했습니다.",
+        variant: "destructive",
       })
+    } finally {
+      setMemoSaving(false)
     }
   }
 
@@ -124,9 +138,10 @@ export default function BundleDetailSheet({
                       <div className="flex justify-end">
                         <Button
                           className="bg-emerald-600 hover:bg-emerald-700"
-                          onClick={handleSaveMemo}
-                          disabled={memoDraft === representativeMemo}
+                          onClick={() => void handleSaveMemo()}
+                          disabled={memoSaving || memoDraft === representativeMemo}
                         >
+                          {memoSaving && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
                           {"메모 저장"}
                         </Button>
                       </div>
@@ -154,17 +169,25 @@ export default function BundleDetailSheet({
                               <span>{`${formatShortDate(it.expiry)} • ${dText}`}</span>
                             </div>
                             {canManage && edit && (
-                              <EditRow
-                                value={{ name: detailName, expiry: it.expiry }}
-                                onSave={(v) => {
-                                  const newName = suffix ? `${bundleName} - ${v.name}` : `${bundleName} - ${v.name}`
-                                  updateItem(it.unitId, { name: newName, expiry: v.expiry })
-                                  toast({
-                                    title: "수정 완료",
-                                    description: `${v.name.trim() || detailName} 항목이 업데이트되었습니다.`,
-                                  })
-                                }}
-                              />
+                        <EditRow
+                          value={{ name: detailName, expiry: it.expiry }}
+                          onSave={async (v) => {
+                            const newName = suffix ? `${bundleName} - ${v.name}` : `${bundleName} - ${v.name}`
+                            const result = await updateItem(it.unitId, { name: newName, expiry: v.expiry })
+                            if (result.success) {
+                              toast({
+                                title: "수정 완료",
+                                description: `${v.name.trim() || detailName} 항목이 업데이트되었습니다.`,
+                              })
+                            } else {
+                              toast({
+                                title: "수정 실패",
+                                description: result.error ?? "물품 수정 중 오류가 발생했습니다.",
+                                variant: "destructive",
+                              })
+                            }
+                          }}
+                        />
                             )}
                           </div>
                           {canManage && (
@@ -174,23 +197,37 @@ export default function BundleDetailSheet({
                                   <Pencil className="size-4" />
                                 </Button>
                               )}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-rose-600"
-                                onClick={() => {
-                                  if (confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) {
-                                    deleteItem(it.unitId)
-                                    toast({
-                                      title: "삭제됨",
-                                      description: `${getDetailName(it.name, bundleName)} 항목이 삭제되었습니다.`,
-                                    })
-                                  }
-                                }}
-                                aria-label="삭제"
-                              >
-                                <Trash2 className="size-4" />
-                              </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="text-rose-600"
+                          onClick={async () => {
+                            if (deletingId || !confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) return
+                            setDeletingId(it.unitId)
+                            const result = await deleteItem(it.unitId)
+                            setDeletingId(null)
+                            if (result.success) {
+                              toast({
+                                title: "삭제됨",
+                                description: `${getDetailName(it.name, bundleName)} 항목이 삭제되었습니다.`,
+                              })
+                            } else {
+                              toast({
+                                title: "삭제 실패",
+                                description: result.error ?? "세부 물품 삭제 중 오류가 발생했습니다.",
+                                variant: "destructive",
+                              })
+                            }
+                          }}
+                          disabled={deletingId === it.unitId}
+                          aria-label="삭제"
+                        >
+                          {deletingId === it.unitId ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="size-4" />
+                          )}
+                        </Button>
                             </div>
                           )}
                         </div>
@@ -217,13 +254,25 @@ function Field({ label, value }: { label: string; value: React.ReactNode }) {
 }
 function EditRow({
   value,
-  onSave = () => {},
+  onSave = async () => {},
 }: {
   value: { name: string; expiry: string }
-  onSave?: (v: { name: string; expiry: string }) => void
+  onSave?: (v: { name: string; expiry: string }) => void | Promise<unknown>
 }) {
   const [v, setV] = useState(value)
+  const [saving, setSaving] = useState(false)
   useEffect(() => setV(value), [value])
+
+  const handleSave = async () => {
+    if (saving) return
+    try {
+      setSaving(true)
+      await onSave(v)
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
     <div className="mt-2 grid grid-cols-1 sm:grid-cols-2 gap-2">
       <div>
@@ -239,7 +288,8 @@ function EditRow({
         warningThresholdDays={3}
       />
       <div className="sm:col-span-2 flex justify-end">
-        <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onSave(v)}>
+        <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => void handleSave()} disabled={saving}>
+          {saving && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
           {"저장"}
         </Button>
       </div>
