@@ -43,7 +43,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 ## 자동화 명령 요약
 
-- `./scripts/dev-warmup.sh`: Gradle/Node/Playwright 캐시 사전 준비(최초 1회 권장)
+- `./auto dev warmup [--refresh]`: Gradle/Node/Playwright 캐시 사전 준비(최초 1회 권장, 기존 `scripts/dev-warmup.sh`는 이 명령을 위임 실행)
 - `./auto dev-up` / `./auto dev-down`: 개발용 Docker 서비스 기동·종료
 - `./auto dev-backend` / `./auto dev-frontend`: Spring Boot · Next.js 개발 서버 실행
 - `./auto tests core [--skip-backend --skip-frontend --skip-playwright --full-playwright]`: Step6 테스트 번들(Gradle은 오프라인 우선, 실패 시 의존성 갱신)
@@ -55,14 +55,10 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 > 원하는 경우 `alias auto='python3 tools/automation/cli.py'`를 셸 설정에 추가하면 `auto …`로 바로 실행할 수 있습니다.
 
-`./auto` 자동화 CLI는 Java 21 런타임, 로컬 Gradle 캐시(`.gradle-cache`), Corepack(Node 20) 바이너리를 자동으로 PATH에 등록하므로 별도의 `with-java-env.sh`를 매 세션마다 수동으로 불러오지 않아도 바로 `./auto tests …` 명령을 사용할 수 있습니다. 셸에서 `source with-java-env.sh`가 적용된 상태라면 `gw`, `gw_offline`, `gw_refresh`, `gw_warmup` 함수를 어느 경로에서든 사용할 수 있습니다.
+`./auto` 자동화 CLI는 Java 21 런타임, 로컬 Gradle 캐시(`.gradle-cache`), Corepack(Node 20) 바이너리를 자동으로 PATH에 등록하므로 별도의 `with-java-env.sh`를 매 세션마다 수동으로 불러올 필요가 없습니다. 직접 Gradle 커맨드를 다뤄야 한다면 그때만 `source with-java-env.sh` 후 `gw`, `gw_offline`, `gw_refresh`, `gw_warmup`과 같은 보조 함수를 사용하세요.
 
 ### Playwright E2E 테스트 가이드
 
-1. 최초 한 번 브라우저 바이너리를 설치합니다.
-   ```bash
-   npm run playwright:install --prefix frontend
-   ```
 2. 로컬에서 스모크 테스트는 기본 `./auto tests core`로 실행됩니다.
    ```bash
    ./auto tests core
