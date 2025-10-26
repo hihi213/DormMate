@@ -1,8 +1,8 @@
 package com.dormmate.backend.modules.fridge.application;
 
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -38,15 +38,15 @@ import com.dormmate.backend.modules.fridge.domain.FridgeCompartment;
 import com.dormmate.backend.modules.fridge.domain.FridgeItem;
 import com.dormmate.backend.modules.fridge.domain.FridgeItemPriority;
 import com.dormmate.backend.modules.fridge.domain.FridgeItemStatus;
-import com.dormmate.backend.modules.auth.infrastructure.DormUserRepository;
-import com.dormmate.backend.modules.auth.infrastructure.RoomAssignmentRepository;
-import com.dormmate.backend.modules.fridge.infrastructure.BundleLabelSequenceRepository;
-import com.dormmate.backend.modules.fridge.infrastructure.CompartmentRoomAccessRepository;
-import com.dormmate.backend.modules.fridge.infrastructure.FridgeBundleRepository;
-import com.dormmate.backend.modules.fridge.infrastructure.FridgeCompartmentRepository;
-import com.dormmate.backend.modules.fridge.infrastructure.FridgeItemRepository;
-import com.dormmate.backend.modules.fridge.infrastructure.FridgeUnitRepository;
-import com.dormmate.backend.modules.inspection.infrastructure.InspectionSessionRepository;
+import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
+import com.dormmate.backend.modules.auth.infrastructure.persistence.RoomAssignmentRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.BundleLabelSequenceRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.CompartmentRoomAccessRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeCompartmentRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeUnitRepository;
+import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionSessionRepository;
 import com.dormmate.backend.global.security.SecurityUtils;
 
 import org.springframework.http.HttpStatus;
@@ -69,6 +69,7 @@ public class FridgeService {
     private final RoomAssignmentRepository roomAssignmentRepository;
     private final DormUserRepository dormUserRepository;
     private final InspectionSessionRepository inspectionSessionRepository;
+    private final Clock clock;
 
     public FridgeService(
             FridgeUnitRepository fridgeUnitRepository,
@@ -79,7 +80,8 @@ public class FridgeService {
             FridgeItemRepository fridgeItemRepository,
             RoomAssignmentRepository roomAssignmentRepository,
             DormUserRepository dormUserRepository,
-            InspectionSessionRepository inspectionSessionRepository
+            InspectionSessionRepository inspectionSessionRepository,
+            Clock clock
     ) {
         this.fridgeUnitRepository = fridgeUnitRepository;
         this.fridgeCompartmentRepository = fridgeCompartmentRepository;
@@ -90,6 +92,7 @@ public class FridgeService {
         this.roomAssignmentRepository = roomAssignmentRepository;
         this.dormUserRepository = dormUserRepository;
         this.inspectionSessionRepository = inspectionSessionRepository;
+        this.clock = clock;
     }
 
     @Transactional(readOnly = true)
@@ -244,7 +247,7 @@ public class FridgeService {
         }
 
         String nextLabel = allocateLabel(compartment);
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
 
         FridgeBundle bundle = new FridgeBundle();
         bundle.setOwner(currentUser);
@@ -304,7 +307,7 @@ public class FridgeService {
         ensureBundleOwnerOrManager(bundle, currentUser);
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
 
-        softDeleteBundle(bundle, OffsetDateTime.now(ZoneOffset.UTC));
+        softDeleteBundle(bundle, OffsetDateTime.now(clock));
         fridgeBundleRepository.save(bundle);
     }
 
@@ -318,7 +321,7 @@ public class FridgeService {
         ensureBundleOwnerOrManager(bundle, currentUser);
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
 
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
         int nextSequence = bundle.getItems().stream()
                 .mapToInt(FridgeItem::getSequenceNo)
                 .max()
@@ -343,7 +346,7 @@ public class FridgeService {
         ensureBundleOwnerOrManager(bundle, currentUser);
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
 
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
 
         if (StringUtils.hasText(request.name())) {
             item.setItemName(request.name().trim());
@@ -387,8 +390,8 @@ public class FridgeService {
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
 
         item.setStatus(FridgeItemStatus.REMOVED);
-        item.setDeletedAt(OffsetDateTime.now(ZoneOffset.UTC));
-        item.setLastModifiedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        item.setDeletedAt(OffsetDateTime.now(clock));
+        item.setLastModifiedAt(OffsetDateTime.now(clock));
         item.setLastModifiedBy(currentUser);
         item.setPostInspectionModified(true);
 
@@ -569,7 +572,7 @@ public class FridgeService {
     }
 
     private void softDeleteBundle(FridgeBundle bundle, OffsetDateTime removedAt) {
-        OffsetDateTime ts = Objects.requireNonNullElse(removedAt, OffsetDateTime.now(ZoneOffset.UTC));
+        OffsetDateTime ts = Objects.requireNonNullElse(removedAt, OffsetDateTime.now(clock));
         bundle.setStatus(FridgeBundleStatus.REMOVED);
         bundle.setDeletedAt(ts);
         bundle.getItems().forEach(item -> {
@@ -579,7 +582,7 @@ public class FridgeService {
     }
 
     private void ensureCompartmentNotLocked(FridgeCompartment compartment) {
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
         if (compartment.getLockedUntil() != null && compartment.getLockedUntil().isAfter(now)) {
             throw new ResponseStatusException(HttpStatus.LOCKED, "COMPARTMENT_LOCKED");
         }

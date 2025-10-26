@@ -44,6 +44,7 @@ target/
 
 # OS generated files
 .DS_Store
+client/playwright-report/
 .DS_Store?
 ._*
 .Spotlight-V100
@@ -113,7 +114,6 @@ jspm_packages/
 
 # Gatsby files
 .cache/
-public
 
 # Storybook build outputs
 .out
@@ -174,7 +174,7 @@ with-java-env.sh
 # --- 새로 추가된 항목들 ---
 
 # Docker 관련
-.dockerignore
+/.dockerignore
 # docker-compose.override.yml는 개발용이므로 커밋에 포함
 # docker-compose.*.yml
 # !docker-compose.yml

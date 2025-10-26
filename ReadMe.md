@@ -25,8 +25,11 @@ docker compose up -d
 # 스키마 마이그레이션 적용
 ./auto db migrate
 
+# (최초 1회) 의존성/브라우저 사전 설치
+./scripts/dev-warmup.sh
+
 # 백엔드 애플리케이션 실행
-cd backend && ./gradlew bootRun
+./auto dev-backend  # 또는 cd backend && gw bootRun
 
 # 프론트엔드 개발 서버
 cd client && npm install && npm run dev
@@ -40,10 +43,11 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 ## 자동화 명령 요약
 
+- `./scripts/dev-warmup.sh`: Gradle/Node/Playwright 캐시 사전 준비(최초 1회 권장)
 - `./auto dev-up` / `./auto dev-down`: 개발용 Docker 서비스 기동·종료
 - `./auto dev-backend` / `./auto dev-frontend`: Spring Boot · Next.js 개발 서버 실행
-- `./auto tests core [--skip-backend --skip-frontend --skip-playwright --full-playwright]`: Step6 테스트 번들
-- `./auto tests backend|frontend|playwright`: 개별 계층 테스트
+- `./auto tests core [--skip-backend --skip-frontend --skip-playwright --full-playwright]`: Step6 테스트 번들(Gradle은 오프라인 우선, 실패 시 의존성 갱신)
+- `./auto tests backend|frontend|playwright`: 개별 계층 테스트(`backend`는 오프라인 → 리프레시 순으로 자동 시도)
 - `./auto db migrate`: Flyway 마이그레이션 적용
 - `./auto cleanup`: 빌드 산출물 정리
 - `./auto state show` / `./auto state update --notes "..."`
@@ -51,7 +55,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 > 원하는 경우 `alias auto='python3 tools/automation/cli.py'`를 셸 설정에 추가하면 `auto …`로 바로 실행할 수 있습니다.
 
-`./auto` 자동화 CLI는 Java 21 런타임, 로컬 Gradle 캐시(`.gradle-cache`), Corepack(Node 20) 바이너리를 자동으로 PATH에 등록하므로 별도의 `with-java-env.sh`를 매 세션마다 수동으로 불러오지 않아도 바로 `./auto tests …` 명령을 사용할 수 있습니다.
+`./auto` 자동화 CLI는 Java 21 런타임, 로컬 Gradle 캐시(`.gradle-cache`), Corepack(Node 20) 바이너리를 자동으로 PATH에 등록하므로 별도의 `with-java-env.sh`를 매 세션마다 수동으로 불러오지 않아도 바로 `./auto tests …` 명령을 사용할 수 있습니다. 셸에서 `source with-java-env.sh`가 적용된 상태라면 `gw`, `gw_offline`, `gw_refresh`, `gw_warmup` 함수를 어느 경로에서든 사용할 수 있습니다.
 
 ### Playwright E2E 테스트 가이드
 
@@ -72,7 +76,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 1. 프론트/백엔드 빌드  
    ```bash
    cd client && npm run build
-   cd ../backend && ./gradlew bootJar
+   gw bootJar  # 또는 cd ../backend && ./gradlew bootJar
    ```
 2. Docker 이미지 태깅  
    ```bash

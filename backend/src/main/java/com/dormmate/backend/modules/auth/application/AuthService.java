@@ -1,7 +1,7 @@
 package com.dormmate.backend.modules.auth.application;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -18,10 +18,10 @@ import com.dormmate.backend.modules.auth.domain.DormUserStatus;
 import com.dormmate.backend.modules.auth.domain.RoomAssignment;
 import com.dormmate.backend.modules.auth.domain.UserRole;
 import com.dormmate.backend.modules.auth.domain.UserSession;
-import com.dormmate.backend.modules.auth.infrastructure.DormUserRepository;
-import com.dormmate.backend.modules.auth.infrastructure.RoomAssignmentRepository;
-import com.dormmate.backend.modules.auth.infrastructure.UserRoleRepository;
-import com.dormmate.backend.modules.auth.infrastructure.UserSessionRepository;
+import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
+import com.dormmate.backend.modules.auth.infrastructure.persistence.RoomAssignmentRepository;
+import com.dormmate.backend.modules.auth.infrastructure.persistence.UserRoleRepository;
+import com.dormmate.backend.modules.auth.infrastructure.persistence.UserSessionRepository;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -39,6 +39,7 @@ public class AuthService {
     private final UserSessionRepository userSessionRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtTokenService jwtTokenService;
+    private final Clock clock;
 
     public AuthService(
             DormUserRepository dormUserRepository,
@@ -46,7 +47,8 @@ public class AuthService {
             RoomAssignmentRepository roomAssignmentRepository,
             UserSessionRepository userSessionRepository,
             PasswordEncoder passwordEncoder,
-            JwtTokenService jwtTokenService
+            JwtTokenService jwtTokenService,
+            Clock clock
     ) {
         this.dormUserRepository = dormUserRepository;
         this.userRoleRepository = userRoleRepository;
@@ -54,6 +56,7 @@ public class AuthService {
         this.userSessionRepository = userSessionRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtTokenService = jwtTokenService;
+        this.clock = clock;
     }
 
     public LoginResponse login(LoginRequest request) {
@@ -79,7 +82,7 @@ public class AuthService {
     }
 
     public LoginResponse refresh(RefreshRequest request) {
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
         UserSession session = userSessionRepository.findActiveByRefreshToken(request.refreshToken())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN"));
 
@@ -108,7 +111,7 @@ public class AuthService {
     }
 
     public void logout(LogoutRequest request) {
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
         int updated = userSessionRepository.revokeByRefreshToken(request.refreshToken(), now, "LOGOUT");
         if (updated == 0) {
             // 기등록되지 않은 토큰도 동일한 응답을 반환해 토큰 유효 여부가 노출되지 않도록 한다.
@@ -138,7 +141,7 @@ public class AuthService {
     }
 
     private void revokeSession(UserSession session, String reason) {
-        session.setRevokedAt(OffsetDateTime.now(ZoneOffset.UTC));
+        session.setRevokedAt(OffsetDateTime.now(clock));
         session.setRevokedReason(reason);
         userSessionRepository.save(session);
     }

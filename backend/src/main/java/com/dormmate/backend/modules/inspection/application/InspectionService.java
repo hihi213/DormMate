@@ -1,7 +1,7 @@
 package com.dormmate.backend.modules.inspection.application;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
@@ -36,15 +36,14 @@ import com.dormmate.backend.modules.inspection.domain.InspectionParticipant;
 import com.dormmate.backend.modules.inspection.domain.InspectionParticipantRole;
 import com.dormmate.backend.modules.inspection.domain.InspectionSession;
 import com.dormmate.backend.modules.inspection.domain.InspectionStatus;
-import com.dormmate.backend.modules.auth.infrastructure.DormUserRepository;
-import com.dormmate.backend.modules.auth.infrastructure.RoomAssignmentRepository;
-import com.dormmate.backend.modules.fridge.infrastructure.FridgeBundleRepository;
-import com.dormmate.backend.modules.fridge.infrastructure.FridgeCompartmentRepository;
-import com.dormmate.backend.modules.fridge.infrastructure.FridgeItemRepository;
-import com.dormmate.backend.modules.inspection.infrastructure.InspectionSessionRepository;
+import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
+import com.dormmate.backend.modules.auth.infrastructure.persistence.RoomAssignmentRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeCompartmentRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
+import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionSessionRepository;
+import com.dormmate.backend.modules.notification.application.NotificationService;
 import com.dormmate.backend.global.security.SecurityUtils;
-
-
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -63,6 +62,7 @@ public class InspectionService {
     private final DormUserRepository dormUserRepository;
     private final RoomAssignmentRepository roomAssignmentRepository;
     private final NotificationService notificationService;
+    private final Clock clock;
 
     public InspectionService(
             InspectionSessionRepository inspectionSessionRepository,
@@ -71,7 +71,8 @@ public class InspectionService {
             FridgeItemRepository fridgeItemRepository,
             DormUserRepository dormUserRepository,
             RoomAssignmentRepository roomAssignmentRepository,
-            NotificationService notificationService
+            NotificationService notificationService,
+            Clock clock
     ) {
         this.inspectionSessionRepository = inspectionSessionRepository;
         this.fridgeCompartmentRepository = fridgeCompartmentRepository;
@@ -80,6 +81,7 @@ public class InspectionService {
         this.dormUserRepository = dormUserRepository;
         this.roomAssignmentRepository = roomAssignmentRepository;
         this.notificationService = notificationService;
+        this.clock = clock;
     }
 
     public InspectionSessionResponse startSession(StartInspectionRequest request) {
@@ -101,7 +103,7 @@ public class InspectionService {
         }
 
         DormUser currentUser = loadCurrentUser();
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
 
         InspectionSession session = new InspectionSession();
         session.setFridgeCompartment(compartment);
@@ -149,7 +151,7 @@ public class InspectionService {
         if (session.getStatus() != InspectionStatus.IN_PROGRESS) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "SESSION_NOT_ACTIVE");
         }
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
         session.setStatus(InspectionStatus.CANCELLED);
         session.setEndedAt(now);
         inspectionSessionRepository.save(session);
@@ -163,7 +165,7 @@ public class InspectionService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "SESSION_NOT_ACTIVE");
         }
 
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
         DormUser currentUser = loadCurrentUser();
 
         for (InspectionActionEntryRequest entry : request.actions()) {
@@ -228,7 +230,7 @@ public class InspectionService {
         }
 
         DormUser currentUser = loadCurrentUser();
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
 
         session.setStatus(InspectionStatus.SUBMITTED);
         session.setEndedAt(now);
