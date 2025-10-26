@@ -125,7 +125,7 @@ export function mapBundleFromDto(
   return { bundle, units }
 }
 
-function mapItemFromDto(item: FridgeItemDto, bundle: Bundle, index: number): ItemUnit {
+export function mapItemFromDto(item: FridgeItemDto, bundle: Bundle, index: number): ItemUnit {
   const seqNo = typeof item.sequenceNo === "number" && item.sequenceNo > 0 ? item.sequenceNo : index + 1
   return {
     unitId: item.itemId,
@@ -140,6 +140,16 @@ function mapItemFromDto(item: FridgeItemDto, bundle: Bundle, index: number): Ite
     updatedAt: item.updatedAt,
     removedAt: item.removedAt ?? null,
   }
+}
+
+export type FridgeItemResponseDto = FridgeItemDto
+
+export function mapItemFromResponse(
+  dto: FridgeItemResponseDto,
+  bundle: Bundle,
+): ItemUnit {
+  const index = typeof dto.sequenceNo === "number" && dto.sequenceNo > 0 ? dto.sequenceNo - 1 : 0
+  return mapItemFromDto(dto, bundle, index)
 }
 
 export function toItems(bundles: Bundle[], units: ItemUnit[]): Item[] {
@@ -178,4 +188,3 @@ export function toItems(bundles: Bundle[], units: ItemUnit[]): Item[] {
     }
   })
 }
-

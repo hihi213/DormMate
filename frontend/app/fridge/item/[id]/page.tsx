@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { FridgeProvider, useFridge } from "@/features/fridge/hooks/fridge-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { ArrowLeft, CalendarDays, Pencil, Trash2 } from "lucide-react"
+import { ArrowLeft, CalendarDays, Loader2, Pencil, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
@@ -41,6 +41,8 @@ function DetailInner() {
   const canEdit = !!(it && (it.ownerId ? uid === it.ownerId : it.owner === "me"))
 
   const [form, setForm] = useState({ name: "", expiry: "", memo: "" })
+  const [saving, setSaving] = useState(false)
+  const [removing, setRemoving] = useState(false)
   useEffect(() => {
     if (it) setForm({ name: it.name, expiry: it.expiry, memo: it.memo || "" })
   }, [it])
@@ -82,18 +84,27 @@ function DetailInner() {
               variant="ghost"
               size="icon"
               aria-label="삭제"
-              onClick={() => {
-                if (!canEdit) return
-                if (confirm("해당 물품을 삭제하시겠어요? (되돌릴 수 없음)")) {
-                  deleteItem(it.unitId)
+              onClick={async () => {
+                if (!canEdit || !it || removing) return
+                if (!confirm("해당 물품을 삭제하시겠어요? (되돌릴 수 없음)")) return
+                setRemoving(true)
+                const result = await deleteItem(it.unitId)
+                setRemoving(false)
+                if (result.success) {
                   toast({ title: "삭제됨", description: `${it.name} 항목이 삭제되었습니다.` })
                   router.push("/fridge")
+                } else {
+                  toast({
+                    title: "삭제 실패",
+                    description: result.error ?? "물품 삭제 중 오류가 발생했습니다.",
+                    variant: "destructive",
+                  })
                 }
               }}
-              disabled={!canEdit}
+              disabled={!canEdit || removing}
               title={canEdit ? "삭제" : "소유자만 삭제"}
             >
-              <Trash2 className="size-5 text-rose-600" />
+              {removing ? <Loader2 className="size-4 animate-spin text-rose-600" /> : <Trash2 className="size-5 text-rose-600" />}
             </Button>
           </div>
         }
@@ -149,15 +160,32 @@ function DetailInner() {
                 <Input id="memo" value={form.memo} onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))} />
               </div>
               <div className="flex justify-end">
-                  <Button
-                    className="bg-emerald-600 hover:bg-emerald-700"
-                    onClick={() => {
-                      const updatedName = form.name.trim() || it.name
-                      updateItem(it.unitId, { name: form.name, expiry: form.expiry, memo: form.memo || undefined })
+                <Button
+                  className="bg-emerald-600 hover:bg-emerald-700"
+                  onClick={async () => {
+                    if (saving) return
+                    const updatedName = form.name.trim() || it.name
+                    setSaving(true)
+                    const result = await updateItem(it.unitId, {
+                      name: form.name,
+                      expiry: form.expiry,
+                      memo: form.memo || undefined,
+                    })
+                    setSaving(false)
+                    if (result.success) {
                       toast({ title: "수정 완료", description: `${updatedName} 항목이 업데이트되었습니다.` })
                       setEdit(false)
-                    }}
-                  >
+                    } else {
+                      toast({
+                        title: "수정 실패",
+                        description: result.error ?? "물품 수정 중 오류가 발생했습니다.",
+                        variant: "destructive",
+                      })
+                    }
+                  }}
+                  disabled={saving}
+                >
+                  {saving && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
                   {"저장"}
                 </Button>
               </div>

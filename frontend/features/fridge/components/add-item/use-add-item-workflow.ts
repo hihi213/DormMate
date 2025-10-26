@@ -63,6 +63,7 @@ export const useAddItemWorkflow = ({
   const [nameFlash, setNameFlash] = useState(false)
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [revealedId, setRevealedId] = useState<string | null>(null)
+  const [isSaving, setIsSaving] = useState(false)
 
   const autoPackNameRef = useRef("")
   const nameInputRef = useRef<HTMLInputElement | null>(null)
@@ -240,7 +241,7 @@ export const useAddItemWorkflow = ({
     setIsMetadataStep(true)
   }, [editingEntryId, entries, toast, template.slotCode, fallbackSlot, autoPackName])
 
-  const handleConfirmSave = useCallback(() => {
+  const handleConfirmSave = useCallback(async () => {
     if (entries.length === 0) {
       toast({ title: "등록할 항목이 없습니다.", description: "포장에 추가한 품목이 있어야 저장할 수 있습니다." })
       return
@@ -262,33 +263,56 @@ export const useAddItemWorkflow = ({
       })),
     )
 
-    const result = addBundle({
-      slotCode: metadataSlot,
-      bundleName: packLabel,
-      memo: memo || undefined,
-      units: payloadUnits,
-    })
+    try {
+      setIsSaving(true)
 
-    if (!result.success) {
+      const result = await addBundle({
+        slotCode: metadataSlot,
+        bundleName: packLabel,
+        memo: memo || undefined,
+        units: payloadUnits,
+      })
+
+      if (!result.success) {
+        toast({
+          title: "등록 실패",
+          description: result.error ?? "포장 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      toast({
+        title: `${packLabel} 저장 완료`,
+        description: `총 ${summary.totalQuantity}개 품목이 등록되었습니다.`,
+      })
+
+      setEntries([])
+      setTemplate((prev) => ({ ...createInitialTemplate(metadataSlot), slotCode: metadataSlot }))
+      setPackName("")
+      setPackMemo("")
+      setIsMetadataStep(false)
+      onClose()
+    } catch (error) {
       toast({
         title: "등록 실패",
-        description: "포장 저장에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+        description: error instanceof Error ? error.message : "포장 저장 중 오류가 발생했습니다.",
+        variant: "destructive",
       })
-      return
+    } finally {
+      setIsSaving(false)
     }
-
-    toast({
-      title: `${packLabel} 저장 완료`,
-      description: `총 ${summary.totalQuantity}개 품목이 등록되었습니다.`,
-    })
-
-    setEntries([])
-    setTemplate((prev) => ({ ...createInitialTemplate(metadataSlot), slotCode: metadataSlot }))
-    setPackName("")
-    setPackMemo("")
-    setIsMetadataStep(false)
-    onClose()
-  }, [entries, packName, packMemo, metadataSlot, addBundle, onClose, toast, autoPackName, summary.totalQuantity])
+  }, [
+    entries,
+    packName,
+    packMemo,
+    metadataSlot,
+    addBundle,
+    onClose,
+    toast,
+    autoPackName,
+    summary.totalQuantity,
+  ])
 
   const handleBackToItems = useCallback(() => {
     setIsMetadataStep(false)
@@ -322,6 +346,7 @@ export const useAddItemWorkflow = ({
     handleEditEntry,
     handleRequestSave,
     handleConfirmSave,
+    isSaving,
     handleBackToItems,
     handleCancel,
   }

@@ -20,7 +20,7 @@ cp .env.example .env
 # 개발용 인프라 기동 (Docker Compose)
 docker compose up -d
 # 또는 자동화 스크립트 사용
-./auto dev-up
+./auto dev up
 
 # 스키마 마이그레이션 적용
 ./auto db migrate
@@ -29,7 +29,7 @@ docker compose up -d
 ./scripts/dev-warmup.sh
 
 # 백엔드 애플리케이션 실행
-./auto dev-backend  # 또는 cd backend && gw bootRun
+./auto dev backend  # 또는 cd backend && ./gradlew bootRun
 
 # 프론트엔드 개발 서버
 cd frontend && npm install && npm run dev
@@ -44,8 +44,9 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 ## 자동화 명령 요약
 
 - `./auto dev warmup [--refresh]`: Gradle/Node/Playwright 캐시 사전 준비(최초 1회 권장, 기존 `scripts/dev-warmup.sh`는 이 명령을 위임 실행)
-- `./auto dev-up` / `./auto dev-down`: 개발용 Docker 서비스 기동·종료
-- `./auto dev-backend` / `./auto dev-frontend`: Spring Boot · Next.js 개발 서버 실행
+- `./auto dev up` / `./auto dev down`: 개발용 Docker 서비스 기동·종료
+- `./auto dev backend` / `./auto dev frontend`: Spring Boot · Next.js 개발 서버 실행
+- `./auto dev kill-ports [--ports 3000 8080 …]`: 지정한 포트(미지정 시 3000~3003, 8080)를 점유한 프로세스를 정리
 - `./auto tests core [--skip-backend --skip-frontend --skip-playwright --full-playwright]`: Step6 테스트 번들(Gradle은 오프라인 우선, 실패 시 의존성 갱신)
 - `./auto tests backend|frontend|playwright`: 개별 계층 테스트(`backend`는 오프라인 → 리프레시 순으로 자동 시도)
 - `./auto db migrate`: Flyway 마이그레이션 적용
@@ -55,10 +56,11 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 > 원하는 경우 `alias auto='python3 tools/automation/cli.py'`를 셸 설정에 추가하면 `auto …`로 바로 실행할 수 있습니다.
 
-`./auto` 자동화 CLI는 Java 21 런타임, 로컬 Gradle 캐시(`.gradle-cache`), Corepack(Node 20) 바이너리를 자동으로 PATH에 등록하므로 별도의 `with-java-env.sh`를 매 세션마다 수동으로 불러올 필요가 없습니다. 직접 Gradle 커맨드를 다뤄야 한다면 그때만 `source with-java-env.sh` 후 `gw`, `gw_offline`, `gw_refresh`, `gw_warmup`과 같은 보조 함수를 사용하세요.
+`./auto` 자동화 CLI는 Java 21 런타임, 로컬 Gradle 캐시(`.gradle-cache`), Corepack(Node 20) 바이너리를 자동으로 PATH에 등록합니다. 셸 프로파일(`.bash_profile`, `.zshrc`)에서 Node·Java 경로가 기본값으로 설정되어 있으므로 추가 스크립트를 로드할 필요가 없습니다. Gradle을 직접 실행해야 할 때는 `cd backend && ./gradlew <task>` 형태로 호출하십시오.
 
 ### Playwright E2E 테스트 가이드
 
+1. 최초 한 번 브라우저 바이너리를 설치합니다. `./auto dev warmup` 명령은 이 단계까지 한 번에 처리합니다.
 2. 로컬에서 스모크 테스트는 기본 `./auto tests core`로 실행됩니다.
    ```bash
    ./auto tests core
@@ -72,7 +74,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 1. 프론트/백엔드 빌드  
    ```bash
    cd frontend && npm run build
-   gw bootJar  # 또는 cd ../backend && ./gradlew bootJar
+   cd backend && ./gradlew bootJar
    ```
 2. Docker 이미지 태깅  
    ```bash

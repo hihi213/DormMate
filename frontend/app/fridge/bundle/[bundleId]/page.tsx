@@ -8,7 +8,7 @@ import { FridgeProvider, useFridge } from "@/features/fridge/hooks/fridge-contex
 import { formatBundleLabel } from "@/features/fridge/utils/data-shaping"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
-import { ArrowLeft, CalendarDays, Pencil, Trash2 } from "lucide-react"
+import { ArrowLeft, CalendarDays, Loader2, Pencil, Trash2 } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
@@ -31,6 +31,8 @@ function BundleInner() {
   const [edit, setEdit] = useState<boolean>(false)
   const { toast } = useToast()
   const uid = getCurrentUserId()
+  const [savingId, setSavingId] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   useEffect(() => {
     const id = decodeURIComponent(window.location.pathname.split("/").pop() || "")
@@ -110,16 +112,28 @@ function BundleInner() {
                       {canManage && edit && (
                         <EditRow
                           value={{ name: detailName, expiry: it.expiry, memo: it.memo || "" }}
-                          onSave={(v) => {
-                            updateItem(it.unitId, {
+                          saving={savingId === it.unitId}
+                          onSave={async (v) => {
+                            if (savingId) return
+                            setSavingId(it.unitId)
+                            const result = await updateItem(it.unitId, {
                               name: suffix ? `${bundleName} - ${v.name}` : `${bundleName} - ${v.name}`,
                               expiry: v.expiry,
                               memo: v.memo || undefined,
                             })
-                            toast({
-                              title: "수정 완료",
-                              description: `${v.name.trim() || detailName} 항목이 업데이트되었습니다.`,
-                            })
+                            setSavingId(null)
+                            if (result.success) {
+                              toast({
+                                title: "수정 완료",
+                                description: `${v.name.trim() || detailName} 항목이 업데이트되었습니다.`,
+                              })
+                            } else {
+                              toast({
+                                title: "수정 실패",
+                                description: result.error ?? "물품 수정 중 오류가 발생했습니다.",
+                                variant: "destructive",
+                              })
+                            }
                           }}
                         />
                       )}
@@ -136,18 +150,32 @@ function BundleInner() {
                           variant="ghost"
                           size="icon"
                           className="text-rose-600"
-                          onClick={() => {
-                            if (confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) {
-                              deleteItem(it.unitId)
+                          onClick={async () => {
+                            if (deletingId || !confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) return
+                            setDeletingId(it.unitId)
+                            const result = await deleteItem(it.unitId)
+                            setDeletingId(null)
+                            if (result.success) {
                               toast({
                                 title: "삭제됨",
                                 description: `${getDetailName(it.name, bundleName)} 항목이 삭제되었습니다.`,
                               })
+                            } else {
+                              toast({
+                                title: "삭제 실패",
+                                description: result.error ?? "세부 물품 삭제 중 오류가 발생했습니다.",
+                                variant: "destructive",
+                              })
                             }
                           }}
+                          disabled={deletingId === it.unitId}
                           aria-label="삭제"
                         >
-                          <Trash2 className="size-4" />
+                          {deletingId === it.unitId ? (
+                            <Loader2 className="size-4 animate-spin" />
+                          ) : (
+                            <Trash2 className="size-4" />
+                          )}
                         </Button>
                       </div>
                     )}
@@ -188,13 +216,28 @@ function Field({ label, value }: { label: string; value: ReactNode }) {
 }
 function EditRow({
   value,
-  onSave = () => {},
+  onSave = async () => {},
+  saving = false,
 }: {
   value: { name: string; expiry: string; memo: string }
-  onSave?: (v: { name: string; expiry: string; memo: string }) => void
+  onSave?: (v: { name: string; expiry: string; memo: string }) => void | Promise<unknown>
+  saving?: boolean
 }) {
   const [v, setV] = useState(value)
   useEffect(() => setV(value), [value])
+  const [localSaving, setLocalSaving] = useState(false)
+
+  const handleSave = async () => {
+    if (saving || localSaving) return
+    try {
+      setLocalSaving(true)
+      await onSave(v)
+    } finally {
+      setLocalSaving(false)
+    }
+  }
+
+  const busy = saving || localSaving
   return (
     <div className="mt-2 grid grid-cols-1 sm:grid-cols-3 gap-2">
       <div className="sm:col-span-1">
@@ -215,7 +258,12 @@ function EditRow({
         <Input value={v.memo} onChange={(e) => setV((p) => ({ ...p, memo: e.target.value }))} />
       </div>
       <div className="sm:col-span-3 flex justify-end">
-        <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onSave(v)}>
+        <Button
+          className="bg-emerald-600 hover:bg-emerald-700"
+          onClick={() => void handleSave()}
+          disabled={busy}
+        >
+          {busy && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
           {"저장"}
         </Button>
       </div>

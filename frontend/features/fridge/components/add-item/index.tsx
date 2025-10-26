@@ -2,7 +2,7 @@
 
 import { useCallback, useRef } from "react"
 import type { TouchEvent } from "react"
-import { X, Trash2, ArrowLeft, Pencil } from "lucide-react"
+import { X, Trash2, ArrowLeft, Pencil, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
@@ -58,6 +58,7 @@ export default function AddItemDialog({
     handleEditEntry,
     handleRequestSave,
     handleConfirmSave,
+    isSaving,
     handleBackToItems,
     handleCancel,
   } = useAddItemWorkflow({
@@ -98,8 +99,8 @@ export default function AddItemDialog({
   const stepLabel = isMetadataStep ? "2 / 2" : "1 / 2"
   const headerTitle = isMetadataStep ? "포장 정보 입력" : "포장 목록"
   const primaryActionLabel = isMetadataStep ? "보관" : "다음"
-  const isPrimaryDisabled = isMetadataStep ? entries.length === 0 || !metadataSlot : entries.length === 0
-  const handlePrimaryAction = isMetadataStep ? handleConfirmSave : handleRequestSave
+  const isPrimaryDisabled = isMetadataStep ? isSaving || entries.length === 0 || !metadataSlot : entries.length === 0
+  const handlePrimaryAction = isMetadataStep ? () => void handleConfirmSave() : handleRequestSave
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -122,7 +123,9 @@ export default function AddItemDialog({
               onClick={handlePrimaryAction}
               disabled={isPrimaryDisabled}
               className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-emerald-700 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-emerald-600 hover:to-teal-500 disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-500"
+              data-loading={isSaving && isMetadataStep}
             >
+              {isMetadataStep && isSaving && <Loader2 className="h-4 w-4 animate-spin" aria-hidden />}
               {primaryActionLabel}
             </Button>
           </div>

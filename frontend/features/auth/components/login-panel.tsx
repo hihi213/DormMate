@@ -162,17 +162,21 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
         {"로그인"}
       </Button>
 
-      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-3 text-xs text-emerald-800 shadow-inner">
+      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-4 text-xs text-emerald-800 shadow-inner">
         <p className="font-semibold">{"테스트 계정 체험"}</p>
-        <div className="mt-2 flex flex-wrap gap-2 text-[11px]">
+        <p className="mt-1 text-[11px] text-emerald-600">{"버튼을 누르면 아이디와 비밀번호가 자동으로 채워집니다."}</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-3">
           {DEMO_ACCOUNTS.map((account) => (
             <button
               key={account.id}
               type="button"
               onClick={() => fillDemoAccount(account.id, account.password)}
-              className="rounded-full border border-emerald-200 bg-white px-3 py-1 font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100"
+              className="flex flex-col rounded-xl border border-emerald-200 bg-white px-3 py-2 text-left transition hover:border-emerald-300 hover:bg-emerald-100"
+              aria-label={`${account.roleLabel} ${account.displayName} 계정 자동 입력`}
             >
-              {account.label}
+              <span className="text-sm font-semibold text-emerald-800">{account.id}</span>
+              <span className="text-[11px] text-emerald-600">{`${account.roleLabel} · ${account.displayName}`}</span>
+              <span className="text-[11px] text-emerald-500">{`비밀번호 ${account.password}`}</span>
             </button>
           ))}
         </div>

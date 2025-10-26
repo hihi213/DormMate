@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   ClipboardCheck,
@@ -23,7 +23,6 @@ import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import SearchBar from "@/features/fridge/components/search-bar"
 import WarnMenu from "@/features/fridge/components/warn-menu"
-import StatusBadge from "@/components/shared/status-badge"
 import type { Item } from "@/features/fridge/types"
 import type { InspectionAction, InspectionSession } from "@/features/inspections/types"
 import {
@@ -48,9 +47,17 @@ type ResultEntry = {
   expiry?: string
   name?: string
   note?: string
+  origin?: "local" | "sync"
 }
 
 type FilterType = "ALL" | InspectionAction
+
+type ItemGroup = {
+  bundleId: string
+  bundleName: string
+  bundleLabel?: string | null
+  items: Item[]
+}
 
 const ACTION_LABEL: Record<InspectionAction, string> = {
   PASS: "통과",
@@ -67,6 +74,8 @@ const ACTION_ICON_COLOR: Record<InspectionAction, { bg: string; text: string }> 
   WARN_INFO_MISMATCH: { bg: "bg-amber-100", text: "text-amber-700" },
   WARN_STORAGE_POOR: { bg: "bg-amber-100", text: "text-amber-700" },
 }
+
+const STORAGE_KEY_PREFIX = "inspection-results-v1-"
 
 export default function InspectPage() {
   return <InspectInner />
@@ -90,6 +99,8 @@ function InspectInner() {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [stickerDialogOpen, setStickerDialogOpen] = useState(false)
   const [stickerName, setStickerName] = useState("")
+  const resultsHydratedRef = useRef(false)
+  const skipSummarySyncRef = useRef(false)
 
   useEffect(() => {
     const current = getCurrentUser()
@@ -131,13 +142,25 @@ function InspectInner() {
   }, [router, sessionIdParam, toast])
 
   const items = useMemo(() => session?.items ?? [], [session])
+  const storageKey = session?.sessionId ? `${STORAGE_KEY_PREFIX}${session.sessionId}` : null
   const totalItems = items.length
   const processedRegisteredItems = results.filter((r) => r.itemId).length
   const remainingItems = Math.max(totalItems - processedRegisteredItems, 0)
   const isInspectionComplete = remainingItems === 0 && totalItems > 0
 
+  const processedUnitIds = useMemo(() => {
+    const ids = new Set<string>()
+    for (const entry of results) {
+      if (entry.itemId) ids.add(entry.itemId)
+    }
+    return ids
+  }, [results])
+
   const filteredItems = useMemo(() => {
     let list: Item[] = items
+    if (processedUnitIds.size > 0) {
+      list = list.filter((item) => !processedUnitIds.has(item.unitId))
+    }
     if (showExpired) {
       list = list.filter((item) => daysLeft(item.expiry) < 0)
     }
@@ -149,32 +172,182 @@ function InspectInner() {
       })
     }
     return list
-  }, [items, showExpired, query])
+  }, [items, processedUnitIds, showExpired, query])
 
-  const grouped = useMemo(() => {
-    const map = new Map<string, Item[]>()
-    for (const it of filteredItems) {
-      if (!map.has(it.bundleId)) map.set(it.bundleId, [])
-      map.get(it.bundleId)!.push(it)
+  const itemGroups = useMemo<ItemGroup[]>(() => {
+    const map = new Map<string, ItemGroup>()
+
+    const pushItem = (item: Item) => {
+      const key = item.bundleId ?? item.unitId
+      if (!map.has(key)) {
+        map.set(key, {
+          bundleId: key,
+          bundleName: item.bundleName ?? "묶음",
+          bundleLabel: item.bundleLabelDisplay,
+          items: [],
+        })
+      }
+      map.get(key)!.items.push(item)
     }
-    const groups = Array.from(map.values()).map((grp) => grp.slice().sort((a, b) => a.seqNo - b.seqNo))
-    groups.sort((a, b) => a.expiry.localeCompare(b.expiry))
-    return groups
-  }, [filteredItems])
 
-  const singles = useMemo(() => grouped.filter((grp) => grp.length === 1).map((grp) => grp[0]), [grouped])
-  const bundles = useMemo(() => grouped.filter((grp) => grp.length > 1), [grouped])
+    filteredItems.forEach((item) => pushItem(item))
+
+    const earliestExpiry = (items: Item[]) => {
+      if (!items.length) return ""
+      return items.reduce((earliest, current) => (current.expiry < earliest ? current.expiry : earliest), items[0].expiry)
+    }
+
+    return Array.from(map.values())
+      .map((group) => ({
+        ...group,
+        items: group.items.slice().sort((a, b) => a.seqNo - b.seqNo),
+        orderKey: earliestExpiry(group.items),
+      }))
+      .sort((a, b) => a.orderKey.localeCompare(b.orderKey))
+      .map(({ orderKey, ...rest }) => rest)
+  }, [filteredItems])
 
   const filteredResults = useMemo(() => {
     if (filter === "ALL") return results
     return results.filter((entry) => entry.action === filter)
   }, [filter, results])
 
-  const summaryFromServer = session?.summary ?? []
+  const summaryFromServer = useMemo(() => session?.summary ?? [], [session])
+
+  const clearStoredResults = useCallback(() => {
+    if (storageKey && typeof window !== "undefined") {
+      window.localStorage.removeItem(storageKey)
+      window.sessionStorage.removeItem(storageKey)
+    }
+    skipSummarySyncRef.current = true
+    resultsHydratedRef.current = true
+    setResults([])
+  }, [storageKey])
+
+  const groupedResults = useMemo(() => {
+    const map = new Map<string, { bundleName: string; bundleLabel?: string | null; entries: ResultEntry[]; order: number }>()
+    const singles: Array<{ entry: ResultEntry; order: number }> = []
+
+    filteredResults.forEach((entry, index) => {
+      if (entry.bundleId) {
+        if (!map.has(entry.bundleId)) {
+          map.set(entry.bundleId, {
+            bundleName: entry.bundleName ?? "묶음",
+            bundleLabel: entry.bundleLabel,
+            entries: [],
+            order: index,
+          })
+        }
+        map.get(entry.bundleId)!.entries.push(entry)
+      } else {
+        singles.push({ entry, order: index })
+      }
+    })
+
+    const groups = Array.from(map.entries())
+      .sort((a, b) => a[1].order - b[1].order)
+      .map(([bundleId, value]) => ({ bundleId, ...value }))
+
+    const singleList = singles.sort((a, b) => a.order - b.order).map((item) => item.entry)
+
+    return { groups, singles: singleList }
+  }, [filteredResults])
+
+  useEffect(() => {
+    if (!storageKey) return
+    if (typeof window === "undefined") return
+
+    try {
+      let raw = window.localStorage.getItem(storageKey)
+      if (!raw) {
+        raw = window.sessionStorage.getItem(storageKey)
+        if (raw) {
+          window.localStorage.setItem(storageKey, raw)
+          window.sessionStorage.removeItem(storageKey)
+        }
+      }
+
+      if (!raw) {
+        setResults([])
+      } else {
+        const parsed = JSON.parse(raw)
+        if (Array.isArray(parsed)) {
+          const normalized: ResultEntry[] = parsed.map((entry: ResultEntry) => ({
+            ...entry,
+            origin: entry.origin === "sync" ? "sync" : "local",
+          }))
+          setResults(normalized)
+        } else {
+          setResults([])
+        }
+      }
+    } catch (error) {
+      console.warn("failed to restore inspection results", error)
+      setResults([])
+    } finally {
+      resultsHydratedRef.current = true
+    }
+  }, [storageKey])
+
+  useEffect(() => {
+    if (!storageKey || typeof window === "undefined" || !resultsHydratedRef.current) return
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(results))
+    } catch (error) {
+      console.warn("failed to persist inspection results", error)
+    }
+  }, [results, storageKey])
+
+  useEffect(() => {
+    if (!summaryFromServer.length) return
+    if (skipSummarySyncRef.current) {
+      skipSummarySyncRef.current = false
+      return
+    }
+
+    setResults((prev) => {
+      const counts = prev.reduce<Record<InspectionAction, number>>((acc, entry) => {
+        acc[entry.action] = (acc[entry.action] ?? 0) + 1
+        return acc
+      }, {} as Record<InspectionAction, number>)
+
+      let next = prev
+      let updated = false
+
+      for (const summary of summaryFromServer) {
+        const current = counts[summary.action] ?? 0
+        const diff = summary.count - current
+        if (diff > 0) {
+          if (!updated) {
+            next = [...prev]
+            updated = true
+          }
+          for (let i = 0; i < diff; i += 1) {
+            next = [
+              {
+                id: `S-${Date.now()}-${Math.random().toString(36).slice(2, 6)}-${i}`,
+                time: Date.now(),
+                action: summary.action,
+                origin: "sync",
+              } satisfies ResultEntry,
+              ...next,
+            ]
+          }
+        }
+      }
+
+      return updated ? next : prev
+    })
+  }, [summaryFromServer])
 
   const addResult = (entry: Omit<ResultEntry, "id" | "time">) => {
     setResults((prev) => [
-      { id: `R-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`, time: Date.now(), ...entry },
+      {
+        id: `R-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        time: Date.now(),
+        origin: entry.origin ?? "local",
+        ...entry,
+      },
       ...prev,
     ])
   }
@@ -244,6 +417,7 @@ function InspectInner() {
       const response = await submitInspection(session.sessionId, {})
       setSession(response)
       setStage("committed")
+      clearStoredResults()
       toast({
         title: "검사 결과가 제출되었습니다.",
       })
@@ -260,7 +434,21 @@ function InspectInner() {
 
   const handleCancelSession = async () => {
     if (!session) return
-    router.replace("/fridge/inspections")
+
+    try {
+      await cancelInspection(session.sessionId)
+      clearStoredResults()
+      toast({ title: "검사 세션이 취소되었습니다." })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "검사 취소에 실패했습니다."
+      toast({
+        title: "검사 취소 실패",
+        description: message,
+        variant: "destructive",
+      })
+    } finally {
+      router.replace("/fridge/inspections")
+    }
   }
 
   const openStickerDialog = () => {
@@ -389,7 +577,7 @@ function InspectInner() {
               <h2 id="list-section" className="sr-only">
                 {"목록"}
               </h2>
-              {filteredItems.length === 0 ? (
+              {itemGroups.length === 0 ? (
                 <Card>
                   <CardContent className="py-6 text-center text-sm text-muted-foreground">
                     {"조건에 해당하는 물품이 없습니다."}
@@ -397,8 +585,7 @@ function InspectInner() {
                 </Card>
               ) : (
                 <InspectionItemList
-                  singles={singles}
-                  bundles={bundles}
+                  groups={itemGroups}
                   onPass={markPass}
                   onWarn={markWarn}
                   onDiscard={markDiscardExpired}
@@ -439,37 +626,36 @@ function InspectInner() {
                 ))}
               </div>
 
-              {filteredResults.length === 0 ? (
+              {groupedResults.groups.length === 0 && groupedResults.singles.length === 0 ? (
                 <p className="text-sm text-muted-foreground">{"해당 조건의 결과가 없습니다."}</p>
               ) : (
-                <ul className="space-y-2">
-                  {filteredResults.map((entry) => (
-                    <li key={entry.id} className="rounded-md border p-3 text-sm">
+                <div className="space-y-3">
+                  {groupedResults.groups.map((group) => (
+                    <div key={group.bundleId} className="rounded-md border p-3">
                       <div className="flex items-center justify-between gap-2">
-                        <div>
-                          <div className="font-semibold text-gray-900">{ACTION_LABEL[entry.action]}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {formatShortDate(new Date(entry.time).toISOString())}
-                          </div>
+                        <div className="text-sm font-semibold text-gray-900">{group.bundleName}</div>
+                        <div className="flex items-center gap-2 text-xs">
+                          {group.bundleLabel && (
+                            <Badge variant="outline" className="border-gray-200">
+                              {group.bundleLabel}
+                            </Badge>
+                          )}
+                          <Badge variant="secondary" className="bg-emerald-50 text-emerald-700">
+                            {group.entries.length}건
+                          </Badge>
                         </div>
-                        <span
-                          className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${
-                            ACTION_ICON_COLOR[entry.action].bg
-                          } ${ACTION_ICON_COLOR[entry.action].text}`}
-                        >
-                          {ACTION_LABEL[entry.action]}
-                        </span>
                       </div>
-                      {entry.name && (
-                        <p className="mt-2 text-sm text-gray-800">
-                          {entry.name}
-                          {entry.bundleLabel && <span className="text-muted-foreground">{` · ${entry.bundleLabel}`}</span>}
-                        </p>
-                      )}
-                      {entry.note && <p className="mt-1 text-xs text-muted-foreground">{entry.note}</p>}
-                    </li>
+                      <div className="mt-2 space-y-2">
+                        {group.entries.map((entry) => (
+                          <ResultEntryView key={entry.id} entry={entry} compact />
+                        ))}
+                      </div>
+                    </div>
                   ))}
-                </ul>
+                  {groupedResults.singles.map((entry) => (
+                    <ResultEntryView key={entry.id} entry={entry} />
+                  ))}
+                </div>
               )}
             </CardContent>
           </Card>
@@ -545,19 +731,17 @@ function InspectInner() {
 }
 
 function InspectionItemList({
-  singles,
-  bundles,
+  groups,
   onPass,
   onWarn,
   onDiscard,
 }: {
-  singles: Item[]
-  bundles: Item[][]
+  groups: ItemGroup[]
   onPass: (item: Item) => void
   onWarn: (item: Item, action: "WARN_INFO_MISMATCH" | "WARN_STORAGE_POOR") => void
   onDiscard: (item: Item) => void
 }) {
-  if (singles.length === 0 && bundles.length === 0) {
+  if (groups.length === 0) {
     return (
       <Card>
         <CardContent className="py-6 text-center text-sm text-muted-foreground">
@@ -569,28 +753,19 @@ function InspectionItemList({
 
   return (
     <div className="space-y-3">
-      {singles.map((item) => (
-        <InspectionItemCard
-          key={item.unitId}
-          item={item}
-          onPass={onPass}
-          onWarn={onWarn}
-          onDiscard={onDiscard}
-        />
-      ))}
-      {bundles.map((group) => (
-        <div key={group[0].bundleId} className="space-y-2 rounded-md border p-2">
+      {groups.map((group) => (
+        <div key={group.bundleId} className="space-y-2 rounded-md border p-2">
           <div className="flex items-center justify-between">
             <div className="text-sm font-semibold">
-              {group[0].bundleName}
-              {group[0].bundleLabelDisplay && (
-                <span className="ml-2 text-xs text-muted-foreground">{group[0].bundleLabelDisplay}</span>
+              {group.bundleName}
+              {group.bundleLabel && (
+                <span className="ml-2 text-xs text-muted-foreground">{group.bundleLabel}</span>
               )}
             </div>
-            <Badge variant="outline">{`${group.length}개`}</Badge>
+            <Badge variant="outline">{`${group.items.length}개`}</Badge>
           </div>
           <div className="space-y-2">
-            {group.map((item) => (
+            {group.items.map((item) => (
               <InspectionItemCard
                 key={item.unitId}
                 item={item}
@@ -617,18 +792,12 @@ function InspectionItemCard({
   onWarn: (item: Item, action: "WARN_INFO_MISMATCH" | "WARN_STORAGE_POOR") => void
   onDiscard: (item: Item) => void
 }) {
-  const d = daysLeft(item.expiry)
-  const status = d < 0 ? "expired" : d <= 3 ? "expiring" : "ok"
   const detailLine = `${item.bundleLabelDisplay ?? item.displayCode ?? item.slotCode} • ${formatShortDate(item.expiry)}`
   return (
     <Card>
       <CardContent className="py-3 px-3">
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0">
-            <div className="text-sm font-semibold text-gray-900">{item.name}</div>
-            <div className="text-xs text-muted-foreground">{detailLine}</div>
-          </div>
-          <div className="flex items-center gap-2">
+        <div className="flex w-full items-center gap-3">
+          <div className="flex items-center gap-1 shrink-0">
             <WarnMenu
               onSelect={(type) => onWarn(item, type === "warn_storage" ? "WARN_STORAGE_POOR" : "WARN_INFO_MISMATCH")}
             />
@@ -636,15 +805,53 @@ function InspectionItemCard({
               <Trash2 className="size-4 mr-1" />
               {"폐기"}
             </Button>
+          </div>
+          <div className="flex-1 min-w-0 text-center sm:text-left">
+            <div className="text-base font-semibold text-gray-900">{item.name}</div>
+            <div className="text-sm text-muted-foreground">{detailLine}</div>
+          </div>
+          <div className="shrink-0">
             <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onPass(item)}>
               <Check className="size-4 mr-1" />
               {"통과"}
             </Button>
           </div>
-          <StatusBadge status={status} />
         </div>
       </CardContent>
     </Card>
   )
 }
 
+function ResultEntryView({ entry, compact = false }: { entry: ResultEntry; compact?: boolean }) {
+  const actionStyle = ACTION_ICON_COLOR[entry.action]
+  const recordedAt = new Date(entry.time)
+  const recordedLabel = `${formatShortDate(recordedAt)} ${recordedAt.toLocaleTimeString("ko-KR", {
+    hour: "2-digit",
+    minute: "2-digit",
+  })}`
+
+  return (
+    <div
+      className={`rounded-md border ${compact ? "px-3 py-2" : "px-3 py-3"} text-sm`}
+      role="listitem"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="min-w-0">
+          <div className="font-semibold text-gray-900 truncate">
+            {entry.name ?? ACTION_LABEL[entry.action]}
+          </div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {recordedLabel}
+            {entry.bundleLabel && !compact ? ` · ${entry.bundleLabel}` : ""}
+          </div>
+        </div>
+        <span
+          className={`inline-flex shrink-0 items-center rounded-md px-2 py-1 text-xs font-medium ${actionStyle.bg} ${actionStyle.text}`}
+        >
+          {ACTION_LABEL[entry.action]}
+        </span>
+      </div>
+      {entry.note && <p className="mt-1 text-xs text-muted-foreground">{entry.note}</p>}
+    </div>
+  )
+}
