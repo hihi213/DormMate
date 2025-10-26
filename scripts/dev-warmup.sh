@@ -14,9 +14,9 @@ echo "▶️ Download backend dependencies (testClasses)"
 gw_refresh testClasses
 
 echo "▶️ Install frontend packages"
-(cd "$PROJECT_ROOT/client" && npm install)
+(cd "$PROJECT_ROOT/frontend" && npm install)
 
 echo "▶️ Install Playwright browsers"
-(cd "$PROJECT_ROOT/client" && npm run playwright:install)
+(cd "$PROJECT_ROOT/frontend" && npm run playwright:install)
 
 echo "✅ Development warmup complete"

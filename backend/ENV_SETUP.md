@@ -113,7 +113,7 @@ docker run --env-file .env.prod your-app-image
 ## 🚢 **배포 절차 요약**
 1. 앱 빌드  
    ```bash
-   cd client && npm run build
+   cd frontend && npm run build
    cd ../backend && ./gradlew bootJar
    ```
 2. 이미지 태그 및 배포  
