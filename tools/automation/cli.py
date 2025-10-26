@@ -54,8 +54,18 @@ def run_command(
     return CommandResult(command=cmd_list, returncode=completed.returncode)
 
 
-def run_gradle_task(*tasks: str, clean: bool = False, check: bool = True) -> CommandResult:
+def run_gradle_task(
+    *tasks: str,
+    clean: bool = False,
+    check: bool = True,
+    offline: bool = False,
+    refresh: bool = False,
+) -> CommandResult:
     cmd = ["./gradlew"]
+    if offline:
+        cmd.append("--offline")
+    if refresh:
+        cmd.append("--refresh-dependencies")
     if clean:
         cmd.append("clean")
     cmd.extend(tasks)
@@ -212,7 +222,11 @@ def cmd_tests_core(args: argparse.Namespace) -> None:
 
 
 def gradle_tests(*, clean: bool) -> None:
-    run_gradle_task("test", clean=clean)
+    result = run_gradle_task("test", clean=clean, offline=True, check=False)
+    if result.returncode == 0:
+        return
+    print("ℹ️  오프라인 실행이 실패해 의존성을 새로 고칩니다.")
+    run_gradle_task("test", clean=clean, refresh=True)
 
 
 def npm_tests() -> None:

@@ -1,30 +1,26 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { ArrowLeft, Plus, CalendarDays, MoreVertical, Edit3, Trash2, CheckCircle, Play, History, Save, X } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator } from "@/components/ui/dropdown-menu"
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
+import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
+import { CalendarDays, ClipboardCheck, Loader2, PauseCircle, Play, ShieldCheck } from "lucide-react"
+
 import BottomNav from "@/components/bottom-nav"
 import AuthGuard from "@/features/auth/components/auth-guard"
-
-// 일정 타입
-type Schedule = {
-  id: string
-  dateISO: string
-  title?: string
-  notes?: string
-  completed?: boolean
-  completedAt?: string
-  completedBy?: string
-}
-
-const SCHED_KEY = "fridge-inspections-schedule-v1"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { SlotSelector } from "@/features/fridge/components/slot-selector"
+import { useToast } from "@/hooks/use-toast"
+import { getCurrentUser } from "@/lib/auth"
+import { formatShortDate } from "@/lib/date-utils"
+import type { Slot } from "@/features/fridge/types"
+import type { InspectionAction, InspectionSession } from "@/features/inspections/types"
+import {
+  cancelInspection,
+  fetchActiveInspection,
+  fetchInspectionSlots,
+  startInspection,
+} from "@/features/inspections/api"
 
 export default function InspectionsPage() {
   return (
@@ -36,310 +32,248 @@ export default function InspectionsPage() {
 }
 
 function InspectionsInner() {
-  const [schedules, setSchedules] = useState<Schedule[]>([])
-  const [isFloorLead, setIsFloorLead] = useState(false)
-  const uid = getCurrentUserId()
+  const router = useRouter()
+  const { toast } = useToast()
+  const [slots, setSlots] = useState<Slot[]>([])
+  const [activeSession, setActiveSession] = useState<InspectionSession | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [starting, setStarting] = useState(false)
+  const [canceling, setCanceling] = useState(false)
+  const [selectedSlotCode, setSelectedSlotCode] = useState<string>("")
+  const [error, setError] = useState<string | null>(null)
 
-  // 에디터 상태
-  const [editorOpen, setEditorOpen] = useState(false)
-  const [editingId, setEditingId] = useState<string | null>(null)
-  const [form, setForm] = useState<{ title: string; date: string; time: string; notes: string }>({
-    title: "정기 점검",
-    date: new Date().toISOString().slice(0, 10),
-    time: new Date().toISOString().slice(11, 16),
-    notes: "",
-  })
+  const currentUser = getCurrentUser()
+  const canManage = currentUser?.roles.includes("FLOOR_MANAGER") || currentUser?.roles.includes("ADMIN")
 
   useEffect(() => {
-    try {
-      const savedS = JSON.parse(localStorage.getItem(SCHED_KEY) || "null") as Schedule[] | null
-      if (Array.isArray(savedS) && savedS.length > 0) {
-        setSchedules(savedS)
-      } else {
-        const demoS: Schedule[] = makeDemoSchedules()
-        setSchedules(demoS)
-        localStorage.setItem(SCHED_KEY, JSON.stringify(demoS))
+    const load = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const [slotList, session] = await Promise.all([fetchInspectionSlots(), fetchActiveInspection()])
+        setSlots(slotList.filter((slot) => slot.isActive))
+        setActiveSession(session)
+      } catch (err) {
+        const message = err instanceof Error ? err.message : "검사 정보를 불러오지 못했습니다."
+        setError(message)
+        toast({
+          title: "검사 정보 조회 실패",
+          description: message,
+          variant: "destructive",
+        })
+      } finally {
+        setLoading(false)
       }
-    } catch {
-      const demoS: Schedule[] = makeDemoSchedules()
-      setSchedules(demoS)
     }
 
-    const current = getCurrentUser()
-    const canManage = current?.roles.includes("FLOOR_MANAGER") || current?.roles.includes("ADMIN")
-    setIsFloorLead(Boolean(canManage))
-  }, [])
-
-  const save = (list: Schedule[]) => {
-    setSchedules(list)
-    try {
-      localStorage.setItem(SCHED_KEY, JSON.stringify(list))
-    } catch {}
-  }
-
-  const upcomingSorted = schedules
-    .filter((s) => !s.completed)
-    .slice()
-    .sort((a, b) => a.dateISO.localeCompare(b.dateISO))
-
-  const pastSorted = schedules
-    .filter((s) => !!s.completed)
-    .slice()
-    .sort((a, b) => (b.completedAt || b.dateISO).localeCompare(a.completedAt || a.dateISO))
-
-  // 일정 추가/수정/삭제/완료
-  const openEditorForCreate = () => {
-    if (!isFloorLead) return
-    setEditingId(null)
-    const now = new Date()
-    setForm({
-      title: "정기 점검",
-      date: now.toISOString().slice(0, 10),
-      time: now.toISOString().slice(11, 16),
-      notes: "",
-    })
-    setEditorOpen(true)
-  }
-
-  const openEditorForEdit = (id: string) => {
-    if (!isFloorLead) return
-    const s = schedules.find((x) => x.id === id)
-    if (!s) return
-    const d = new Date(s.dateISO)
-    setEditingId(id)
-    setForm({
-      title: s.title || "검사",
-      date: d.toISOString().slice(0, 10),
-      time: d.toISOString().slice(11, 16),
-      notes: s.notes || "",
-    })
-    setEditorOpen(true)
-  }
-
-  const handleSaveEditor = () => {
-    const iso = new Date(`${form.date}T${form.time}:00`).toISOString()
-    if (editingId) {
-      const next = schedules.map((x) => (x.id === editingId ? { ...x, title: form.title, dateISO: iso, notes: form.notes } : x))
-      save(next)
+    if (canManage) {
+      void load()
     } else {
-      const next: Schedule = { id: cryptoRandomId(), title: form.title, dateISO: iso, notes: form.notes, completed: false }
-      save([next, ...schedules])
+      setLoading(false)
     }
-    setEditorOpen(false)
-  }
+  }, [canManage, toast])
 
-  const handleDelete = (id: string) => {
-    if (!isFloorLead) return
-    if (!confirm("해당 일정을 삭제할까요?")) return
-    save(schedules.filter((x) => x.id !== id))
-  }
+  const availableSlots = useMemo(() => {
+    if (!slots.length) return []
+    if (!activeSession) return slots
+    return slots.filter((slot) => slot.slotId !== activeSession.slotId)
+  }, [slots, activeSession])
 
-  const handleComplete = (id: string) => {
-    if (!isFloorLead) return
-    const now = new Date().toISOString()
-    const next = schedules.map((x) => (x.id === id ? { ...x, completed: true, completedAt: now, completedBy: uid || undefined } : x))
-    save(next)
-  }
+  const selectedSlot = availableSlots.find((slot) => slot.code === selectedSlotCode)
 
-  const handleStartInspection = (id: string) => {
-    if (typeof window !== "undefined") {
-      window.location.href = `/fridge/inspect?id=${encodeURIComponent(id)}`
+  const handleStartInspection = async () => {
+    if (!selectedSlot || starting) return
+    try {
+      setStarting(true)
+      const session = await startInspection({
+        slotId: selectedSlot.slotId,
+        slotCode: selectedSlot.code,
+      })
+      setActiveSession(session)
+      toast({
+        title: "검사를 시작했습니다.",
+        description: `${session.slotCode} 칸 검사 세션이 생성되었습니다.`,
+      })
+      router.push(`/fridge/inspect?sessionId=${session.sessionId}`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "검사를 시작하지 못했습니다."
+      toast({
+        title: "검사 시작 실패",
+        description: message,
+        variant: "destructive",
+      })
+    } finally {
+      setStarting(false)
     }
+  }
+
+  const handleContinue = () => {
+    if (!activeSession) return
+    router.push(`/fridge/inspect?sessionId=${activeSession.sessionId}`)
+  }
+
+  const handleCancel = async () => {
+    if (!activeSession || canceling) return
+    if (!confirm("진행 중인 검사를 취소할까요? 기록되지 않은 내용은 모두 사라집니다.")) return
+
+    try {
+      setCanceling(true)
+      await cancelInspection(activeSession.sessionId)
+      setActiveSession(null)
+      toast({
+        title: "검사 세션이 취소되었습니다.",
+      })
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "검사 취소에 실패했습니다."
+      toast({
+        title: "검사 취소 실패",
+        description: message,
+        variant: "destructive",
+      })
+    } finally {
+      setCanceling(false)
+    }
+  }
+
+  if (!canManage) {
+    return (
+      <main className="min-h-[100svh] bg-white">
+        <div className="mx-auto max-w-screen-sm px-4 py-16 space-y-6 text-center">
+          <ShieldCheck className="mx-auto h-12 w-12 text-emerald-600" />
+          <h1 className="text-xl font-semibold text-gray-900">층별장 권한이 필요합니다.</h1>
+          <p className="text-sm text-muted-foreground">
+            이 화면은 층별장 또는 관리자만 접근할 수 있습니다. 권한이 없다면 메인 페이지로 이동해 주세요.
+          </p>
+          <Button onClick={() => router.replace("/")}>메인으로 이동</Button>
+        </div>
+      </main>
+    )
   }
 
   return (
     <main className="min-h-[100svh] bg-white">
       <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-        <div className="mx-auto max-w-screen-sm px-2 py-3 flex items-center">
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label="냉장고로 이동"
-            onClick={() => {
-              if (typeof window !== "undefined") window.location.href = "/fridge"
-            }}
-          >
-            <ArrowLeft className="size-5" />
-          </Button>
-          <div className="flex-1 text-center">
-            <div className="inline-flex items-center gap-2">
-              <CalendarDays className="size-4 text-teal-700" />
-              <h1 className="text-base font-semibold leading-none">{"검사 이력 및 관리"}</h1>
-            </div>
+        <div className="mx-auto max-w-screen-sm px-4 py-3 flex items-center justify-between">
+          <div className="inline-flex items-center gap-2">
+            <CalendarDays className="size-4 text-teal-700" />
+            <h1 className="text-base font-semibold leading-none">{"냉장고 검사"}</h1>
           </div>
-          <div className="inline-flex items-center gap-1">
-            {isFloorLead && (
-              <Button variant="ghost" size="icon" aria-label="검사 일정 추가" onClick={openEditorForCreate}>
-                <Plus className="size-5" />
-              </Button>
-            )}
-          </div>
+          {loading && <Loader2 className="size-4 animate-spin text-emerald-600" aria-hidden />}
         </div>
       </header>
 
       <div className="mx-auto max-w-screen-sm px-4 pb-28 pt-4 space-y-6">
-        {/* 예정된 검사 */}
-        <section>
+        {error && (
+          <Card className="border-rose-200">
+            <CardContent className="py-4 text-sm text-rose-700">{error}</CardContent>
+          </Card>
+        )}
+
+        {activeSession ? (
           <Card className="border-emerald-200">
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <CalendarDays className="size-4 text-emerald-700" />
-                {"예정된 검사"}
-                <Badge variant="secondary" className="ml-auto">{`${upcomingSorted.length}건`}</Badge>
+              <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+                <ClipboardCheck className="size-4 text-emerald-700" />
+                {"진행 중인 검사"}
+                <Badge variant="secondary" className="ml-auto">
+                  {activeSession.status === "IN_PROGRESS" ? "진행 중" : "완료"}
+                </Badge>
               </CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {upcomingSorted.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{"예정된 검사 일정이 없습니다."}</p>
-              ) : (
-                <ul className="space-y-2">
-                  {upcomingSorted.map((s) => (
-                    <li key={s.id} className="flex items-center gap-2 rounded-md border p-2">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium">{s.title || "냉장고 점검"}</div>
-                        <div className="text-xs text-muted-foreground">{formatDate(s.dateISO)}</div>
-                        {s.notes && <div className="text-xs text-muted-foreground mt-1">{s.notes}</div>}
-                      </div>
-
-                      {isFloorLead && (
-                        <div className="inline-flex items-center gap-1">
-                          <Button variant="outline" size="sm" onClick={() => handleStartInspection(s.id)} aria-label="검사 시작">
-                            <Play className="size-4 mr-1" />
-                            {"검사 시작"}
-                          </Button>
-                          <DropdownMenu>
-                            <DropdownMenuTrigger asChild>
-                              <Button variant="ghost" size="icon" className="h-8 w-8">
-                                <MoreVertical className="size-4" />
-                              </Button>
-                            </DropdownMenuTrigger>
-                            <DropdownMenuContent align="end">
-                              <DropdownMenuItem onClick={() => openEditorForEdit(s.id)}>
-                                <Edit3 className="size-4 mr-2" />
-                                수정하기
-                              </DropdownMenuItem>
-                              <DropdownMenuItem onClick={() => handleComplete(s.id)}>
-                                <CheckCircle className="size-4 mr-2" />
-                                완료로 표시
-                              </DropdownMenuItem>
-                              <DropdownMenuSeparator />
-                              <DropdownMenuItem onClick={() => handleDelete(s.id)} className="text-red-600">
-                                <Trash2 className="size-4 mr-2" />
-                                삭제하기
-                              </DropdownMenuItem>
-                            </DropdownMenuContent>
-                          </DropdownMenu>
-                        </div>
-                      )}
-                    </li>
-                  ))}
-                </ul>
-              )}
+            <CardContent className="space-y-3">
+              <div className="text-sm text-gray-800">
+                <p className="font-semibold">{`${activeSession.slotCode} 검사 세션`}</p>
+                <p className="text-xs text-muted-foreground">
+                  {`시작: ${formatShortDate(activeSession.startedAt)} (${new Date(activeSession.startedAt).toLocaleTimeString("ko-KR", {
+                    hour: "2-digit",
+                    minute: "2-digit",
+                  })})`}
+                </p>
+                {activeSession.summary.length > 0 && (
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    {activeSession.summary.map((entry) => (
+                      <span key={entry.action} className="inline-flex items-center gap-1 rounded-md border px-2 py-1">
+                        {`${friendlyActionLabel(entry.action)} ${entry.count}건`}
+                      </span>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button onClick={handleContinue}>
+                  <Play className="mr-1 size-4" />
+                  {"검사 계속"}
+                </Button>
+                <Button variant="outline" onClick={handleCancel} disabled={canceling}>
+                  {canceling ? <Loader2 className="mr-1 size-4 animate-spin" /> : <PauseCircle className="mr-1 size-4" />}
+                  {"검사 취소"}
+                </Button>
+              </div>
             </CardContent>
           </Card>
-        </section>
-
-        {/* 과거 검사 이력 */}
-        <section>
+        ) : (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                <History className="size-4 text-gray-700" />
-                {"과거 검사 이력"}
-                <Badge variant="secondary" className="ml-auto">{`${pastSorted.length}건`}</Badge>
-              </CardTitle>
+              <CardTitle className="text-sm font-semibold">{"진행 중인 검사 없음"}</CardTitle>
             </CardHeader>
-            <CardContent className="space-y-2">
-              {pastSorted.length === 0 ? (
-                <p className="text-sm text-muted-foreground">{"과거 검사 이력이 없습니다."}</p>
-              ) : (
-                <ul className="space-y-2">
-                  {pastSorted.map((s) => (
-                    <li key={s.id} className="rounded-md border p-2">
-                      <div className="flex items-center justify-between gap-2">
-                        <div className="min-w-0">
-                          <div className="text-sm font-medium">{s.title || "냉장고 점검"}</div>
-                          <div className="text-xs text-muted-foreground">
-                            {`${formatDate(s.dateISO)} • 완료: ${formatDate(s.completedAt || s.dateISO)}`}
-                          </div>
-                        </div>
-                        {s.completedBy && (
-                          <span className="text-[11px] text-muted-foreground">{`처리자 #${s.completedBy}`}</span>
-                        )}
-                      </div>
-                    </li>
-                  ))}
-                </ul>
-              )}
+            <CardContent className="text-sm text-muted-foreground">
+              {"현재 진행 중인 검사 세션이 없습니다. 아래에서 검사할 냉장고 칸을 선택해 새 세션을 시작하세요."}
             </CardContent>
           </Card>
-        </section>
-      </div>
+        )}
 
-      {/* 일정 편집 다이얼로그 */}
-      <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>{editingId ? "일정 수정" : "일정 추가"}</DialogTitle>
-            <DialogDescription className="sr-only">검사 일정을 추가/수정합니다.</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="grid gap-1.5">
-              <Label htmlFor="title">제목</Label>
-              <Input id="title" value={form.title} onChange={(e) => setForm((p) => ({ ...p, title: e.target.value }))} />
-            </div>
-            <div className="grid grid-cols-2 gap-2">
-              <div className="grid gap-1.5">
-                <Label htmlFor="date">날짜</Label>
-                <Input id="date" type="date" value={form.date} onChange={(e) => setForm((p) => ({ ...p, date: e.target.value }))} />
-              </div>
-              <div className="grid gap-1.5">
-                <Label htmlFor="time">시간</Label>
-                <Input id="time" type="time" value={form.time} onChange={(e) => setForm((p) => ({ ...p, time: e.target.value }))} />
-              </div>
-            </div>
-            <div className="grid gap-1.5">
-              <Label htmlFor="notes">메모(선택)</Label>
-              <Input id="notes" value={form.notes} onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))} />
-            </div>
-            <div className="flex justify-end gap-2 pt-1">
-              <Button variant="outline" onClick={() => setEditorOpen(false)}>
-                <X className="size-4 mr-1" /> 취소
-              </Button>
-              <Button className="bg-emerald-600 hover:bg-emerald-700" onClick={handleSaveEditor}>
-                <Save className="size-4 mr-1" /> 저장
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold">{"새 검사 시작"}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <SlotSelector
+              value={selectedSlotCode}
+              onChange={setSelectedSlotCode}
+              slots={availableSlots}
+              placeholder={availableSlots.length ? "검사할 보관 칸 선택" : "검사 가능한 보관 칸이 없습니다"}
+              disabled={!availableSlots.length || starting}
+            />
+            <Button
+              onClick={handleStartInspection}
+              disabled={!selectedSlot || starting}
+              className="w-full sm:w-auto"
+            >
+              {starting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <Play className="mr-2 size-4" />}
+              {"검사 시작"}
+            </Button>
+            <p className="text-xs text-muted-foreground">
+              {"검사를 완료하면 자동으로 알림과 기록이 생성됩니다."}
+            </p>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm font-semibold">{"검사 이력"}</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm text-muted-foreground">
+            {"검사 이력은 관리자 대시보드에서 확인할 수 있습니다."}
+          </CardContent>
+        </Card>
+      </div>
     </main>
   )
 }
 
-function makeDemoSchedules(): Schedule[] {
-  const addDays = (base: Date, days: number, hour = 10) => {
-    const d = new Date(base)
-    d.setDate(d.getDate() + days)
-    d.setHours(hour, 0, 0, 0)
-    return d.toISOString()
+function friendlyActionLabel(action: InspectionAction): string {
+  switch (action) {
+    case "PASS":
+      return "통과"
+    case "DISPOSE_EXPIRED":
+      return "폐기(유통)"
+    case "UNREGISTERED_DISPOSE":
+      return "폐기(미등록)"
+    case "WARN_STORAGE_POOR":
+      return "경고(보관)"
+    case "WARN_INFO_MISMATCH":
+      return "경고(정보)"
+    default:
+      return action
   }
-  const now = new Date()
-
-  // 과거 1건(완료), 미래 2건(예정)
-  return [
-    { id: "p1", dateISO: addDays(now, -3, 9), title: "주간 점검", notes: "1층 냉장고", completed: true, completedAt: addDays(now, -3, 11), completedBy: "1" },
-    { id: "u1", dateISO: addDays(now, 1, 9), title: "주간 점검", notes: "1층 먼저" },
-    { id: "u2", dateISO: addDays(now, 7, 10), title: "정기 점검" },
-  ]
-}
-
-function formatDate(iso: string) {
-  const d = new Date(iso)
-  return d.toLocaleDateString("ko-KR", { month: "long", day: "numeric", weekday: "long", hour: "2-digit", minute: "2-digit" })
-}
-
-function cryptoRandomId() {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return (crypto as any).randomUUID() as string
-  return Math.random().toString(36).slice(2)
 }

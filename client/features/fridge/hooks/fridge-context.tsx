@@ -12,16 +12,8 @@ import type {
   Slot,
 } from "@/features/fridge/types"
 import { useFridgeLogic } from "@/hooks/use-fridge-logic"
-import {
-  createInitialData,
-  formatBundleLabel,
-  normalizeSlot,
-  toItems,
-  FRIDGE_SLOTS_KEY,
-  FRIDGE_BUNDLES_KEY,
-  FRIDGE_UNITS_KEY,
-  loadFridgeDataFromStorage,
-} from "@/features/fridge/utils/data-shaping"
+import { fetchFridgeInventory, fetchFridgeSlots } from "@/features/fridge/api"
+import { formatBundleLabel, toItems } from "@/features/fridge/utils/data-shaping"
 import { getCurrentUserId } from "@/lib/auth"
 
 type AddBundlePayload = {
@@ -66,120 +58,53 @@ const FridgeContext = createContext<FridgeContextValue | null>(null)
 
 export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const currentUserId = getCurrentUserId() || undefined
-  const { slots: initialSlots, bundles: initialBundles, units: initialUnits } = useMemo(() => createInitialData(), [])
 
-  const [slots, setSlots] = useState<Slot[]>(initialSlots)
-  const [bundleState, setBundleState] = useState<Bundle[]>(initialBundles)
-  const [units, setUnits] = useState<ItemUnit[]>(initialUnits)
+  const [slots, setSlots] = useState<Slot[]>([])
+  const [bundleState, setBundleState] = useState<Bundle[]>([])
+  const [units, setUnits] = useState<ItemUnit[]>([])
   const [lastInspectionAt, setLastInspectionAt] = useState<number>(0)
   const [isInspector, setIsInspector] = useState(false)
-  const [hydrated, setHydrated] = useState(false)
 
   useEffect(() => {
-    if (typeof window === "undefined") return
-    const persisted = loadFridgeDataFromStorage()
-    if (persisted) {
-      setSlots(persisted.slots)
-      setBundleState(persisted.bundles)
-      setUnits(persisted.units)
-    }
-    setHydrated(true)
-  }, [])
-
-  useEffect(() => {
-    if (!hydrated || typeof window === "undefined") return
-    localStorage.setItem(FRIDGE_SLOTS_KEY, JSON.stringify(slots))
-  }, [slots, hydrated])
-
-  useEffect(() => {
-    if (!hydrated || typeof window === "undefined") return
-    localStorage.setItem(FRIDGE_BUNDLES_KEY, JSON.stringify(bundleState))
-  }, [bundleState, hydrated])
-
-  useEffect(() => {
-    if (!hydrated || typeof window === "undefined") return
-    localStorage.setItem(FRIDGE_UNITS_KEY, JSON.stringify(units))
-  }, [units, hydrated])
-
-  const bundles = useMemo(() => {
-    return bundleState.map((bundle) => {
-      const ownerId = bundle.ownerId
-      if (!ownerId) {
-        if (bundle.owner) return bundle
-        return { ...bundle, owner: "other" }
-      }
-
-      if (!currentUserId) {
-        if (bundle.owner) return bundle
-        return { ...bundle, owner: "other" }
-      }
-
-      const mine = ownerId === currentUserId
-      const expectedOwner = mine ? "me" : "other"
-      if (bundle.owner === expectedOwner) return bundle
-      return { ...bundle, owner: expectedOwner }
-    })
-  }, [bundleState, currentUserId])
-
-  const items = useMemo(() => {
-    const base = toItems(bundles, units)
-    if (!currentUserId) {
-      return base.map((item) => (item.owner ? item : { ...item, owner: item.owner ?? "other" }))
-    }
-
-    return base.map((item) => {
-      const mine = item.ownerId === currentUserId
-      const expectedOwner = mine ? "me" : "other"
-      if (item.owner === expectedOwner) return item
-      return { ...item, owner: expectedOwner }
-    })
-  }, [bundles, units, currentUserId])
-
-  const logic = useFridgeLogic(items, slots, currentUserId)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    const defaultFloor = 2 // TODO: derive from 로그인 사용자 정보
+    let canceled = false
 
     const load = async () => {
+      if (!currentUserId) {
+        setSlots([])
+        setBundleState([])
+        setUnits([])
+        return
+      }
+
       try {
-        const response = await fetch(`/api/fridge/compartments?view=full&floor=${defaultFloor}`, {
-          signal: controller.signal,
-        })
-        if (!response.ok) {
-          console.warn("Failed to load compartment metadata: ", response.status)
-          return
-        }
-        const data = await response.json()
-        if (!Array.isArray(data)) return
-        const nextSlots = data.map((entry: any, index: number) =>
-          normalizeSlot(
-            {
-              resourceId: typeof entry?.id === "number" ? entry.id : undefined,
-              displayOrder: entry?.displayOrder,
-              labelRangeStart: entry?.labelRangeStart,
-              labelRangeEnd: entry?.labelRangeEnd,
-              label: typeof entry?.displayName === "string" ? entry.displayName : undefined,
-              floor: typeof entry?.floor === "number" ? entry.floor : undefined,
-              floorCode: typeof entry?.floorCode === "string" ? entry.floorCode : undefined,
-              type: "FRIDGE_COMP",
-              temperature: entry?.type === "FREEZER" ? "freezer" : "refrigerator",
-            },
-            index,
-          ),
-        )
-        setSlots(nextSlots)
+        const [slotList, inventory] = await Promise.all([
+          fetchFridgeSlots(),
+          fetchFridgeInventory(currentUserId),
+        ])
+
+        if (canceled) return
+        setSlots(slotList)
+        setBundleState(inventory.bundles)
+        setUnits(inventory.units)
       } catch (error) {
-        if ((error as Error).name !== "AbortError") {
-          console.warn("Failed to load compartment metadata:", error)
-        }
+        if (canceled) return
+        console.error("Failed to load fridge data", error)
+        setSlots([])
+        setBundleState([])
+        setUnits([])
       }
     }
 
     void load()
 
-    return () => controller.abort()
-  }, [])
+    return () => {
+      canceled = true
+    }
+  }, [currentUserId])
+
+  const bundles = useMemo(() => bundleState, [bundleState])
+  const items = useMemo(() => toItems(bundles, units), [bundles, units])
+  const logic = useFridgeLogic(items, slots, currentUserId)
 
   const getSlotByCode = useCallback(
     (slotCode: string) => {
@@ -235,18 +160,21 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
 
       const newBundle: Bundle = {
         bundleId,
-        resourceId: slot.resourceId,
+        slotId: slot.slotId,
         slotCode: slot.code,
         labelNo: labelNumber,
         labelNumber,
         labelDisplay,
         bundleName: payload.bundleName,
-        memo: payload.memo?.trim() || undefined,
-        ownerDisplayName: ownerId ? "나" : undefined,
+        memo: payload.memo?.trim() || null,
+        ownerUserId: ownerId ?? null,
+        ownerDisplayName: ownerId ? "나" : null,
+        ownerRoomNumber: null,
         owner: ownerId ? "me" : "other",
         ownerId,
         createdAt: nowIso,
         updatedAt: nowIso,
+        removedAt: null,
       }
 
       const newUnits: ItemUnit[] = payload.units.map((unit, index) => ({
@@ -255,11 +183,12 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         seqNo: index + 1,
         name: unit.name.trim(),
         expiry: unit.expiry,
-        quantity: unit.quantity,
+        quantity: unit.quantity ?? null,
         priority: unit.priority,
-        memo: payload.memo?.trim() || undefined,
+        memo: payload.memo?.trim() || null,
         createdAt: nowIso,
         updatedAt: nowIso,
+        removedAt: null,
       }))
 
       setBundleState((prev) => [newBundle, ...prev])
@@ -304,6 +233,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         bundleId: bundle.bundleId,
         unitId: createdUnit.unitId,
         slotCode: bundle.slotCode,
+        slotId: bundle.slotId,
         labelNo: bundle.labelNo,
         labelNumber: bundle.labelNumber,
         seqNo: createdUnit.seqNo,
@@ -312,16 +242,17 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         bundleName: bundle.bundleName,
         name: createdUnit.name,
         expiry: createdUnit.expiry,
-        memo: createdUnit.memo ?? bundle.memo,
-        quantity: createdUnit.quantity,
+        memo: createdUnit.memo ?? bundle.memo ?? null,
+        quantity: createdUnit.quantity ?? null,
         owner: bundle.owner,
         ownerId: bundle.ownerId,
-        ownerUserId: bundle.ownerUserId,
-        resourceId: bundle.resourceId,
-        bundleMemo: bundle.memo,
+        ownerUserId: bundle.ownerUserId ?? null,
+        bundleMemo: bundle.memo ?? null,
+        status: undefined,
         priority: createdUnit.priority,
         createdAt: createdUnit.createdAt,
         updatedAt: createdUnit.updatedAt,
+        removedAt: createdUnit.removedAt ?? null,
       }
 
       return { success: true, data: newItem, message: "물품이 등록되었습니다." }
@@ -345,7 +276,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
                   quantity: patch.quantity ?? unit.quantity,
                   memo: patch.memo ?? unit.memo,
                   priority: patch.priority ?? unit.priority,
-                  removedAt: patch.removedAt === null ? undefined : patch.removedAt ?? unit.removedAt,
+                  removedAt: patch.removedAt === null ? null : patch.removedAt ?? unit.removedAt,
                   updatedAt: nowIso,
                 }
               : unit,
@@ -461,3 +392,4 @@ export function useFridge() {
   if (!ctx) throw new Error("useFridge must be used within FridgeProvider")
   return ctx
 }
+

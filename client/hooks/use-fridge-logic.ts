@@ -41,10 +41,7 @@ export function useFridgeLogic(items: Item[], slots: Slot[], currentUserId?: str
         }
 
         if (options.slotCode && item.slotCode !== options.slotCode) return false
-        if (typeof options.resourceId === "number") {
-          const slot = slots.find((s) => s.code === item.slotCode)
-          if (!slot || slot.resourceId !== options.resourceId) return false
-        }
+        if (options.slotId && item.slotId !== options.slotId) return false
 
         if (options.myOnly && !mine) return false
         return true

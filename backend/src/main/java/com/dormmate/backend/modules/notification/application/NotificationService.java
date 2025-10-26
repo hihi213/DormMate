@@ -1,7 +1,7 @@
 package com.dormmate.backend.modules.notification.application;
 
+import java.time.Clock;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -13,8 +13,8 @@ import com.dormmate.backend.modules.notification.domain.Notification;
 import com.dormmate.backend.modules.notification.domain.NotificationPreference;
 import com.dormmate.backend.modules.notification.domain.NotificationPreferenceId;
 import com.dormmate.backend.modules.notification.domain.NotificationState;
-import com.dormmate.backend.modules.notification.infrastructure.NotificationPreferenceRepository;
-import com.dormmate.backend.modules.notification.infrastructure.NotificationRepository;
+import com.dormmate.backend.modules.notification.infrastructure.persistence.NotificationPreferenceRepository;
+import com.dormmate.backend.modules.notification.infrastructure.persistence.NotificationRepository;
 import com.dormmate.backend.modules.inspection.domain.InspectionAction;
 import com.dormmate.backend.modules.inspection.domain.InspectionActionType;
 import com.dormmate.backend.modules.inspection.domain.InspectionSession;
@@ -32,13 +32,16 @@ public class NotificationService {
 
     private final NotificationRepository notificationRepository;
     private final NotificationPreferenceRepository notificationPreferenceRepository;
+    private final Clock clock;
 
     public NotificationService(
             NotificationRepository notificationRepository,
-            NotificationPreferenceRepository notificationPreferenceRepository
+            NotificationPreferenceRepository notificationPreferenceRepository,
+            Clock clock
     ) {
         this.notificationRepository = notificationRepository;
         this.notificationPreferenceRepository = notificationPreferenceRepository;
+        this.clock = clock;
     }
 
     public void sendInspectionResultNotifications(InspectionSession session) {
@@ -62,7 +65,7 @@ public class NotificationService {
                     .increment(type);
         }
 
-        OffsetDateTime now = OffsetDateTime.now(ZoneOffset.UTC);
+        OffsetDateTime now = OffsetDateTime.now(clock);
         summaries.forEach((user, summary) -> {
             if (summary.isEmpty()) {
                 return;

@@ -1,8 +1,8 @@
 package com.dormmate.backend.modules.auth.application;
 
+import java.time.Clock;
 import java.time.Instant;
 import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.Date;
 import java.util.List;
 import java.util.Objects;
@@ -25,20 +25,23 @@ public class JwtTokenService {
     private final JwtTokenProvider tokenProvider;
     private final long accessTokenTtlMillis;
     private final long refreshTokenTtlMillis;
+    private final Clock clock;
 
     public JwtTokenService(
             JwtTokenProvider tokenProvider,
             @Value("${jwt.expiration:900000}") long accessTokenTtlMillis,
-            @Value("${jwt.refresh-expiration:604800000}") long refreshTokenTtlMillis
+            @Value("${jwt.refresh-expiration:604800000}") long refreshTokenTtlMillis,
+            Clock clock
     ) {
         this.tokenProvider = tokenProvider;
         this.accessTokenTtlMillis = accessTokenTtlMillis;
         this.refreshTokenTtlMillis = refreshTokenTtlMillis;
+        this.clock = clock;
     }
 
     public TokenPairResponse issueTokenPair(UUID userId, String loginId, List<String> roles, String refreshToken) {
-        Instant now = Instant.now();
-        OffsetDateTime issuedAt = OffsetDateTime.ofInstant(now, ZoneOffset.UTC);
+        Instant now = clock.instant();
+        OffsetDateTime issuedAt = OffsetDateTime.ofInstant(now, clock.getZone());
         Instant accessExpiry = now.plusMillis(accessTokenTtlMillis);
         Instant refreshExpiry = now.plusMillis(refreshTokenTtlMillis);
 
@@ -81,15 +84,15 @@ public class JwtTokenService {
                     .filter(Objects::nonNull)
                     .map(Object::toString)
                     .toList();
-            Instant issuedAt = claims.getIssuedAt() != null ? claims.getIssuedAt().toInstant() : Instant.now();
+            Instant issuedAt = claims.getIssuedAt() != null ? claims.getIssuedAt().toInstant() : clock.instant();
             Instant expiresAt = claims.getExpiration() != null ? claims.getExpiration().toInstant() : issuedAt;
 
             return new ParsedToken(
                     userId,
                     loginId,
                     roles,
-                    OffsetDateTime.ofInstant(issuedAt, ZoneOffset.UTC),
-                    OffsetDateTime.ofInstant(expiresAt, ZoneOffset.UTC)
+                    OffsetDateTime.ofInstant(issuedAt, clock.getZone()),
+                    OffsetDateTime.ofInstant(expiresAt, clock.getZone())
             );
         } catch (JwtException | IllegalArgumentException e) {
             throw new InvalidTokenException("Invalid access token", e);

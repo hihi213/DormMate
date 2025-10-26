@@ -13,7 +13,7 @@ plugins {
     // 이 정보는 Spring Boot Actuator의 /info 엔드포인트를 통해 노출되어, 현재 배포된 버전의 정확한 커밋 ID를 확인할 수 있게 해줍니다. (운영 환경에서 디버깅 시 매우 유용)
     id 'com.gorylenko.gradle-git-properties' version '2.4.1'
     // Flyway Gradle 플러그인: CLI에서도 마이그레이션을 실행할 수 있도록 태스크 제공
-    id 'org.flywaydb.flyway' version '10.17.0'
+    id 'org.flywaydb.flyway' version '9.22.3'
 }
 
 // group, version: Maven이나 Ivy 같은 저장소에서 이 프로젝트를 고유하게 식별하기 위한 좌표입니다.
@@ -71,9 +71,7 @@ dependencies {
     
     // Database & Migration - Flyway 버전 명시
     // 데이터베이스 스키마 변경을 버전 관리하고 자동으로 적용해주는 Flyway의 핵심 라이브러리입니다.
-    implementation 'org.flywaydb:flyway-core:10.17.0'
-    // Flyway가 PostgreSQL 데이터베이스를 지원하도록 하는 라이브러리입니다.
-    implementation 'org.flywaydb:flyway-database-postgresql:10.17.0'
+    implementation 'org.flywaydb:flyway-core:9.22.3'
     // runtimeOnly: 이 의존성은 컴파일 시점에는 필요 없고, 실행 시점(Runtime)에만 필요합니다.
     // PostgreSQL JDBC 드라이버로, 애플리케이션이 실행되어 DB에 연결할 때 사용됩니다.
     runtimeOnly 'org.postgresql:postgresql'
@@ -87,6 +85,7 @@ dependencies {
     // Monitoring & Logging
     // Micrometer 라이브러리를 통해 수집한 애플리케이션 메트릭을 Prometheus가 수집할 수 있는 형식으로 노출해줍니다.
     implementation 'io.micrometer:micrometer-registry-prometheus'
+
     
     // Utilities
     // compileOnly: 이 의존성은 컴파일 시점에만 필요하고, 빌드 결과물(JAR)에는 포함되지 않습니다.
@@ -129,5 +128,5 @@ flyway {
     schemas = ['public']
     baselineOnMigrate = true
     locations = ["filesystem:${projectDir}/src/main/resources/db/migration"]
-    configurations = ['runtimeClasspath'] // reuse app runtime classpath so Flyway tasks see the JDBC driver
+    configurations = ['runtimeClasspath'] // Flyway 태스크가 JDBC 드라이버를 인식하도록 classpath 지정
 }

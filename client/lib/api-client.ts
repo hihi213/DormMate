@@ -29,7 +29,10 @@ export type ApiFailure = {
 
 export type ApiResult<T> = ApiSuccess<T> | ApiFailure
 
-const DEFAULT_BASE_URL = process.env.NEXT_PUBLIC_API_BASE ?? ""
+const DEFAULT_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE?.replace(/\/$/, "") ??
+  process.env.API_BASE?.replace(/\/$/, "") ??
+  "http://localhost:8080"
 
 function buildBody(body: unknown, headers: Headers): BodyInit | undefined {
   if (body === undefined || body === null) {

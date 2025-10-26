@@ -7,18 +7,17 @@ export type FloorCode = "2F" | "3F" | "4F" | "5F"
 export type SlotTemperature = "freezer" | "refrigerator" | "room"
 
 export type Slot = {
-  resourceId: number
+  slotId: string
   code: string
-  displayOrder?: number
-  labelRangeStart?: number
-  labelRangeEnd?: number
+  displayOrder?: number | null
+  labelRangeStart?: number | null
+  labelRangeEnd?: number | null
   label: string
+  floor?: number
   floorCode: FloorCode
   type: ResourceType
   status: ResourceStatus
-  createdAt: string
-  description?: string
-  temperature?: SlotTemperature
+  temperature?: SlotTemperature | null
   capacity?: number | null
   isActive: boolean
 }
@@ -31,20 +30,21 @@ export type ItemPriority = "low" | "medium" | "high"
 
 export type Bundle = {
   bundleId: string
-  resourceId: number
+  slotId?: string
   slotCode: string
   labelNo: number
   labelNumber: number
   labelDisplay: string
   bundleName: string
-  memo?: string
-  ownerUserId?: number
-  ownerDisplayName?: string
+  memo?: string | null
+  ownerUserId?: string | null
+  ownerDisplayName?: string | null
+  ownerRoomNumber?: string | null
   owner?: Owner
   ownerId?: string
   createdAt: string
   updatedAt: string
-  removedAt?: string
+  removedAt?: string | null
 }
 
 export type ItemUnit = {
@@ -53,12 +53,12 @@ export type ItemUnit = {
   seqNo: number
   name: string
   expiry: string
-  quantity?: number
-  memo?: string
+  quantity?: number | null
+  memo?: string | null
   priority?: ItemPriority
   createdAt: string
   updatedAt: string
-  removedAt?: string
+  removedAt?: string | null
 }
 
 // UI 보조용 파생 아이템 타입 (bundle + unit 조합)
@@ -67,7 +67,7 @@ export type Item = {
   bundleId: string
   unitId: string
   slotCode: string
-  resourceId?: number
+  slotId?: string
   labelNo: number
   labelNumber: number
   seqNo: number
@@ -76,23 +76,23 @@ export type Item = {
   bundleName: string
   name: string
   expiry: string
-  memo?: string
-  quantity?: number
+  memo?: string | null
+  quantity?: number | null
   owner?: Owner
   ownerId?: string
-  ownerUserId?: number
-  bundleMemo?: string
+  ownerUserId?: string | null
+  bundleMemo?: string | null
   status?: ItemStatus
   priority?: ItemPriority
   createdAt: string
   updatedAt: string
-  removedAt?: string
+  removedAt?: string | null
 }
 
 export type FilterOptions = {
   tab: "all" | "mine" | "expiring" | "expired"
   slotCode?: string
-  resourceId?: number
+  slotId?: string
   searchQuery?: string
   myOnly: boolean
   sortBy: "expiry" | "name" | "createdAt"
@@ -119,7 +119,7 @@ export type InspectionSummary = {
 
 export type Inspection = {
   sessionId?: number
-  resourceId?: number
+  slotId?: string
   status?: InspectionStatus
   startedAt?: string
   endedAt?: string
