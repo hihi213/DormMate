@@ -12,7 +12,7 @@ secrets/
 .codex/state.json
 
 # Node modules
-client/node_modules/
+frontend/node_modules/
 
 # Build artifacts
 backend/build/
@@ -44,7 +44,7 @@ target/
 
 # OS generated files
 .DS_Store
-client/playwright-report/
+frontend/playwright-report/
 .DS_Store?
 ._*
 .Spotlight-V100
@@ -156,7 +156,7 @@ application-local.yml
 
 # 빌드/캐시
 backend/build/
-client/node_modules/
+frontend/node_modules/
 artifacts/
 
 # Frontend artifacts
@@ -349,13 +349,13 @@ log/
 # --- 추가 무시 항목 (프로젝트 맞춤) ---
 
 # Frontend caches
-client/.next/
-client/out/
-client/.vercel/
-client/.turbo/
-client/.vite/
-client/.cache/
-client/.swc/
+frontend/.next/
+frontend/out/
+frontend/.vercel/
+frontend/.turbo/
+frontend/.vite/
+frontend/.cache/
+frontend/.swc/
 
 # Java/Gradle extra
 backend/out/
@@ -371,9 +371,9 @@ backend/mvnw
 backend/mvnw.cmd
 
 # Node.js 특화
-client/.npm/
-client/.yarn/
-client/.pnpm-store/
+frontend/.npm/
+frontend/.yarn/
+frontend/.pnpm-store/
 
 # 로컬 설정 파일
 *.local
@@ -393,10 +393,10 @@ scripts/.env
 scripts/local/
 
 # 클라이언트 빌드/캐시(보강)
-client/dist/
-client/.vite/
-client/.cache/
-client/.turbo/
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+frontend/.turbo/
 
 # 백엔드 Gradle 캐시(보강)
 backend/.gradle/

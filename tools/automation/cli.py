@@ -22,7 +22,7 @@ from typing import Iterable, Optional
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 STATE_PATH = PROJECT_ROOT / ".codex" / "state.json"
 BUILD_DIR = PROJECT_ROOT / "build"
-CLIENT_DIR = PROJECT_ROOT / "client"
+FRONTEND_DIR = PROJECT_ROOT / "frontend"
 BACKEND_DIR = PROJECT_ROOT / "backend"
 JAVA_HOME_DEFAULT = Path.home() / "Library/Java/JavaVirtualMachines/ms-21.0.8/Contents/Home"
 GRADLE_CACHE_DIR = PROJECT_ROOT / ".gradle-cache"
@@ -73,7 +73,7 @@ def run_gradle_task(
 
 
 def run_npm_command(*args: str, check: bool = True) -> CommandResult:
-    return run_command(["npm", *args], cwd=CLIENT_DIR, check=check)
+    return run_command(["npm", *args], cwd=FRONTEND_DIR, check=check)
 
 
 # ---------------------------------------------------------------------------
@@ -241,11 +241,11 @@ def run_playwright(smoke_only: bool, allow_empty: bool = True) -> None:
     command: list[str] = ["npm", "run", "playwright:test"]
     if smoke_only:
         command.extend(["--", "--grep", "@smoke"])
-    print(f"$ {' '.join(command)} [{CLIENT_DIR}]")
+    print(f"$ {' '.join(command)} [{FRONTEND_DIR}]")
     env = load_env_cache()
     process = subprocess.run(
         command,
-        cwd=CLIENT_DIR,
+        cwd=FRONTEND_DIR,
         env=env,
         text=True,
         capture_output=True,
@@ -333,7 +333,7 @@ def cmd_dev_backend(_: argparse.Namespace) -> None:
 
 def cmd_dev_frontend(_: argparse.Namespace) -> None:
     print("ℹ️  Next.js 개발 서버를 실행합니다. 종료하려면 Ctrl+C.")
-    run_command(["npm", "run", "dev"], cwd=CLIENT_DIR, check=False)
+    run_command(["npm", "run", "dev"], cwd=FRONTEND_DIR, check=False)
 
 
 def cmd_dev_backend_alias(_: argparse.Namespace) -> None:
@@ -359,9 +359,9 @@ def cmd_dev_status_alias(_: argparse.Namespace) -> None:
 def cmd_cleanup(_: argparse.Namespace) -> None:
     targets = [
         PROJECT_ROOT / "backend" / "build",
-        CLIENT_DIR / ".next",
-        CLIENT_DIR / "out",
-        CLIENT_DIR / "dist",
+        FRONTEND_DIR / ".next",
+        FRONTEND_DIR / "out",
+        FRONTEND_DIR / "dist",
         PROJECT_ROOT / "artifacts",
     ]
     for path in targets:

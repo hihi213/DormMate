@@ -32,7 +32,7 @@ docker compose up -d
 ./auto dev-backend  # 또는 cd backend && gw bootRun
 
 # 프론트엔드 개발 서버
-cd client && npm install && npm run dev
+cd frontend && npm install && npm run dev
 ```
 
 > DB 컨테이너는 5432 포트를 호스트에 노출합니다. 로컬 툴(IDE, psql)에서는 `localhost:5432`로 접속하고, 다른 컨테이너에서 접근할 때는 `db:5432` 호스트명을 사용하세요.
@@ -61,13 +61,13 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 1. 최초 한 번 브라우저 바이너리를 설치합니다.
    ```bash
-   npm run playwright:install --prefix client
+   npm run playwright:install --prefix frontend
    ```
 2. 로컬에서 스모크 테스트는 기본 `./auto tests core`로 실행됩니다.
    ```bash
    ./auto tests core
    ```
-3. 확장 e2e를 돌리려면 `./auto tests core --full-playwright` 또는 `npm run playwright:test --prefix client`를 사용하세요. CI에서는 Playwright 브라우저를 설치한 뒤 동일 명령을 실행하며, 베이스 URL은 `PLAYWRIGHT_BASE_URL` 환경 변수로 덮어쓸 수 있습니다(기본값 `http://localhost:3000`).
+3. 확장 e2e를 돌리려면 `./auto tests core --full-playwright` 또는 `npm run playwright:test --prefix frontend`를 사용하세요. CI에서는 Playwright 브라우저를 설치한 뒤 동일 명령을 실행하며, 베이스 URL은 `PLAYWRIGHT_BASE_URL` 환경 변수로 덮어쓸 수 있습니다(기본값 `http://localhost:3000`).
 
 > ❗️ 모든 Playwright 실행은 Next.js 앱이 기동된 상태를 전제로 합니다. `docker compose up` 또는 `npm run dev` 등으로 서비스가 준비됐는지 확인하세요.
 
@@ -75,7 +75,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 1. 프론트/백엔드 빌드  
    ```bash
-   cd client && npm run build
+   cd frontend && npm run build
    gw bootJar  # 또는 cd ../backend && ./gradlew bootJar
    ```
 2. Docker 이미지 태깅  
