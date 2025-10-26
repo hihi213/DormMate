@@ -76,6 +76,14 @@ def run_npm_command(*args: str, check: bool = True) -> CommandResult:
     return run_command(["npm", *args], cwd=FRONTEND_DIR, check=check)
 
 
+def npm_install() -> None:
+    run_npm_command("install")
+
+
+def npm_playwright_install() -> None:
+    run_npm_command("run", "playwright:install")
+
+
 # ---------------------------------------------------------------------------
 # Codex state helpers
 # ---------------------------------------------------------------------------
@@ -266,6 +274,23 @@ def playwright_full() -> None:
     run_playwright(smoke_only=False, allow_empty=False)
 
 
+def cmd_dev_warmup(args: argparse.Namespace) -> None:
+    refresh = getattr(args, "refresh", False)
+    print("▶️  Gradle warmup (help task)")
+    run_gradle_task("help", refresh=refresh)
+
+    print("▶️  Download backend dependencies (testClasses)")
+    run_gradle_task("testClasses", refresh=True)
+
+    print("▶️  Install frontend packages")
+    npm_install()
+
+    print("▶️  Install Playwright browsers")
+    npm_playwright_install()
+
+    print("✅ 개발 환경 예열 완료")
+
+
 def cmd_tests_backend(_: argparse.Namespace) -> None:
     gradle_tests(clean=False)
     persist_state(last_tests="auto tests backend")
@@ -435,6 +460,10 @@ def build_parser() -> argparse.ArgumentParser:
     dev = subparsers.add_parser("dev", help="개발 환경 제어")
     dev_sub = dev.add_subparsers(dest="dev_command")
 
+    dev_warmup = dev_sub.add_parser("warmup", help="Gradle/Node/Playwright 캐시 예열")
+    dev_warmup.add_argument("--refresh", action="store_true", help="Gradle 의존성을 강제로 갱신합니다.")
+    dev_warmup.set_defaults(func=cmd_dev_warmup)
+
     dev_up = dev_sub.add_parser("up", help="도커 서비스 기동")
     dev_up.add_argument("--services", nargs="+", help="기동할 서비스 지정 (기본: db redis pgadmin)")
     dev_up.set_defaults(func=cmd_dev_up)
@@ -456,6 +485,10 @@ def build_parser() -> argparse.ArgumentParser:
 
     dev_frontend_alias = subparsers.add_parser("dev-frontend", help="dev frontend alias")
     dev_frontend_alias.set_defaults(func=cmd_dev_frontend_alias)
+
+    dev_warmup_alias = subparsers.add_parser("dev-warmup", help="dev warmup alias")
+    dev_warmup_alias.add_argument("--refresh", action="store_true", help="Gradle 의존성을 강제로 갱신합니다.")
+    dev_warmup_alias.set_defaults(func=cmd_dev_warmup)
 
     dev_up_alias = subparsers.add_parser("dev-up", help="dev up alias")
     dev_up_alias.set_defaults(func=cmd_dev_up_alias)

@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+# Wrapper to ensure Java 21 is available before running a command.
+
+set -euo pipefail
+
+JAVA_HOME_DEFAULT="/Users/gimseunghyeon/Library/Java/JavaVirtualMachines/ms-21.0.8/Contents/Home"
+export JAVA_HOME="$JAVA_HOME_DEFAULT"
+export PATH="$JAVA_HOME/bin:$PATH"
+
+exec "$@"
