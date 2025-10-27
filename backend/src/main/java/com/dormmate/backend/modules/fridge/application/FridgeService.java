@@ -279,6 +279,7 @@ public class FridgeService {
         verifyBundleWriteAccess(currentUser, bundle.getFridgeCompartment());
         ensureBundleOwnerOrManager(bundle, currentUser);
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
+        ensureBundleActive(bundle);
 
         if (StringUtils.hasText(request.bundleName())) {
             bundle.setBundleName(request.bundleName().trim());
@@ -306,6 +307,7 @@ public class FridgeService {
         verifyBundleWriteAccess(currentUser, bundle.getFridgeCompartment());
         ensureBundleOwnerOrManager(bundle, currentUser);
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
+        ensureBundleActive(bundle);
 
         softDeleteBundle(bundle, OffsetDateTime.now(clock));
         fridgeBundleRepository.save(bundle);
@@ -320,6 +322,7 @@ public class FridgeService {
         verifyBundleWriteAccess(currentUser, bundle.getFridgeCompartment());
         ensureBundleOwnerOrManager(bundle, currentUser);
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
+        ensureBundleActive(bundle);
 
         OffsetDateTime now = OffsetDateTime.now(clock);
         int nextSequence = bundle.getItems().stream()
@@ -345,6 +348,7 @@ public class FridgeService {
         verifyBundleWriteAccess(currentUser, bundle.getFridgeCompartment());
         ensureBundleOwnerOrManager(bundle, currentUser);
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
+        ensureBundleActive(bundle);
 
         OffsetDateTime now = OffsetDateTime.now(clock);
 
@@ -388,6 +392,7 @@ public class FridgeService {
         verifyBundleWriteAccess(currentUser, bundle.getFridgeCompartment());
         ensureBundleOwnerOrManager(bundle, currentUser);
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
+        ensureBundleActive(bundle);
 
         item.setStatus(FridgeItemStatus.REMOVED);
         item.setDeletedAt(OffsetDateTime.now(clock));
@@ -406,6 +411,12 @@ public class FridgeService {
             return;
         }
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "NOT_BUNDLE_OWNER");
+    }
+
+    private void ensureBundleActive(FridgeBundle bundle) {
+        if (!bundle.isActive()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "BUNDLE_REMOVED");
+        }
     }
 
     private DormUser loadUser(UUID userId) {
@@ -544,15 +555,20 @@ public class FridgeService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_QUANTITY");
         }
 
+        String itemName = name != null ? name.trim() : null;
+        if (!StringUtils.hasText(itemName)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_NAME");
+        }
+
         FridgeItem item = new FridgeItem();
         item.setBundle(bundle);
         item.setSequenceNo(sequence);
-        item.setItemName(name);
+        item.setItemName(itemName);
         item.setExpiresOn(expiryDate);
         item.setQuantity(quantity);
         item.setUnit(null);
         item.setPriority(parsePriority(priorityRaw));
-        item.setMemo(memo);
+        item.setMemo(StringUtils.hasText(memo) ? memo.trim() : null);
         item.setStatus(FridgeItemStatus.ACTIVE);
         item.setPostInspectionModified(false);
         item.setLastModifiedAt(now);
