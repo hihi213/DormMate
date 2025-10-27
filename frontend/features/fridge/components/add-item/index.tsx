@@ -102,12 +102,15 @@ export default function AddItemDialog({
   const isPrimaryDisabled = isMetadataStep ? isSaving || entries.length === 0 || !metadataSlot : entries.length === 0
   const handlePrimaryAction = isMetadataStep ? () => void handleConfirmSave() : handleRequestSave
 
+  const readOnly = isMetadataStep
+  const hasEntries = entries.length > 0
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-2xl h-[80vh] max-h-[90vh] flex flex-col overflow-hidden p-0" showCloseButton={false}>
+      <DialogContent className="sm:max-w-2xl h-[86vh] max-h-[90vh] flex flex-col gap-0 overflow-hidden p-0" showCloseButton={false}>
         <DialogTitle className="sr-only">포장 아이템 추가</DialogTitle>
         <DialogDescription className="sr-only">냉장고 포장 등록 대화상자입니다.</DialogDescription>
-        <div className="flex items-center gap-2 bg-white px-4 py-3">
+        <header className="flex items-center gap-2 bg-white px-3 py-2">
           <Button
             variant="ghost"
             size="icon"
@@ -129,8 +132,9 @@ export default function AddItemDialog({
               {primaryActionLabel}
             </Button>
           </div>
-        </div>
-        <div className="border-b bg-white px-4 pb-3 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+        </header>
+
+        <div className="flex flex-wrap items-center gap-2 border-b border-slate-100 px-3 text-xs text-muted-foreground">
           <Badge variant="secondary" className="bg-emerald-100 text-emerald-800">
             품목 {summary.totalItems}
           </Badge>
@@ -139,23 +143,76 @@ export default function AddItemDialog({
           </Badge>
         </div>
 
-        <div className="flex-1 overflow-hidden bg-slate-50">
-          <div className="max-h-full overflow-y-auto px-4 py-5 pr-3">
-            <PackingCart
-              entries={entries}
-              onEdit={handleEditEntry}
-              onRemove={handleRemoveEntry}
-              revealedId={revealedId}
-              onRevealChange={setRevealedId}
-              onTouchStartRow={handleRowTouchStart}
-              onTouchMoveRow={handleRowTouchMove}
-              onTouchEndRow={handleRowTouchEnd}
-              readOnly={isMetadataStep}
-            />
-          </div>
-        </div>
+        <section className="flex-1 min-h-0 overflow-y-auto bg-slate-50 px-3 py-3">
+          {hasEntries ? (
+            entries.map((entry, index) => {
+              const isRevealed = !readOnly && revealedId === entry.id
 
-        <div className="border-t bg-white px-4 pt-3" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 16px)" }}>
+              return (
+                <article
+                  key={entry.id}
+                  className={cn(
+                    "relative overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm",
+                    index > 0 && "mt-2",
+                  )}
+                >
+                  {!readOnly && (
+                    <div className="absolute inset-y-0 left-0 flex items-center pl-2">
+                      <Button
+                        variant="destructive"
+                        size="icon"
+                        aria-label="항목 삭제"
+                        onClick={() => {
+                          handleRemoveEntry(entry.id)
+                          setRevealedId(null)
+                        }}
+                        className="h-9 w-9"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  )}
+                  <div
+                    className={cn(
+                      "flex items-center gap-3 bg-white px-3 py-3 transition-transform",
+                      isRevealed ? "translate-x-[64px]" : "translate-x-0",
+                    )}
+                    onTouchStart={readOnly ? undefined : (event) => handleRowTouchStart(entry.id, event)}
+                    onTouchMove={readOnly ? undefined : (event) => handleRowTouchMove(entry.id, event)}
+                    onTouchEnd={readOnly ? undefined : handleRowTouchEnd}
+                  >
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm font-medium text-gray-900">{entry.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        유통기한 {formatExpiryDisplay(entry.expiry)} <span className="ml-1 text-emerald-600">x{entry.qty}</span>
+                      </p>
+                    </div>
+                    {!readOnly && (
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="항목 수정"
+                        onClick={() => {
+                          setRevealedId(null)
+                          handleEditEntry(entry)
+                        }}
+                        className="text-slate-600 hover:bg-slate-100"
+                      >
+                        <Pencil className="h-4 w-4" />
+                      </Button>
+                    )}
+                  </div>
+                </article>
+              )
+            })
+          ) : (
+            <div className="flex h-full items-center justify-center rounded-lg border border-dashed border-emerald-200 bg-emerald-50 px-2.5 py-4 text-center text-sm text-muted-foreground">
+              아직 담긴 품목이 없습니다. 아래에서 품목을 입력해 포장을 시작해 보세요.
+            </div>
+          )}
+        </section>
+
+        <div className="border-t bg-white px-3 pt-2" style={{ paddingBottom: "calc(env(safe-area-inset-bottom, 0px) + 12px)" }}>
           {isMetadataStep ? (
             <MetadataFields
               slots={slots}
@@ -183,93 +240,6 @@ export default function AddItemDialog({
         </div>
       </DialogContent>
     </Dialog>
-  )
-}
-
-function PackingCart({
-  entries,
-  onEdit,
-  onRemove,
-  revealedId,
-  onRevealChange,
-  onTouchStartRow,
-  onTouchMoveRow,
-  onTouchEndRow,
-  readOnly = false,
-}: {
-  entries: PendingEntry[]
-  onEdit: (entry: PendingEntry) => void
-  onRemove: (id: string) => void
-  revealedId: string | null
-  onRevealChange: (id: string | null) => void
-  onTouchStartRow: (id: string, event: TouchEvent<HTMLDivElement>) => void
-  onTouchMoveRow: (id: string, event: TouchEvent<HTMLDivElement>) => void
-  onTouchEndRow: () => void
-  readOnly?: boolean
-}) {
-  return (
-    <section className="rounded-xl border border-slate-200 bg-white px-4 py-4 shadow-sm space-y-3">
-      {entries.length === 0 ? (
-        <p className="rounded-xl border border-dashed border-emerald-200 bg-emerald-50 px-4 py-8 text-center text-sm text-muted-foreground">
-          아직 담긴 품목이 없습니다. 아래에서 품목을 입력해 포장을 시작해 보세요.
-        </p>
-      ) : (
-        entries.map((entry) => {
-          const isRevealed = !readOnly && revealedId === entry.id
-
-          return (
-            <article key={entry.id} className="relative overflow-hidden rounded-lg border border-slate-200 shadow-sm">
-              {!readOnly && (
-                <div className="absolute inset-y-0 left-0 flex items-center pl-2">
-                  <Button
-                    variant="destructive"
-                    size="icon"
-                    aria-label="항목 삭제"
-                    onClick={() => {
-                      onRemove(entry.id)
-                      onRevealChange(null)
-                    }}
-                    className="h-9 w-9"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
-                </div>
-              )}
-              <div
-                className={cn(
-                  "flex items-center gap-3 bg-white px-3 py-3 transition-transform",
-                  isRevealed ? "translate-x-[64px]" : "translate-x-0",
-                )}
-                onTouchStart={readOnly ? undefined : (event) => onTouchStartRow(entry.id, event)}
-                onTouchMove={readOnly ? undefined : (event) => onTouchMoveRow(entry.id, event)}
-                onTouchEnd={readOnly ? undefined : onTouchEndRow}
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-gray-900">{entry.name}</p>
-                  <p className="text-xs text-muted-foreground">
-                    유통기한 {formatExpiryDisplay(entry.expiry)} <span className="ml-1 text-emerald-600">x{entry.qty}</span>
-                  </p>
-                </div>
-                {!readOnly && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="항목 수정"
-                    onClick={() => {
-                      onRevealChange(null)
-                      onEdit(entry)
-                    }}
-                    className="text-slate-600 hover:bg-slate-100"
-                  >
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                )}
-              </div>
-            </article>
-          )
-        })
-      )}
-    </section>
   )
 }
 

@@ -27,8 +27,9 @@ import org.springframework.util.CollectionUtils;
 @Transactional
 public class NotificationService {
 
-    private static final String KIND_INSPECTION_RESULT = "FRIDGE_INSPECTION_RESULT";
-    private static final int DEFAULT_TTL_HOURS = 24;
+    private static final String KIND_INSPECTION_RESULT = "FRIDGE_RESULT";
+    private static final int DEFAULT_TTL_HOURS = 24 * 7;
+    private static final String DEDUPE_PREFIX = "FRIDGE_RESULT:";
 
     private final NotificationRepository notificationRepository;
     private final NotificationPreferenceRepository notificationPreferenceRepository;
@@ -75,7 +76,7 @@ public class NotificationService {
                 return;
             }
 
-            String dedupeKey = session.getId() + ":" + user.getId();
+            String dedupeKey = DEDUPE_PREFIX + session.getId() + ":" + user.getId();
             Optional<Notification> existing = notificationRepository.findByUserIdAndDedupeKey(user.getId(), dedupeKey);
             if (existing.isPresent()) {
                 return;

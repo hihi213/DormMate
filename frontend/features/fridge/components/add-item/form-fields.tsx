@@ -38,13 +38,13 @@ export function FormFields({
   const addDisabled = !template.name.trim()
 
   return (
-    <section className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
+    <section className="space-y-2">
+      <div className="flex flex-wrap items-center gap-1.5">
         <div className="flex-1 min-w-[200px] sm:w-64">
           <label htmlFor="item-name" className="block text-sm font-medium text-gray-800">
             품목명
           </label>
-          <div className="relative mt-1">
+          <div className="relative mt-0.5">
             <Input
               id="item-name"
               ref={nameInputRef ?? undefined}
@@ -58,7 +58,7 @@ export function FormFields({
               }}
               placeholder="예: 우유 1L"
               className={cn(
-                "h-11 pr-16 text-sm",
+                "h-10 pr-16 text-sm",
                 highlightName && "ring-2 ring-emerald-300 ring-offset-1"
               )}
             />
@@ -88,15 +88,16 @@ export function FormFields({
         inputClassName="w-28"
       />
 
-      <div className="space-y-2">
-        <div className="text-sm font-medium text-gray-800">수량</div>
+      <div className="flex flex-col gap-1">
+        <label className="text-sm font-medium text-gray-800">수량</label>
         <QuantityStepper
-          className="w-full justify-between sm:justify-start"
+          className="w-full max-w-[200px] justify-between sm:w-auto sm:justify-start"
           value={template.qty}
           min={1}
           max={QTY_LIMIT}
           onChange={onQuantityChange}
           onLimitReach={onQuantityLimit}
+          inputClassName="h-9"
         />
       </div>
 
@@ -105,7 +106,7 @@ export function FormFields({
         onClick={onSubmit}
         disabled={addDisabled}
         className={cn(
-          "inline-flex h-11 w-full min-w-[160px] items-center justify-center gap-2 rounded-md text-sm font-semibold text-white transition sm:w-auto sm:px-5",
+          "mt-1 inline-flex h-9 w-full min-w-[140px] items-center justify-center gap-2 rounded-md text-[13px] font-semibold text-white transition sm:w-auto sm:min-w-[120px] sm:px-3.5",
           isEditing
             ? "bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 disabled:text-gray-500"
             : "bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 disabled:text-gray-500",

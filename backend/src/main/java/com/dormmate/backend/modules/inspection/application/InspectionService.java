@@ -119,7 +119,6 @@ public class InspectionService {
         session.getParticipants().add(participant);
 
         InspectionSession saved = inspectionSessionRepository.save(session);
-        notificationService.sendInspectionResultNotifications(saved);
         return mapSession(saved);
     }
 
@@ -241,6 +240,7 @@ public class InspectionService {
                 .findByFridgeCompartmentAndStatus(session.getFridgeCompartment(), FridgeBundleStatus.ACTIVE).size());
 
         InspectionSession saved = inspectionSessionRepository.save(session);
+        notificationService.sendInspectionResultNotifications(saved);
         return mapSession(saved);
     }
 
