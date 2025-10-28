@@ -62,11 +62,18 @@ export const useAddItemWorkflow = ({
   const [metadataSlot, setMetadataSlot] = useState(fallbackSlot)
   const [nameFlash, setNameFlash] = useState(false)
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
-  const [revealedId, setRevealedId] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
 
   const autoPackNameRef = useRef("")
   const nameInputRef = useRef<HTMLInputElement | null>(null)
+
+  useEffect(() => {
+    if (!fallbackSlot) return
+    setTemplate((prev) => {
+      if (prev.slotCode) return prev
+      return { ...prev, slotCode: fallbackSlot }
+    })
+  }, [fallbackSlot])
 
   const summary = useMemo(() => summarizeEntries(entries), [entries])
   const autoPackName = useMemo(() => generateAutoPackName(entries), [entries])
@@ -81,7 +88,6 @@ export const useAddItemWorkflow = ({
       setMetadataSlot(fallbackSlot)
       setNameFlash(false)
       setEditingEntryId(null)
-      setRevealedId(null)
       autoPackNameRef.current = ""
       return
     }
@@ -195,30 +201,38 @@ export const useAddItemWorkflow = ({
         expiry: template.expiry,
         qty: template.qty,
       }
-      return [...prev, newEntry]
+      return [newEntry, ...prev]
     })
 
     if (!applied) return
 
     setNameFlash(true)
-    setRevealedId(null)
     resetForm({ keepExpiry: true })
   }, [template, toast, editingEntryId, resetForm])
 
-  const handleRemoveEntry = useCallback((id: string) => {
-    setEntries((prev) => prev.filter((entry) => entry.id !== id))
-  }, [])
+  const handleRemoveEntry = useCallback(
+    (id: string) => {
+      setEntries((prev) => prev.filter((entry) => entry.id !== id))
+      if (editingEntryId === id) {
+        resetForm({ keepExpiry: true })
+      }
+    },
+    [editingEntryId, resetForm],
+  )
 
   const handleEditEntry = useCallback(
     (entry: PendingEntry) => {
       setTemplate((prev) => ({ ...prev, name: entry.name, expiry: entry.expiry, qty: entry.qty }))
       setEditingEntryId(entry.id)
       setNameFlash(true)
-      setRevealedId(null)
       setTimeout(() => nameInputRef.current?.focus(), 50)
     },
     [],
   )
+
+  const handleCancelEdit = useCallback(() => {
+    resetForm({ keepExpiry: true })
+  }, [resetForm])
 
   const handleRequestSave = useCallback(() => {
     if (editingEntryId) {
@@ -310,7 +324,6 @@ export const useAddItemWorkflow = ({
     addBundle,
     onClose,
     toast,
-    autoPackName,
     summary.totalQuantity,
   ])
 
@@ -331,19 +344,18 @@ export const useAddItemWorkflow = ({
     metadataSlot,
     nameFlash,
     editingEntryId,
-    revealedId,
     summary,
     nameInputRef,
     setPackName,
     setPackMemo,
     setMetadataSlot,
-    setRevealedId,
     handleTemplateChange,
     handleSubmitForm,
     handleRemoveEntry,
     handleNameLimit,
     handleQuantityLimit,
     handleEditEntry,
+    handleCancelEdit,
     handleRequestSave,
     handleConfirmSave,
     isSaving,
