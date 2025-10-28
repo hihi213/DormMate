@@ -21,6 +21,7 @@ interface FormFieldsProps {
   onQuantityLimit?: (which: "min" | "max") => void
   isEditing?: boolean
   highlightName?: boolean
+  onCancelEdit?: () => void
 }
 
 export function FormFields({
@@ -34,6 +35,7 @@ export function FormFields({
   onNameLimit,
   onQuantityLimit,
   isEditing = false,
+  onCancelEdit,
 }: FormFieldsProps) {
   const addDisabled = !template.name.trim()
 
@@ -101,20 +103,33 @@ export function FormFields({
         />
       </div>
 
-      <Button
-        type="button"
-        onClick={onSubmit}
-        disabled={addDisabled}
-        className={cn(
-          "mt-1 inline-flex h-9 w-full min-w-[140px] items-center justify-center gap-2 rounded-md text-[13px] font-semibold text-white transition sm:w-auto sm:min-w-[120px] sm:px-3.5",
-          isEditing
-            ? "bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 disabled:text-gray-500"
-            : "bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 disabled:text-gray-500",
+      <div className="mt-1 flex flex-wrap items-center gap-2">
+        {isEditing && onCancelEdit && (
+          <Button
+            type="button"
+            variant="ghost"
+            onClick={onCancelEdit}
+            className="inline-flex h-9 min-w-[120px] items-center justify-center text-[13px] font-medium text-slate-700 transition hover:bg-slate-100"
+          >
+            수정 취소
+          </Button>
         )}
-      >
-        {isEditing ? <Pencil className="h-4 w-4" /> : <PackagePlus className="h-4 w-4" />}
-        {isEditing ? "수정 완료" : "포장에 담기"}
-      </Button>
+        <Button
+          type="button"
+          onClick={onSubmit}
+          disabled={addDisabled}
+          className={cn(
+            "inline-flex h-9 items-center justify-center gap-2 rounded-md text-[13px] font-semibold text-white transition",
+            isEditing ? "min-w-[120px] px-3.5" : "w-full min-w-[140px] sm:w-auto sm:min-w-[120px] sm:px-3.5",
+            isEditing
+              ? "bg-amber-600 hover:bg-amber-700 disabled:bg-gray-300 disabled:text-gray-500"
+              : "bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-300 disabled:text-gray-500",
+          )}
+        >
+          {isEditing ? <Pencil className="h-4 w-4" /> : <PackagePlus className="h-4 w-4" />}
+          {isEditing ? "수정 완료" : "포장에 담기"}
+        </Button>
+      </div>
     </section>
   )
 }
