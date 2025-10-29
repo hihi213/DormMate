@@ -38,22 +38,22 @@ unit_upsert AS (
 compartment_defs AS (
     SELECT *
     FROM (VALUES
-        (2, '2F-A', '2F-R1', 1, 'REFRIGERATOR', 8, 1, 999, 1, 8, FALSE, 3),
-        (2, '2F-A', '2F-R2', 2, 'REFRIGERATOR', 8, 1, 999, 9, 16, FALSE, 1),
-        (2, '2F-A', '2F-R3', 3, 'REFRIGERATOR', 8, 1, 999, 17, 24, FALSE, 1),
-        (2, '2F-A', '2F-F1', 4, 'FREEZER', 24, 1, 999, NULL, NULL, TRUE, 1),
-        (3, '3F-A', '3F-R1', 1, 'REFRIGERATOR', 8, 1, 999, 1, 8, FALSE, 1),
-        (3, '3F-A', '3F-R2', 2, 'REFRIGERATOR', 8, 1, 999, 9, 16, FALSE, 1),
-        (3, '3F-A', '3F-R3', 3, 'REFRIGERATOR', 8, 1, 999, 17, 24, FALSE, 1),
-        (3, '3F-A', '3F-F1', 4, 'FREEZER', 24, 1, 999, NULL, NULL, TRUE, 1),
-        (4, '4F-A', '4F-R1', 1, 'REFRIGERATOR', 8, 1, 999, 1, 8, FALSE, 1),
-        (4, '4F-A', '4F-R2', 2, 'REFRIGERATOR', 8, 1, 999, 9, 16, FALSE, 1),
-        (4, '4F-A', '4F-R3', 3, 'REFRIGERATOR', 8, 1, 999, 17, 24, FALSE, 1),
-        (4, '4F-A', '4F-F1', 4, 'FREEZER', 24, 1, 999, NULL, NULL, TRUE, 1),
-        (5, '5F-A', '5F-R1', 1, 'REFRIGERATOR', 8, 1, 999, 1, 8, FALSE, 1),
-        (5, '5F-A', '5F-R2', 2, 'REFRIGERATOR', 8, 1, 999, 9, 16, FALSE, 1),
-        (5, '5F-A', '5F-R3', 3, 'REFRIGERATOR', 8, 1, 999, 17, 24, FALSE, 1),
-        (5, '5F-A', '5F-F1', 4, 'FREEZER', 24, 1, 999, NULL, NULL, TRUE, 1)
+        (2, '2F-A', '2F-R1', 1, 'REFRIGERATOR', 999, 1, 999, 1, 8, FALSE, 3),
+        (2, '2F-A', '2F-R2', 2, 'REFRIGERATOR', 999, 1, 999, 9, 16, FALSE, 1),
+        (2, '2F-A', '2F-R3', 3, 'REFRIGERATOR', 999, 1, 999, 17, 24, FALSE, 1),
+        (2, '2F-A', '2F-F1', 4, 'FREEZER', 999, 1, 999, NULL, NULL, TRUE, 1),
+        (3, '3F-A', '3F-R1', 1, 'REFRIGERATOR', 999, 1, 999, 1, 8, FALSE, 1),
+        (3, '3F-A', '3F-R2', 2, 'REFRIGERATOR', 999, 1, 999, 9, 16, FALSE, 1),
+        (3, '3F-A', '3F-R3', 3, 'REFRIGERATOR', 999, 1, 999, 17, 24, FALSE, 1),
+        (3, '3F-A', '3F-F1', 4, 'FREEZER', 999, 1, 999, NULL, NULL, TRUE, 1),
+        (4, '4F-A', '4F-R1', 1, 'REFRIGERATOR', 999, 1, 999, 1, 8, FALSE, 1),
+        (4, '4F-A', '4F-R2', 2, 'REFRIGERATOR', 999, 1, 999, 9, 16, FALSE, 1),
+        (4, '4F-A', '4F-R3', 3, 'REFRIGERATOR', 999, 1, 999, 17, 24, FALSE, 1),
+        (4, '4F-A', '4F-F1', 4, 'FREEZER', 999, 1, 999, NULL, NULL, TRUE, 1),
+        (5, '5F-A', '5F-R1', 1, 'REFRIGERATOR', 999, 1, 999, 1, 8, FALSE, 1),
+        (5, '5F-A', '5F-R2', 2, 'REFRIGERATOR', 999, 1, 999, 9, 16, FALSE, 1),
+        (5, '5F-A', '5F-R3', 3, 'REFRIGERATOR', 999, 1, 999, 17, 24, FALSE, 1),
+        (5, '5F-A', '5F-F1', 4, 'FREEZER', 999, 1, 999, NULL, NULL, TRUE, 1)
     ) AS v(
         floor,
         unit_label,
@@ -184,9 +184,13 @@ seed_users AS (
 ),
 bundle_data AS (
     SELECT *
-    FROM (VALUES
+FROM (VALUES
         ('alice', '2F-R1', '001', '앨리스 기본 식료품', '임박/만료 시나리오용 샘플 포장'),
-        ('bob',   '2F-R1', '002', '밥 야식 재료',    '임박/만료 시나리오용 샘플 포장')
+        ('bob',   '2F-R1', '002', '밥 야식 재료',    '임박/만료 시나리오용 샘플 포장'),
+        ('dylan', '2F-R3', '003', '딜런 비상 간식',  '야간 학습 대비 비상 식품'),
+        ('diana', '3F-R1', '101', 'Diana 샘플 포장', '3층 5호실 검증용 포장'),
+        ('eric',  '3F-R2', '201', 'Eric 관리 포장',  '층별장 점검용 포장'),
+        ('fiona', '3F-R3', '301', 'Fiona 냉동 샘플', '3층 공용 검증용 냉동 포장')
     ) AS v(login_id, slot_code, label_code, bundle_name, memo)
 ),
 bundle_upsert AS (
@@ -238,10 +242,15 @@ bundle_upsert AS (
 ),
 item_data AS (
     SELECT *
-    FROM (VALUES
+FROM (VALUES
         ('001', 1, '우유', 1, '팩',  'MEDIUM', (CURRENT_DATE + INTERVAL '5 days')::DATE, '냉장 보관 중. 임박 알림 확인용'),
         ('001', 2, '계란', 10, '개', 'HIGH',   (CURRENT_DATE + INTERVAL '2 days')::DATE, '소비 권장 D-2'),
-        ('002', 1, '김치', 1, '통',  'LOW',    (CURRENT_DATE + INTERVAL '7 days')::DATE, '장기 보관 체크용')
+        ('002', 1, '김치', 1, '통',  'LOW',    (CURRENT_DATE + INTERVAL '7 days')::DATE, '장기 보관 체크용'),
+        ('003', 1, '컵라면', 3, '개', 'LOW',   (CURRENT_DATE + INTERVAL '14 days')::DATE, '야식 대기 식품'),
+        ('003', 2, '초콜릿', 2, '개', 'MEDIUM',(CURRENT_DATE + INTERVAL '21 days')::DATE, '당 충전용'),
+        ('101', 1, '샐러드', 1, '팩', 'MEDIUM',(CURRENT_DATE + INTERVAL '4 days')::DATE, '가벼운 식사'),
+        ('201', 1, '시금치', 1, '봉지', 'LOW',(CURRENT_DATE + INTERVAL '6 days')::DATE, '층별장 검사용 신선 식품'),
+        ('301', 1, '만두', 12, '개', 'LOW',   (CURRENT_DATE + INTERVAL '30 days')::DATE, '공용 냉동 식품')
     ) AS v(label_code, sequence_no, item_name, quantity, unit, priority, expires_on, memo)
 ),
 item_upsert AS (
@@ -307,3 +316,7 @@ item_upsert AS (
 )
 SELECT NULL;
 
+UPDATE fridge_compartment
+SET max_bundle_count = 3,
+    updated_at = CURRENT_TIMESTAMP
+WHERE slot_code = '2F-R1';

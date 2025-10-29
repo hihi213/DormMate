@@ -16,6 +16,9 @@ import com.dormmate.backend.modules.fridge.application.FridgeService;
 
 import jakarta.validation.Valid;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -55,6 +58,18 @@ public class FridgeController {
         return ResponseEntity.ok(fridgeService.getBundles(slotCode, owner, status, search));
     }
 
+    @Operation(
+            summary = "포장 생성",
+            description = """
+                    배정된 칸에 새로운 포장을 추가한다. \
+                    허용량(`capacity`)을 초과하면 422 `CAPACITY_EXCEEDED`가 반환된다. \
+                    데모 시나리오에서는 `slotCode`가 `2F-R1`인 칸만 설명용으로 허용량이 3으로 제한돼 있다.
+                    """
+    )
+    @ApiResponses({
+            @ApiResponse(responseCode = "201", description = "포장 생성 성공"),
+            @ApiResponse(responseCode = "422", description = "허용량 초과 – detail 값이 `CAPACITY_EXCEEDED`")
+    })
     @PostMapping("/bundles")
     public ResponseEntity<CreateBundleResponse> createBundle(@Valid @RequestBody CreateBundleRequest request) {
         return ResponseEntity.status(201).body(fridgeService.createBundle(request));

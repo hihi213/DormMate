@@ -129,6 +129,37 @@ export async function createBundle(
   return mapBundleFromDto(data.bundle, currentUserId)
 }
 
+type UpdateBundlePayload = {
+  bundleName?: string
+  memo?: string | null
+  removedAt?: string | null
+}
+
+type UpdateBundleResponseDto = FridgeBundleDto
+
+export async function updateBundle(
+  bundleId: string,
+  payload: UpdateBundlePayload,
+  currentUserId?: string,
+): Promise<{ bundle: Bundle; units: ItemUnit[] }> {
+  const body = {
+    bundleName: payload.bundleName?.trim(),
+    memo: payload.memo ?? null,
+    removedAt: payload.removedAt ?? null,
+  }
+
+  const { data, error } = await safeApiCall<UpdateBundleResponseDto>(`/fridge/bundles/${bundleId}`, {
+    method: "PATCH",
+    body,
+  })
+
+  if (error || !data) {
+    throw new Error(error?.message ?? "포장 정보를 수정하지 못했습니다.")
+  }
+
+  return mapBundleFromDto(data, currentUserId)
+}
+
 export type UpdateItemPayload = {
   name?: string
   expiry?: string
@@ -172,5 +203,16 @@ export async function deleteItem(itemId: string): Promise<void> {
 
   if (error) {
     throw new Error(error.message ?? "물품을 삭제하지 못했습니다.")
+  }
+}
+
+export async function deleteBundle(bundleId: string): Promise<void> {
+  const { error } = await safeApiCall<unknown>(`/fridge/bundles/${bundleId}`, {
+    method: "DELETE",
+    parseResponseAs: "none",
+  })
+
+  if (error) {
+    throw new Error(error.message ?? "포장을 삭제하지 못했습니다.")
   }
 }
