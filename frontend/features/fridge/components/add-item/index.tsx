@@ -1,7 +1,18 @@
 "use client"
 
-import { useCallback, useEffect, useRef, useState } from "react"
-import { X, Trash2, ArrowLeft, Pencil, Loader2, MoreVertical, ChevronDown, ChevronUp } from "lucide-react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import {
+  X,
+  Trash2,
+  ArrowLeft,
+  Pencil,
+  Loader2,
+  MoreVertical,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  Info,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog"
 import {
@@ -20,6 +31,7 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useAddItemWorkflow, formatExpiryDisplay } from "./use-add-item-workflow"
+import { getCurrentUserId } from "@/lib/auth"
 
 const LIST_SCROLL_BOX_HEIGHT = "clamp(240px, 35vh, 360px)"
 
@@ -34,9 +46,35 @@ export default function AddItemDialog({
   slots?: Slot[]
   currentSlotCode?: string
 }) {
-  const { addBundle } = useFridge()
+  const { addBundle, bundles } = useFridge()
   const { toast } = useToast()
-  const fallbackSlot = currentSlotCode || slots[0]?.code || ""
+  const uid = getCurrentUserId()
+
+  const ownedSlotCodes = useMemo(() => {
+    if (!uid) return []
+    const codes = new Set<string>()
+    bundles.forEach((bundle) => {
+      if (bundle.slotCode && bundle.ownerId && bundle.ownerId === uid) {
+        codes.add(bundle.slotCode)
+      } else if (bundle.slotCode && bundle.ownerUserId && bundle.ownerUserId === uid) {
+        codes.add(bundle.slotCode)
+      } else if (!bundle.ownerId && bundle.owner === "me") {
+        codes.add(bundle.slotCode)
+      }
+    })
+    const activeCodes = Array.from(codes).filter((code) => {
+      const slot = slots.find((s) => s.code === code)
+      return slot ? slot.isActive !== false : true
+    })
+    activeCodes.sort((a, b) => {
+      const idxA = slots.findIndex((slot) => slot.code === a)
+      const idxB = slots.findIndex((slot) => slot.code === b)
+      return (idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA) - (idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB)
+    })
+    return activeCodes
+  }, [bundles, uid, slots])
+
+  const fallbackSlot = currentSlotCode || ownedSlotCodes[0] || slots[0]?.code || ""
 
   const closeDialog = useCallback(() => onOpenChange(false), [onOpenChange])
 
@@ -116,11 +154,37 @@ export default function AddItemDialog({
     previousEntryCountRef.current = entries.length
   }, [entries.length, listCollapsed])
 
+  const selectedSlot = useMemo(
+    () => (metadataSlot ? slots.find((slot) => slot.code === metadataSlot) ?? null : null),
+    [slots, metadataSlot],
+  )
+  const currentBundleCount = useMemo(() => {
+    if (!metadataSlot) return 0
+    return bundles.filter((bundle) => bundle.slotCode === metadataSlot).length
+  }, [bundles, metadataSlot])
+  const slotCapacity = selectedSlot?.capacity ?? null
+  const remainingCapacity = slotCapacity != null ? Math.max(slotCapacity - currentBundleCount, 0) : null
+  const isSlotFull = slotCapacity != null && remainingCapacity <= 0
+  const selectedSlotLabel = selectedSlot?.label ?? (metadataSlot || "선택된 칸")
+
   const stepLabel = isMetadataStep ? "2 / 2" : "1 / 2"
   const headerTitle = isMetadataStep ? "포장 정보 입력" : "포장 목록"
   const primaryActionLabel = isMetadataStep ? "보관" : "다음"
-  const isPrimaryDisabled = isMetadataStep ? isSaving || entries.length === 0 || !metadataSlot : entries.length === 0
-  const handlePrimaryAction = isMetadataStep ? () => void handleConfirmSave() : handleRequestSave
+  const isPrimaryDisabled = isMetadataStep
+    ? isSaving || entries.length === 0 || !metadataSlot || isSlotFull
+    : entries.length === 0
+  const handlePrimaryAction = isMetadataStep
+    ? () => {
+        if (isSlotFull) {
+          toast({
+            title: "보관 칸이 가득 찼습니다.",
+            description: `${selectedSlotLabel} 칸은 최대 ${slotCapacity}개 포장을 보관할 수 있습니다.`,
+          })
+          return
+        }
+        void handleConfirmSave()
+      }
+    : handleRequestSave
 
   const readOnly = isMetadataStep
   const hasEntries = entries.length > 0
@@ -303,6 +367,11 @@ export default function AddItemDialog({
                 onChangeSlot={setMetadataSlot}
                 onChangeName={setPackName}
                 onChangeMemo={setPackMemo}
+                slotCapacity={slotCapacity}
+                currentBundleCount={currentBundleCount}
+                remainingCapacity={remainingCapacity}
+                slotLabel={selectedSlotLabel}
+                isSlotFull={isSlotFull}
               />
             ) : (
               <FormFields
@@ -334,6 +403,11 @@ function MetadataFields({
   onChangeSlot,
   onChangeName,
   onChangeMemo,
+  slotCapacity,
+  currentBundleCount,
+  remainingCapacity,
+  slotLabel,
+  isSlotFull,
 }: {
   slots: Slot[]
   slotCode: string
@@ -342,12 +416,48 @@ function MetadataFields({
   onChangeSlot: (value: string) => void
   onChangeName: (value: string) => void
   onChangeMemo: (value: string) => void
+  slotCapacity: number | null
+  currentBundleCount: number
+  remainingCapacity: number | null
+  slotLabel: string
+  isSlotFull: boolean
 }) {
+  const capacityKnown = slotCapacity != null
+  const remainingText = remainingCapacity != null ? remainingCapacity : 0
+
   return (
     <div className="space-y-4 pb-4">
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-700">보관 칸</p>
         <SlotSelector value={slotCode} onChange={onChangeSlot} slots={slots} />
+        {capacityKnown && (
+          <div
+            className={cn(
+              "mt-2 rounded-md border px-3 py-2",
+              isSlotFull
+                ? "border-rose-300 bg-rose-50 text-rose-800"
+                : "border-emerald-200 bg-emerald-50 text-emerald-800",
+            )}
+            role="status"
+            aria-live="polite"
+          >
+            <div className="flex items-center gap-2 text-sm font-semibold">
+              {isSlotFull ? (
+                <AlertTriangle className="h-4 w-4" aria-hidden />
+              ) : (
+                <Info className="h-4 w-4" aria-hidden />
+              )}
+              <span>{isSlotFull ? "용량 초과" : "남은 용량"}</span>
+            </div>
+            <p className="mt-1 text-sm leading-relaxed">
+              {slotLabel} 칸은 최대 <strong>{slotCapacity}</strong>개 포장을 보관할 수 있으며 현재{" "}
+              <strong>{currentBundleCount}</strong>개가 등록돼 있습니다.
+              {isSlotFull
+                ? " 다른 칸을 선택해 주세요."
+                : ` 추가로 ${remainingText}개 묶음까지 등록할 수 있습니다.`}
+            </p>
+          </div>
+        )}
       </div>
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-700">포장 이름</p>

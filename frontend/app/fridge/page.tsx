@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import dynamic from "next/dynamic"
 import { Snowflake, Plus } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -35,7 +35,7 @@ export default function FridgePage() {
 }
 
 function FridgeInner() {
-  const { items, slots } = useFridge()
+  const { items, slots, bundles } = useFridge()
   const [query, setQuery] = useState("")
   const [tab, setTab] = useState<"all" | "mine" | "expiring" | "expired">("all")
   const [slotCode, setSlotCode] = useState<string>("")
@@ -55,6 +55,41 @@ function FridgeInner() {
     id: "",
     edit: false,
   })
+
+  const initializedSlotRef = useRef(false)
+  const ownedSlotCodes = useMemo(() => {
+    if (!uid) return []
+    const codes = new Set<string>()
+    bundles.forEach((bundle) => {
+      if (bundle.slotCode && bundle.ownerId && bundle.ownerId === uid) {
+        codes.add(bundle.slotCode)
+      } else if (bundle.slotCode && bundle.ownerUserId && bundle.ownerUserId === uid) {
+        codes.add(bundle.slotCode)
+      } else if (!bundle.ownerId && bundle.owner === "me") {
+        codes.add(bundle.slotCode)
+      }
+    })
+    const activeCodes = Array.from(codes).filter((code) => {
+      const slot = slots.find((s) => s.code === code)
+      return slot ? slot.isActive !== false : true
+    })
+    activeCodes.sort((a, b) => {
+      const indexA = slots.findIndex((slot) => slot.code === a)
+      const indexB = slots.findIndex((slot) => slot.code === b)
+      return (indexA === -1 ? Number.MAX_SAFE_INTEGER : indexA) - (indexB === -1 ? Number.MAX_SAFE_INTEGER : indexB)
+    })
+    return activeCodes
+  }, [bundles, uid, slots])
+
+  useEffect(() => {
+    if (initializedSlotRef.current) return
+    if (ownedSlotCodes.length > 0) {
+      setSlotCode(ownedSlotCodes[0])
+      initializedSlotRef.current = true
+    } else if (slots.length > 0) {
+      initializedSlotRef.current = true
+    }
+  }, [ownedSlotCodes, slots.length])
 
   useEffect(() => {
     try {

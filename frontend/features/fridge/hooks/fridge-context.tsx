@@ -16,8 +16,10 @@ import {
   fetchFridgeInventory,
   fetchFridgeSlots,
   createBundle as createBundleApi,
+  updateBundle as updateBundleApi,
   updateItem as updateItemApi,
   deleteItem as deleteItemApi,
+  deleteBundle as deleteBundleApi,
 } from "@/features/fridge/api"
 import { formatBundleLabel, toItems } from "@/features/fridge/utils/data-shaping"
 import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
@@ -54,6 +56,8 @@ type FridgeContextValue = {
   }) => Promise<ActionResult<Item>>
   updateItem: (unitId: string, patch: UpdateItemPatch) => Promise<ActionResult>
   deleteItem: (unitId: string) => Promise<ActionResult>
+  renameBundle: (bundleId: string, bundleName: string) => Promise<ActionResult<Bundle>>
+  deleteBundle: (bundleId: string) => Promise<ActionResult>
   setLastInspectionNow: () => void
   setInspector: (on: boolean) => void
   getSlotLabel: (slotCode: string) => string
@@ -308,6 +312,60 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
     [units, bundles],
   )
 
+  const renameBundle = useCallback<FridgeContextValue["renameBundle"]>(
+    async (bundleId, nextName) => {
+      const trimmed = nextName.trim()
+      if (!trimmed) {
+        return { success: false, error: "대표명을 입력해 주세요." }
+      }
+
+      try {
+        const { bundle, units: updatedUnits } = await updateBundleApi(
+          bundleId,
+          { bundleName: trimmed },
+          currentUserId,
+        )
+
+        setBundleState((prev) => prev.map((existing) => (existing.bundleId === bundleId ? bundle : existing)))
+
+        setUnits((prev) => {
+          const updatedMap = new Map(updatedUnits.map((unit) => [unit.unitId, unit]))
+          const seen = new Set<string>()
+          const next = prev.map((unit) => {
+            if (unit.bundleId !== bundleId) return unit
+            const replacement = updatedMap.get(unit.unitId)
+            if (replacement) {
+              seen.add(unit.unitId)
+              return replacement
+            }
+            return unit
+          })
+          updatedMap.forEach((unit, id) => {
+            if (!seen.has(id)) {
+              next.push(unit)
+            }
+          })
+          return next
+        })
+
+        return {
+          success: true,
+          data: bundle,
+          message: `${bundle.bundleName}으로 대표명이 변경되었습니다.`,
+        }
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "포장 대표명을 수정하는 중 오류가 발생했습니다.",
+        }
+      }
+    },
+    [currentUserId],
+  )
+
   const deleteItem = useCallback<FridgeContextValue["deleteItem"]>(
     async (unitId) => {
       const target = units.find((unit) => unit.unitId === unitId)
@@ -345,6 +403,26 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
     [units],
   )
 
+  const deleteBundle = useCallback<FridgeContextValue["deleteBundle"]>(
+    async (bundleId) => {
+      try {
+        await deleteBundleApi(bundleId)
+        setBundleState((prev) => prev.filter((bundle) => bundle.bundleId !== bundleId))
+        setUnits((prev) => prev.filter((unit) => unit.bundleId !== bundleId))
+        return { success: true, message: "묶음이 삭제되었습니다." }
+      } catch (error) {
+        return {
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "묶음을 삭제하는 중 오류가 발생했습니다.",
+        }
+      }
+    },
+    [],
+  )
+
   const setLastInspectionNow = useCallback(() => {
     setLastInspectionAt(Date.now())
   }, [])
@@ -372,6 +450,8 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       addSingleItem,
       updateItem,
       deleteItem,
+      renameBundle,
+      deleteBundle,
       setLastInspectionNow,
       setInspector: setIsInspector,
       getSlotLabel,
@@ -389,6 +469,8 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       addSingleItem,
       updateItem,
       deleteItem,
+      renameBundle,
+      deleteBundle,
       setLastInspectionNow,
       getSlotLabel,
       isSlotActive,

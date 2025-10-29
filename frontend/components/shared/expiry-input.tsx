@@ -25,6 +25,7 @@ interface ExpiryInputProps {
   required?: boolean
   emphasizeToday?: boolean
   inputClassName?: string
+  showStatusBadge?: boolean
 }
 
 export function ExpiryInput({
@@ -41,6 +42,7 @@ export function ExpiryInput({
   required = false,
   emphasizeToday = false,
   inputClassName,
+  showStatusBadge = true,
 }: ExpiryInputProps) {
   const safeMin = minDate ?? toYMD(new Date())
   const presetButtons = presets ?? defaultPresets
@@ -84,7 +86,7 @@ export function ExpiryInput({
           {label}
           {required && <span className="text-rose-500">*</span>}
         </label>
-        {status.text && (
+        {showStatusBadge && status.text && (
           <span className={cn("inline-flex items-center gap-1 text-xs font-medium whitespace-nowrap", status.color)}>
             <CalendarDays className="h-4 w-4" />
             {status.text}

@@ -10,6 +10,7 @@ import { useMemo, useState } from "react"
 import { AlertTriangle, Bell, Check } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { formatShortDate } from "@/lib/date-utils"
+import { formatBundleLabel } from "@/features/fridge/utils/data-shaping"
 
 export default function InspectorPanel({
   lastInspectionAt = 0,
@@ -25,13 +26,19 @@ export default function InspectorPanel({
   const { toast } = useToast()
   const [selectedIds, setSelected] = useState<string[]>([])
 
-  const now = new Date()
   const expired = useMemo(
     () => items.filter((i) => daysLeft(i.expiry) < 0 && (slotCode ? i.slotCode === slotCode : true)),
     [items, slotCode],
   )
   const changedAfter = useMemo(
-    () => items.filter((i) => i.updatedAt > lastInspectionAt && (slotCode ? i.slotCode === slotCode : true)),
+    () =>
+      items.filter((i) => {
+        const updatedAtMs = new Date(i.updatedAt).getTime()
+        const matchesSlot = slotCode ? i.slotCode === slotCode : true
+        if (!matchesSlot) return false
+        if (!lastInspectionAt) return false
+        return updatedAtMs > lastInspectionAt
+      }),
     [items, lastInspectionAt, slotCode],
   )
 
@@ -53,12 +60,12 @@ export default function InspectorPanel({
         <Section title="만료 물품" count={expired.length}>
           {expired.slice(0, 5).map((i) => (
             <Row
-              key={i.id}
-              id={i.id}
+              key={i.unitId}
+              id={i.displayCode}
               name={i.name}
-              label={i.label}
+              label={i.bundleLabelDisplay ?? formatBundleLabel(i.slotCode, i.labelNumber)}
               onToggle={toggle}
-              selected={selectedIds.includes(i.id)}
+              selected={selectedIds.includes(i.displayCode)}
             />
           ))}
           {expired.length > 5 && <More text={`외 ${expired.length - 5}건 더 보기`} />}
@@ -68,12 +75,12 @@ export default function InspectorPanel({
         <Section title="검사일 이후 추가/수정" count={changedAfter.length}>
           {changedAfter.slice(0, 5).map((i) => (
             <Row
-              key={i.id}
-              id={i.id}
+              key={i.unitId}
+              id={i.displayCode}
               name={i.name}
-              label={i.label}
+              label={i.bundleLabelDisplay ?? formatBundleLabel(i.slotCode, i.labelNumber)}
               onToggle={toggle}
-              selected={selectedIds.includes(i.id)}
+              selected={selectedIds.includes(i.displayCode)}
             />
           ))}
           {changedAfter.length > 5 && <More text={`외 ${changedAfter.length - 5}건 더 보기`} />}

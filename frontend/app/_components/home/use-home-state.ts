@@ -2,7 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react"
 import type { AuthUser } from "@/lib/auth"
-import { fetchProfile, getCurrentUser, loginWithCredentials, logout as doLogout, subscribeAuth } from "@/lib/auth"
+import {
+  DEMO_ACCOUNTS,
+  fetchProfile,
+  getCurrentUser,
+  loginWithCredentials,
+  logout as doLogout,
+  subscribeAuth,
+} from "@/lib/auth"
 
 const SCHED_KEY = "fridge-inspections-schedule-v1"
 
@@ -87,7 +94,11 @@ export function useHomeState() {
 
   const startDemoWithDefaultUser = async () => {
     try {
-      await loginWithCredentials({ id: "alice", password: "alice" })
+      const demoAccount = DEMO_ACCOUNTS.find((account) => account.id === "alice") ?? DEMO_ACCOUNTS[0]
+      if (!demoAccount) {
+        throw new Error("데모 계정을 찾을 수 없습니다.")
+      }
+      await loginWithCredentials({ id: demoAccount.id, password: demoAccount.password })
       if (typeof window !== "undefined") window.location.reload()
     } catch (error) {
       console.error("demo login failed", error)
