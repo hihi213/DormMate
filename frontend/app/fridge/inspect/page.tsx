@@ -103,6 +103,7 @@ function InspectInner() {
   const resultsHydratedRef = useRef(false)
   const skipSummarySyncRef = useRef(false)
   const bundleOrderRef = useRef<Record<string, number>>({})
+  const [lastDraftSavedAt, setLastDraftSavedAt] = useState<number | null>(null)
 
   useEffect(() => {
     const current = getCurrentUser()
@@ -234,6 +235,15 @@ function InspectInner() {
     setResults([])
   }, [storageKey])
 
+  const persistResultsToLocal = useCallback(() => {
+    if (!storageKey || typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(storageKey, JSON.stringify(results))
+    } catch (error) {
+      console.warn("failed to persist inspection results", error)
+    }
+  }, [results, storageKey])
+
   const groupedResults = useMemo(() => {
     const map = new Map<string, { bundleName: string; bundleLabel?: string | null; entries: ResultEntry[]; order: number }>()
     const singles: Array<{ entry: ResultEntry; order: number }> = []
@@ -282,16 +292,28 @@ function InspectInner() {
       } else {
         const parsed = JSON.parse(raw)
         if (Array.isArray(parsed)) {
-          const normalized: ResultEntry[] = parsed.map((entry: ResultEntry & { expiry?: string; slotIndex?: number; labelNumber?: number }) => ({
-            ...entry,
-            expiryDate: entry.expiryDate ?? entry.expiry ?? undefined,
-            bundleLabel:
-              entry.bundleLabel ??
-              (typeof entry.slotIndex === "number" && typeof entry.labelNumber === "number"
-                ? formatStickerLabel(entry.slotIndex, entry.labelNumber)
-                : entry.bundleLabel),
-            origin: entry.origin === "sync" ? "sync" : "local",
-          }))
+          const normalized: ResultEntry[] = parsed.map(
+            (entry: ResultEntry & { expiry?: string; slotIndex?: number; labelNumber?: number }) => {
+              const time =
+                typeof entry.time === "number"
+                  ? entry.time
+                  : entry.time
+                    ? new Date(entry.time).getTime()
+                    : Date.now()
+
+              return {
+                ...entry,
+                time,
+                expiryDate: entry.expiryDate ?? entry.expiry ?? undefined,
+                bundleLabel:
+                  entry.bundleLabel ??
+                  (typeof entry.slotIndex === "number" && typeof entry.labelNumber === "number"
+                    ? formatStickerLabel(entry.slotIndex, entry.labelNumber)
+                    : entry.bundleLabel),
+                origin: entry.origin === "sync" ? "sync" : "local",
+              }
+            },
+          )
           setResults(normalized)
         } else {
           setResults([])
@@ -306,13 +328,9 @@ function InspectInner() {
   }, [storageKey])
 
   useEffect(() => {
-    if (!storageKey || typeof window === "undefined" || !resultsHydratedRef.current) return
-    try {
-      window.localStorage.setItem(storageKey, JSON.stringify(results))
-    } catch (error) {
-      console.warn("failed to persist inspection results", error)
-    }
-  }, [results, storageKey])
+    if (!resultsHydratedRef.current) return
+    persistResultsToLocal()
+  }, [persistResultsToLocal])
 
   useEffect(() => {
     if (!summaryFromServer.length) return
@@ -467,6 +485,13 @@ function InspectInner() {
     }
   }
 
+  const handleSaveDraft = () => {
+    if (!resultsHydratedRef.current) return
+    persistResultsToLocal()
+    setLastDraftSavedAt(Date.now())
+    toast({ title: "임시 저장이 완료되었습니다." })
+  }
+
   const openStickerDialog = () => {
     setStickerName("")
     setStickerDialogOpen(true)
@@ -502,7 +527,16 @@ function InspectInner() {
               <h1 className="text-base font-semibold leading-none">{`냉장고 검사 · ${formatCompartmentLabel(session.slotIndex)}`}</h1>
             </div>
           </div>
-          <div className="inline-flex items-center gap-1">
+          <div className="inline-flex flex-col items-end gap-1">
+            <div className="inline-flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={handleSaveDraft}
+                disabled={stage === "committed"}
+                aria-label="임시 저장"
+              >
+                {"임시 저장"}
+              </Button>
             <Button
               className="bg-emerald-600 hover:bg-emerald-700"
               onClick={() => {
@@ -514,6 +548,15 @@ function InspectInner() {
             >
               {"제출"}
             </Button>
+            </div>
+            {lastDraftSavedAt && (
+              <span className="text-xs text-muted-foreground">
+                {`임시 저장됨 · ${new Date(lastDraftSavedAt).toLocaleTimeString("ko-KR", {
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })}`}
+              </span>
+            )}
           </div>
         </div>
       </header>
@@ -522,7 +565,7 @@ function InspectInner() {
         {stage === "in-progress" && (
           <div className="flex items-center gap-2 text-xs text-rose-700" role="status" aria-live="polite">
             <span className="inline-block w-2 h-2 rounded-full bg-rose-600" aria-hidden="true" />
-            <span>{"검사 중 · 서버에 자동 저장됩니다."}</span>
+            <span>{"검사 중 · 로컬에 자동 저장됩니다."}</span>
             {totalItems > 0 && (
               <span className="text-gray-600">
                 {`(${processedRegisteredItems}건 처리됨 · ${remainingItems}건 남음${isInspectionComplete ? " · 검사 완료" : ""})`}
