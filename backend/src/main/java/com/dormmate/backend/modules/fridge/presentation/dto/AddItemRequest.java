@@ -10,7 +10,6 @@ public record AddItemRequest(
         @NotBlank String name,
         @NotNull LocalDate expiryDate,
         @Min(1) Integer quantity,
-        String priority,
-        String memo
+        String unitCode
 ) {
 }

@@ -33,6 +33,7 @@ import {
 } from "@/features/inspections/api"
 import { getCurrentUser } from "@/lib/auth"
 import { daysLeft, ddayLabel, formatShortDate } from "@/lib/date-utils"
+import { formatCompartmentLabel, formatStickerLabel } from "@/features/fridge/utils/labels"
 
 type Stage = "idle" | "in-progress" | "committed"
 
@@ -44,7 +45,7 @@ type ResultEntry = {
   bundleId?: string
   bundleLabel?: string
   bundleName?: string
-  expiry?: string
+  expiryDate?: string
   name?: string
   note?: string
   origin?: "local" | "sync"
@@ -101,6 +102,7 @@ function InspectInner() {
   const [stickerName, setStickerName] = useState("")
   const resultsHydratedRef = useRef(false)
   const skipSummarySyncRef = useRef(false)
+  const bundleOrderRef = useRef<Record<string, number>>({})
 
   useEffect(() => {
     const current = getCurrentUser()
@@ -113,7 +115,7 @@ function InspectInner() {
     const load = async () => {
       setLoading(true)
       try {
-        const sessionId = sessionIdParam ? Number(sessionIdParam) : undefined
+        const sessionId = sessionIdParam ?? undefined
         const data = sessionId ? await fetchInspection(sessionId) : await fetchActiveInspection()
         if (!data) {
           toast({
@@ -142,6 +144,17 @@ function InspectInner() {
   }, [router, sessionIdParam, toast])
 
   const items = useMemo(() => session?.items ?? [], [session])
+
+  useEffect(() => {
+    if (!session) return
+    const order = bundleOrderRef.current
+    session.items.forEach((item, index) => {
+      const key = item.bundleId ?? item.unitId
+      if (!(key in order)) {
+        order[key] = index + Object.keys(order).length / 1000
+      }
+    })
+  }, [session])
   const storageKey = session?.sessionId ? `${STORAGE_KEY_PREFIX}${session.sessionId}` : null
   const totalItems = items.length
   const processedRegisteredItems = results.filter((r) => r.itemId).length
@@ -162,7 +175,7 @@ function InspectInner() {
       list = list.filter((item) => !processedUnitIds.has(item.unitId))
     }
     if (showExpired) {
-      list = list.filter((item) => daysLeft(item.expiry) < 0)
+      list = list.filter((item) => daysLeft(item.expiryDate) < 0)
     }
     if (query.trim()) {
       const q = query.trim().toLowerCase()
@@ -175,36 +188,33 @@ function InspectInner() {
   }, [items, processedUnitIds, showExpired, query])
 
   const itemGroups = useMemo<ItemGroup[]>(() => {
-    const map = new Map<string, ItemGroup>()
+    const map = new Map<string, ItemGroup & { order: number }>()
 
-    const pushItem = (item: Item) => {
+    filteredItems.forEach((item) => {
       const key = item.bundleId ?? item.unitId
+      const order = bundleOrderRef.current[key] ?? Number.POSITIVE_INFINITY
       if (!map.has(key)) {
         map.set(key, {
           bundleId: key,
           bundleName: item.bundleName ?? "묶음",
-          bundleLabel: item.bundleLabelDisplay,
+          bundleLabel: item.bundleLabelDisplay ?? formatStickerLabel(item.slotIndex, item.labelNumber),
           items: [],
+          order,
         })
       }
       map.get(key)!.items.push(item)
-    }
-
-    filteredItems.forEach((item) => pushItem(item))
-
-    const earliestExpiry = (items: Item[]) => {
-      if (!items.length) return ""
-      return items.reduce((earliest, current) => (current.expiry < earliest ? current.expiry : earliest), items[0].expiry)
-    }
+    })
 
     return Array.from(map.values())
       .map((group) => ({
-        ...group,
+        bundleId: group.bundleId,
+        bundleName: group.bundleName,
+        bundleLabel: group.bundleLabel,
         items: group.items.slice().sort((a, b) => a.seqNo - b.seqNo),
-        orderKey: earliestExpiry(group.items),
+        order: group.order,
       }))
-      .sort((a, b) => a.orderKey.localeCompare(b.orderKey))
-      .map(({ orderKey, ...rest }) => rest)
+      .sort((a, b) => a.order - b.order)
+      .map(({ order, ...rest }) => rest)
   }, [filteredItems])
 
   const filteredResults = useMemo(() => {
@@ -272,8 +282,14 @@ function InspectInner() {
       } else {
         const parsed = JSON.parse(raw)
         if (Array.isArray(parsed)) {
-          const normalized: ResultEntry[] = parsed.map((entry: ResultEntry) => ({
+          const normalized: ResultEntry[] = parsed.map((entry: ResultEntry & { expiry?: string; slotIndex?: number; labelNumber?: number }) => ({
             ...entry,
+            expiryDate: entry.expiryDate ?? entry.expiry ?? undefined,
+            bundleLabel:
+              entry.bundleLabel ??
+              (typeof entry.slotIndex === "number" && typeof entry.labelNumber === "number"
+                ? formatStickerLabel(entry.slotIndex, entry.labelNumber)
+                : entry.bundleLabel),
             origin: entry.origin === "sync" ? "sync" : "local",
           }))
           setResults(normalized)
@@ -373,9 +389,9 @@ function InspectInner() {
           action: payload.action,
           itemId: payload.item.unitId,
           bundleId: payload.item.bundleId,
-          bundleLabel: payload.item.bundleLabelDisplay,
+          bundleLabel: payload.item.bundleLabelDisplay ?? formatStickerLabel(payload.item.slotIndex, payload.item.labelNumber),
           bundleName: payload.item.bundleName,
-          expiry: payload.item.expiry,
+          expiryDate: payload.item.expiryDate,
           name: payload.item.name,
           note: payload.note,
         })
@@ -483,7 +499,7 @@ function InspectInner() {
           <div className="flex-1 text-center">
             <div className="inline-flex items-center gap-2">
               <ClipboardCheck className="w-4 h-4 text-emerald-700" />
-              <h1 className="text-base font-semibold leading-none">{`냉장고 검사 · ${session.slotCode}`}</h1>
+              <h1 className="text-base font-semibold leading-none">{`냉장고 검사 · ${formatCompartmentLabel(session.slotIndex)}`}</h1>
             </div>
           </div>
           <div className="inline-flex items-center gap-1">
@@ -792,7 +808,7 @@ function InspectionItemCard({
   onWarn: (item: Item, action: "WARN_INFO_MISMATCH" | "WARN_STORAGE_POOR") => void
   onDiscard: (item: Item) => void
 }) {
-  const detailLine = `${item.bundleLabelDisplay ?? item.displayCode ?? item.slotCode} • ${formatShortDate(item.expiry)}`
+  const detailLine = `${item.bundleLabelDisplay ?? item.displayLabel ?? formatStickerLabel(item.slotIndex, item.labelNumber)} • ${formatShortDate(item.expiryDate)}`
   return (
     <Card>
       <CardContent className="py-3 px-3">

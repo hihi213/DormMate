@@ -1,25 +1,21 @@
-export type ResourceType = "FRIDGE_COMP"
-
-export type ResourceStatus = "ACTIVE" | "OUT_OF_SERVICE"
-
 export type FloorCode = "2F" | "3F" | "4F" | "5F"
 
-export type SlotTemperature = "freezer" | "refrigerator" | "room"
+export type CompartmentType = "CHILL" | "FREEZE"
+
+export type ResourceStatus = "ACTIVE" | "SUSPENDED" | "REPORTED" | "RETIRED"
 
 export type Slot = {
   slotId: string
-  code: string
-  displayOrder?: number | null
-  labelRangeStart?: number | null
-  labelRangeEnd?: number | null
-  label: string
-  floor?: number
+  slotIndex: number
+  slotLetter: string
+  floorNo: number
   floorCode: FloorCode
-  type: ResourceType
-  status: ResourceStatus
-  temperature?: SlotTemperature | null
+  compartmentType: CompartmentType
+  resourceStatus: ResourceStatus
+  locked: boolean
+  lockedUntil?: string | null
   capacity?: number | null
-  isActive: boolean
+  displayName?: string | null
 }
 
 export type Owner = "me" | "other"
@@ -28,11 +24,13 @@ export type ItemStatus = "ok" | "expiring" | "expired"
 
 export type ItemPriority = "low" | "medium" | "high"
 
+export type BundleStatus = "ACTIVE" | "DELETED"
+
 export type Bundle = {
   bundleId: string
-  slotId?: string
-  slotCode: string
-  labelNo: number
+  slotId: string
+  slotIndex: number
+  slotLetter: string
   labelNumber: number
   labelDisplay: string
   bundleName: string
@@ -42,6 +40,9 @@ export type Bundle = {
   ownerRoomNumber?: string | null
   owner?: Owner
   ownerId?: string
+  status: BundleStatus
+  freshness?: string | null
+  itemCount: number
   createdAt: string
   updatedAt: string
   removedAt?: string | null
@@ -52,8 +53,11 @@ export type ItemUnit = {
   bundleId: string
   seqNo: number
   name: string
-  expiry: string
+  expiryDate: string
   quantity?: number | null
+  unitCode?: string | null
+  freshness?: string | null
+  updatedAfterInspection: boolean
   memo?: string | null
   priority?: ItemPriority
   createdAt: string
@@ -66,23 +70,25 @@ export type Item = {
   id: string
   bundleId: string
   unitId: string
-  slotCode: string
-  slotId?: string
-  labelNo: number
+  slotId: string
+  slotIndex: number
+  slotLetter: string
   labelNumber: number
   seqNo: number
-  displayCode: string
+  displayLabel: string
   bundleLabelDisplay: string
   bundleName: string
   name: string
-  expiry: string
+  expiryDate: string
+  unitCode?: string | null
+  updatedAfterInspection: boolean
   memo?: string | null
   quantity?: number | null
   owner?: Owner
   ownerId?: string
   ownerUserId?: string | null
   bundleMemo?: string | null
-  status?: ItemStatus
+  freshness?: string | null
   priority?: ItemPriority
   createdAt: string
   updatedAt: string
@@ -91,11 +97,11 @@ export type Item = {
 
 export type FilterOptions = {
   tab: "all" | "mine" | "expiring" | "expired"
-  slotCode?: string
   slotId?: string
+  slotIndex?: number
   searchQuery?: string
   myOnly: boolean
-  sortBy: "expiry" | "name" | "createdAt"
+  sortBy: "expiryDate" | "name" | "createdAt"
   sortOrder: "asc" | "desc"
 }
 
@@ -118,13 +124,14 @@ export type InspectionSummary = {
 }
 
 export type Inspection = {
-  sessionId?: number
+  sessionId?: string
   slotId?: string
+  slotIndex?: number
   status?: InspectionStatus
   startedAt?: string
   endedAt?: string
   submittedAt?: string
-  submittedBy?: number
+  submittedBy?: string
   floorCode?: FloorCode
   resourceLabel?: string
   id: string

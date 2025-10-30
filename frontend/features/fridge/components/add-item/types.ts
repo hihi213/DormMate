@@ -1,7 +1,7 @@
 export type TemplateState = {
-  slotCode: string
+  slotId: string
   name: string
-  expiry: string
+  expiryDate: string
   qty: number
   lockName: boolean
 }
@@ -9,13 +9,13 @@ export type TemplateState = {
 export type PendingEntry = {
   id: string
   name: string
-  expiry: string
+  expiryDate: string
   qty: number
 }
 
 export type DetailRowState = {
   name: string
-  expiry: string
+  expiryDate: string
   customName: boolean
   customExpiry: boolean
 }

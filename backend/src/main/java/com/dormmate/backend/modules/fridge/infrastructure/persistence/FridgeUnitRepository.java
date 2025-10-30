@@ -9,5 +9,5 @@ import com.dormmate.backend.modules.fridge.domain.FridgeUnit;
 
 public interface FridgeUnitRepository extends JpaRepository<FridgeUnit, UUID> {
 
-    List<FridgeUnit> findByFloor(short floor);
+    List<FridgeUnit> findByFloorNo(short floorNo);
 }

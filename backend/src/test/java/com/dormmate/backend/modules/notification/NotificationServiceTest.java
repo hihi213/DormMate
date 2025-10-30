@@ -73,7 +73,8 @@ class NotificationServiceTest {
     @Test
     @DisplayName("검사 결과 알림이 경고/폐기 대상 사용자에게 생성된다")
     void sendInspectionResultNotifications_createsNotification() {
-        InspectionSession session = buildSession(501L,
+        UUID sessionId = UUID.fromString("00000000-0000-0000-0000-000000000501");
+        InspectionSession session = buildSession(sessionId,
                 buildAction(InspectionActionType.WARN_INFO_MISMATCH),
                 buildAction(InspectionActionType.DISPOSE_EXPIRED));
 
@@ -91,7 +92,7 @@ class NotificationServiceTest {
         assertThat(saved.getUser().getId()).isEqualTo(targetUser.getId());
         assertThat(saved.getTitle()).contains("검사 결과");
         assertThat(saved.getBody()).contains("경고 1건").contains("폐기 1건");
-        assertThat(saved.getMetadata()).containsEntry("sessionId", 501L);
+        assertThat(saved.getMetadata()).containsEntry("sessionId", sessionId);
         assertThat(saved.getTtlAt()).isAfter(OffsetDateTime.now(clock));
     }
 
@@ -99,7 +100,7 @@ class NotificationServiceTest {
     @DisplayName("알림 수신이 비활성화된 사용자는 알림을 생성하지 않는다")
     void sendInspectionResultNotifications_skipsWhenDisabled() {
         NotificationPreference preference = new NotificationPreference(
-                new NotificationPreferenceId(targetUser.getId(), "FRIDGE_INSPECTION_RESULT"),
+                new NotificationPreferenceId(targetUser.getId(), "FRIDGE_RESULT"),
                 targetUser
         );
         preference.setEnabled(false);
@@ -107,14 +108,15 @@ class NotificationServiceTest {
         when(notificationPreferenceRepository.findById(any(NotificationPreferenceId.class)))
                 .thenReturn(Optional.of(preference));
 
-        InspectionSession session = buildSession(777L, buildAction(InspectionActionType.WARN_STORAGE_POOR));
+        UUID sessionId = UUID.fromString("00000000-0000-0000-0000-000000000777");
+        InspectionSession session = buildSession(sessionId, buildAction(InspectionActionType.WARN_STORAGE_POOR));
 
         notificationService.sendInspectionResultNotifications(session);
 
         verify(notificationRepository, never()).save(any());
     }
 
-    private InspectionSession buildSession(Long id, InspectionAction... actions) {
+    private InspectionSession buildSession(UUID id, InspectionAction... actions) {
         InspectionSession session = new InspectionSession();
         setField(session, "id", id);
         session.setStartedAt(OffsetDateTime.now(clock));

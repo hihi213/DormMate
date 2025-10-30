@@ -157,64 +157,52 @@ components:
       required: [userId, loginId, displayName, roles, isFloorManager, isAdmin, createdAt, updatedAt]
     SlotType:
       type: string
-      enum: [FRIDGE_COMP]
-    SlotStatus:
+      enum: [CHILL, FREEZE]
+    ResourceStatus:
       type: string
-      enum: [ACTIVE, OUT_OF_SERVICE]
-    SlotTemperature:
-      type: string
-      enum: [refrigerator, freezer, room]
+      enum: [ACTIVE, SUSPENDED, REPORTED, RETIRED]
     FridgeSlot:
       type: object
       properties:
         slotId: { type: string, format: uuid }
-        slotCode: { type: string }
-        floor: { type: integer }
+        slotIndex: { type: integer }
+        slotLetter: { type: string }
+        floorNo: { type: integer }
         floorCode: { type: string }
-        type: { $ref: '#/components/schemas/SlotType' }
-        status: { $ref: '#/components/schemas/SlotStatus' }
-        labelRangeStart: { type: integer, nullable: true }
-        labelRangeEnd: { type: integer, nullable: true }
-        capacity:
-          type: integer
+        compartmentType: { $ref: '#/components/schemas/SlotType' }
+        resourceStatus: { $ref: '#/components/schemas/ResourceStatus' }
+        locked: { type: boolean }
+        lockedUntil:
+          type: string
+          format: date-time
           nullable: true
-        temperature:
-          $ref: '#/components/schemas/SlotTemperature'
-        displayOrder:
+        capacity:
           type: integer
           nullable: true
         displayName:
           type: string
           nullable: true
-        isActive: { type: boolean }
       required:
-        [slotId, slotCode, floor, floorCode, type, status, isActive]
-    ItemStatus:
+        [slotId, slotIndex, slotLetter, floorNo, floorCode, compartmentType, resourceStatus, locked]
+    ItemFreshness:
       type: string
       enum: [ok, expiring, expired]
-    ItemPriority:
-      type: string
-      nullable: true
-      enum: [low, medium, high, null]
     FridgeItem:
       type: object
       properties:
         itemId: { type: string, format: uuid }
         bundleId: { type: string, format: uuid }
-        sequenceNo: { type: integer }
         name: { type: string }
         expiryDate: { type: string, format: date }
         quantity:
-          type: number
+          type: integer
           nullable: true
-        unit:
+        unitCode:
           type: string
           nullable: true
-        status: { $ref: '#/components/schemas/ItemStatus' }
-        priority: { $ref: '#/components/schemas/ItemPriority' }
-        memo:
-          type: string
-          nullable: true
+        freshness:
+          $ref: '#/components/schemas/ItemFreshness'
+        updatedAfterInspection: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
         removedAt:
@@ -222,30 +210,34 @@ components:
           format: date-time
           nullable: true
       required:
-        [itemId, bundleId, sequenceNo, name, expiryDate, status, createdAt, updatedAt]
+        [itemId, bundleId, name, expiryDate, freshness, updatedAfterInspection, createdAt, updatedAt]
+    BundleStatus:
+      type: string
+      enum: [ACTIVE, DELETED]
     FridgeBundleSummary:
       type: object
       properties:
         bundleId: { type: string, format: uuid }
         slotId: { type: string, format: uuid }
-        slotCode: { type: string }
-        labelNo: { type: integer }
+        slotIndex: { type: integer }
+        slotLabel: { type: string }
+        labelNumber: { type: integer }
         labelDisplay: { type: string }
         bundleName: { type: string }
         memo:
           type: string
           nullable: true
-        ownerUserId:
-          type: string
-          format: uuid
-          nullable: true
+        ownerUserId: { type: string, format: uuid }
         ownerDisplayName:
           type: string
           nullable: true
         ownerRoomNumber:
           type: string
           nullable: true
-        status: { $ref: '#/components/schemas/ItemStatus' }
+        status: { $ref: '#/components/schemas/BundleStatus' }
+        freshness:
+          type: string
+          enum: [ok, expiring, expired]
         itemCount: { type: integer }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
@@ -254,7 +246,7 @@ components:
           format: date-time
           nullable: true
       required:
-        [bundleId, slotId, slotCode, labelNo, labelDisplay, bundleName, status, itemCount, createdAt, updatedAt]
+        [bundleId, slotId, slotIndex, slotLabel, labelNumber, labelDisplay, bundleName, status, freshness, itemCount, createdAt, updatedAt]
     FridgeBundle:
       allOf:
         - $ref: '#/components/schemas/FridgeBundleSummary'
@@ -278,17 +270,16 @@ components:
         name: { type: string }
         expiryDate: { type: string, format: date }
         quantity:
-          type: number
+          type: integer
           nullable: true
-        priority: { $ref: '#/components/schemas/ItemPriority' }
-        memo:
+        unitCode:
           type: string
           nullable: true
       required: [name, expiryDate]
     CreateBundleRequest:
       type: object
       properties:
-        slotCode: { type: string }
+        slotId: { type: string, format: uuid }
         bundleName: { type: string }
         memo:
           type: string
@@ -296,7 +287,7 @@ components:
         items:
           type: array
           items: { $ref: '#/components/schemas/CreateBundleItemInput' }
-      required: [slotCode, bundleName, items]
+      required: [slotId, bundleName, items]
     CreateBundleResponse:
       type: object
       properties:
@@ -321,10 +312,9 @@ components:
         name: { type: string }
         expiryDate: { type: string, format: date }
         quantity:
-          type: number
+          type: integer
           nullable: true
-        priority: { $ref: '#/components/schemas/ItemPriority' }
-        memo:
+        unitCode:
           type: string
           nullable: true
       required: [name, expiryDate]
@@ -339,11 +329,9 @@ components:
           format: date
           nullable: true
         quantity:
-          type: number
+          type: integer
           nullable: true
-        priority:
-          $ref: '#/components/schemas/ItemPriority'
-        memo:
+        unitCode:
           type: string
           nullable: true
         removedAt:
@@ -365,9 +353,11 @@ components:
     InspectionSession:
       type: object
       properties:
-        sessionId: { type: integer, format: int64 }
+        sessionId: { type: string, format: uuid }
         slotId: { type: string, format: uuid }
-        slotCode: { type: string }
+        slotIndex: { type: integer }
+        slotLabel: { type: string }
+        floorNo: { type: integer }
         floorCode:
           type: string
           nullable: true
@@ -387,7 +377,7 @@ components:
         notes:
           type: string
           nullable: true
-      required: [sessionId, slotId, slotCode, status, startedBy, startedAt, bundles, summary]
+      required: [sessionId, slotId, slotIndex, slotLabel, floorNo, status, startedBy, startedAt, bundles, summary]
     InspectionActionEntry:
       type: object
       properties:
@@ -544,9 +534,9 @@ paths:
       security: [{ BearerAuth: [] }]
       parameters:
         - in: query
-          name: slotCode
-          schema: { type: string }
-          description: 특정 칸만 필터링
+          name: slotId
+          schema: { type: string, format: uuid }
+          description: 특정 칸(슬롯)만 필터링
         - in: query
           name: owner
           schema:
@@ -557,12 +547,12 @@ paths:
           name: status
           schema:
             type: string
-            enum: [active, removed]
-          description: removed 지정 시 소프트 삭제 포함
+            enum: [active, deleted]
+          description: deleted 지정 시 소프트 삭제 포함
         - in: query
           name: search
           schema: { type: string }
-          description: 포장명/물품명/스티커 코드 검색
+          description: 포장명/물품명/라벨(A123) 검색
         - in: query
           name: page
           schema: { type: integer, minimum: 0, default: 0 }
@@ -724,9 +714,6 @@ paths:
               type: object
               properties:
                 slotId: { type: string, format: uuid }
-                slotCode:
-                  type: string
-                  nullable: true
               required: [slotId]
       responses:
         '201':

@@ -35,7 +35,8 @@ import org.springframework.test.web.servlet.MvcResult;
 @AutoConfigureMockMvc
 class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
-    private static final String SLOT_2F_R1 = "2F-R1";
+    private static final int FLOOR_2 = 2;
+    private static final int SLOT_INDEX_A = 0;
 
     @Autowired
     private MockMvc mockMvc;
@@ -55,12 +56,14 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
     private String managerToken;
     private String residentToken;
     private List<UUID> bundlesToCleanup;
+    private UUID slot2FAId;
 
     @BeforeEach
     void setUp() throws Exception {
         bundlesToCleanup = new ArrayList<>();
         managerToken = login("bob", "bob123!");
         residentToken = login("alice", "alice123!");
+        slot2FAId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         jdbcTemplate.update("DELETE FROM inspection_action_item");
         jdbcTemplate.update("DELETE FROM inspection_action");
@@ -82,12 +85,12 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void managerCanRunFullInspectionHappyPath() throws Exception {
-        JsonNode bundle = ensureBundleForAlice(SLOT_2F_R1);
+        JsonNode bundle = ensureBundleForAlice(slot2FAId);
         UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
         UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
 
-        JsonNode session = startInspection(managerToken, SLOT_2F_R1);
-        long sessionId = session.path("sessionId").asLong();
+        JsonNode session = startInspection(managerToken, slot2FAId);
+        UUID sessionId = UUID.fromString(session.path("sessionId").asText());
 
         recordDisposeAction(managerToken, sessionId, bundleId, itemId);
 
@@ -95,7 +98,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         assertThat(submitted.path("status").asText()).isEqualTo(InspectionStatus.SUBMITTED.name());
 
         fridgeItemRepository.findById(itemId).ifPresent(item -> {
-            assertThat(item.getStatus()).isEqualTo(FridgeItemStatus.REMOVED);
+            assertThat(item.getStatus()).isEqualTo(FridgeItemStatus.DELETED);
             assertThat(item.getDeletedAt()).isNotNull();
         });
 
@@ -113,68 +116,64 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "slotCode": "%s",
                                   "slotId": "%s"
                                 }
-                                """.formatted(SLOT_2F_R1, fetchSlotId(SLOT_2F_R1))))
+                                """.formatted(slot2FAId)))
                 .andExpect(status().isForbidden());
     }
 
     @Test
     void managerCannotSubmitTwice() throws Exception {
-        JsonNode session = startInspection(managerToken, SLOT_2F_R1);
-        long sessionId = session.path("sessionId").asLong();
+        JsonNode session = startInspection(managerToken, slot2FAId);
+        UUID sessionId = UUID.fromString(session.path("sessionId").asText());
 
         submitInspection(managerToken, sessionId);
 
-        mockMvc.perform(post("/fridge/inspections/%d/submit".formatted(sessionId))
+        mockMvc.perform(post("/fridge/inspections/%s/submit".formatted(sessionId))
                         .header("Authorization", "Bearer " + managerToken))
                 .andExpect(status().isConflict());
     }
 
     @Test
     void managerCannotStartWhenSessionExists() throws Exception {
-        startInspection(managerToken, SLOT_2F_R1);
+        startInspection(managerToken, slot2FAId);
 
         mockMvc.perform(post("/fridge/inspections")
                         .header("Authorization", "Bearer " + managerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "slotCode": "%s",
                                   "slotId": "%s"
                                 }
-                                """.formatted(SLOT_2F_R1, fetchSlotId(SLOT_2F_R1))))
+                                """.formatted(slot2FAId)))
                 .andExpect(status().isConflict());
     }
 
-    private JsonNode startInspection(String token, String slotCode) throws Exception {
-        UUID slotId = fetchSlotId(slotCode);
+    private JsonNode startInspection(String token, UUID slotId) throws Exception {
         MvcResult result = mockMvc.perform(post("/fridge/inspections")
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "slotCode": "%s",
                                   "slotId": "%s"
                                 }
-                                """.formatted(slotCode, slotId)))
+                                """.formatted(slotId)))
                 .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.sessionId").isNumber())
+                .andExpect(jsonPath("$.sessionId").isNotEmpty())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
-    private JsonNode submitInspection(String token, long sessionId) throws Exception {
-        MvcResult result = mockMvc.perform(post("/fridge/inspections/%d/submit".formatted(sessionId))
+    private JsonNode submitInspection(String token, UUID sessionId) throws Exception {
+        MvcResult result = mockMvc.perform(post("/fridge/inspections/%s/submit".formatted(sessionId))
                         .header("Authorization", "Bearer " + token))
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString());
     }
 
-    private void recordDisposeAction(String token, long sessionId, UUID bundleId, UUID itemId) throws Exception {
-        mockMvc.perform(post("/fridge/inspections/%d/actions".formatted(sessionId))
+    private void recordDisposeAction(String token, UUID sessionId, UUID bundleId, UUID itemId) throws Exception {
+        mockMvc.perform(post("/fridge/inspections/%s/actions".formatted(sessionId))
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
@@ -193,18 +192,18 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(jsonPath("$.summary[0].count").value(1));
     }
 
-    private JsonNode ensureBundleForAlice(String slotCode) throws Exception {
-        return createBundleForAlice(slotCode);
+    private JsonNode ensureBundleForAlice(UUID slotId) throws Exception {
+        return createBundleForAlice(slotId);
     }
 
-    private JsonNode createBundleForAlice(String slotCode) throws Exception {
+    private JsonNode createBundleForAlice(UUID slotId) throws Exception {
         String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(2).toString();
         MvcResult result = mockMvc.perform(post("/fridge/bundles")
                         .header("Authorization", "Bearer " + residentToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "slotCode": "%s",
+                                  "slotId": "%s",
                                   "bundleName": "Inspection 테스트 포장",
                                   "items": [
                                     {
@@ -214,7 +213,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                                     }
                                   ]
                                 }
-                                """.formatted(slotCode, expiresOn)))
+                                """.formatted(slotId, expiresOn)))
                 .andExpect(status().isCreated())
                 .andReturn();
 
@@ -223,11 +222,17 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         return bundle;
     }
 
-    private UUID fetchSlotId(String slotCode) {
+    private UUID fetchSlotId(int floorNo, int slotIndex) {
         return jdbcTemplate.queryForObject(
-                "SELECT id FROM fridge_compartment WHERE slot_code = ?",
-                (rs, rowNum) -> UUID.fromString(rs.getString(1)),
-                slotCode
+                """
+                        SELECT fc.id
+                        FROM fridge_compartment fc
+                        JOIN fridge_unit fu ON fu.id = fc.fridge_unit_id
+                        WHERE fu.floor_no = ? AND fc.slot_index = ?
+                        """,
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                floorNo,
+                slotIndex
         );
     }
 

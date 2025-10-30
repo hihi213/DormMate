@@ -38,7 +38,7 @@ function FridgeInner() {
   const { items, slots, bundles } = useFridge()
   const [query, setQuery] = useState("")
   const [tab, setTab] = useState<"all" | "mine" | "expiring" | "expired">("all")
-  const [slotCode, setSlotCode] = useState<string>("")
+  const [selectedSlotId, setSelectedSlotId] = useState<string>("")
   const [addOpen, setAddOpen] = useState(false)
   const [myOnly, setMyOnly] = useState(true)
   const [nextScheduleText, setNextScheduleText] = useState<string>("")
@@ -57,39 +57,42 @@ function FridgeInner() {
   })
 
   const initializedSlotRef = useRef(false)
-  const ownedSlotCodes = useMemo(() => {
+  const ownedSlotIds = useMemo(() => {
     if (!uid) return []
-    const codes = new Set<string>()
+    const ids = new Set<string>()
     bundles.forEach((bundle) => {
-      if (bundle.slotCode && bundle.ownerId && bundle.ownerId === uid) {
-        codes.add(bundle.slotCode)
-      } else if (bundle.slotCode && bundle.ownerUserId && bundle.ownerUserId === uid) {
-        codes.add(bundle.slotCode)
+      if (!bundle.slotId) return
+      if (bundle.ownerId && bundle.ownerId === uid) {
+        ids.add(bundle.slotId)
+      } else if (bundle.ownerUserId && bundle.ownerUserId === uid) {
+        ids.add(bundle.slotId)
       } else if (!bundle.ownerId && bundle.owner === "me") {
-        codes.add(bundle.slotCode)
+        ids.add(bundle.slotId)
       }
     })
-    const activeCodes = Array.from(codes).filter((code) => {
-      const slot = slots.find((s) => s.code === code)
-      return slot ? slot.isActive !== false : true
+    const activeIds = Array.from(ids).filter((slotId) => {
+      const slot = slots.find((s) => s.slotId === slotId)
+      return slot ? slot.resourceStatus === "ACTIVE" : true
     })
-    activeCodes.sort((a, b) => {
-      const indexA = slots.findIndex((slot) => slot.code === a)
-      const indexB = slots.findIndex((slot) => slot.code === b)
-      return (indexA === -1 ? Number.MAX_SAFE_INTEGER : indexA) - (indexB === -1 ? Number.MAX_SAFE_INTEGER : indexB)
+    activeIds.sort((a, b) => {
+      const slotA = slots.find((slot) => slot.slotId === a)
+      const slotB = slots.find((slot) => slot.slotId === b)
+      const indexA = slotA ? slotA.slotIndex : Number.MAX_SAFE_INTEGER
+      const indexB = slotB ? slotB.slotIndex : Number.MAX_SAFE_INTEGER
+      return indexA - indexB
     })
-    return activeCodes
+    return activeIds
   }, [bundles, uid, slots])
 
   useEffect(() => {
     if (initializedSlotRef.current) return
-    if (ownedSlotCodes.length > 0) {
-      setSlotCode(ownedSlotCodes[0])
+    if (ownedSlotIds.length > 0) {
+      setSelectedSlotId(ownedSlotIds[0])
       initializedSlotRef.current = true
     } else if (slots.length > 0) {
       initializedSlotRef.current = true
     }
-  }, [ownedSlotCodes, slots.length])
+  }, [ownedSlotIds, slots.length])
 
   useEffect(() => {
     try {
@@ -113,7 +116,7 @@ function FridgeInner() {
     const q = query.trim().toLowerCase()
 
     const matchesBaseFilters = (item: Item) => {
-      if (slotCode && item.slotCode !== slotCode) return false
+      if (selectedSlotId && item.slotId !== selectedSlotId) return false
       if (myOnly && !(uid ? item.ownerId === uid : item.owner === "me")) return false
 
       switch (tab) {
@@ -121,12 +124,12 @@ function FridgeInner() {
           if (!(uid ? item.ownerId === uid : item.owner === "me")) return false
           break
         case "expiring": {
-          const d = Math.floor((new Date(item.expiry).getTime() - today) / 86400000)
+          const d = Math.floor((new Date(item.expiryDate).getTime() - today) / 86400000)
           if (!(d >= 0 && d <= 3)) return false
           break
         }
         case "expired": {
-          const d = Math.floor((new Date(item.expiry).getTime() - today) / 86400000)
+          const d = Math.floor((new Date(item.expiryDate).getTime() - today) / 86400000)
           if (d >= 0) return false
           break
         }
@@ -154,9 +157,9 @@ function FridgeInner() {
       return matchedBundles.has(item.bundleId)
     })
 
-    result.sort((a, b) => a.expiry.localeCompare(b.expiry))
+    result.sort((a, b) => a.expiryDate.localeCompare(b.expiryDate))
     return result
-  }, [items, query, tab, slotCode, myOnly, uid])
+  }, [items, query, tab, selectedSlotId, myOnly, uid])
 
   const counts = useMemo(() => {
     const now = new Date()
@@ -164,15 +167,15 @@ function FridgeInner() {
       expiring = 0,
       expired = 0
     items.forEach((it) => {
-      if (slotCode && it.slotCode !== slotCode) return
+      if (selectedSlotId && it.slotId !== selectedSlotId) return
       if (myOnly && !(uid ? it.ownerId === uid : it.owner === "me")) return
-      const d = Math.floor((new Date(it.expiry).getTime() - new Date(now.toDateString()).getTime()) / 86400000)
+      const d = Math.floor((new Date(it.expiryDate).getTime() - new Date(now.toDateString()).getTime()) / 86400000)
       if (uid ? it.ownerId === uid : it.owner === "me") mine++
       if (d >= 0 && d <= 3) expiring++
       if (d < 0) expired++
     })
     return { mine, expiring, expired }
-  }, [items, slotCode, myOnly, uid])
+  }, [items, selectedSlotId, myOnly, uid])
 
   // Stable handlers
   const handleOpenItem = useCallback((id: string, opts?: { edit?: boolean }) => {
@@ -220,8 +223,8 @@ function FridgeInner() {
             <Filters
               active={tab}
               onChange={setTab}
-              slotCode={slotCode}
-              setSlotCode={setSlotCode}
+              slotId={selectedSlotId}
+              setSlotId={setSelectedSlotId}
               slots={slots}
               counts={counts}
               myOnly={myOnly}
@@ -248,7 +251,7 @@ function FridgeInner() {
         </section>
       </div>
 
-      <AddItemDialog open={addOpen} onOpenChange={setAddOpen} slots={slots} currentSlotCode={slotCode} />
+      <AddItemDialog open={addOpen} onOpenChange={setAddOpen} slots={slots} currentSlotId={selectedSlotId} />
 
       {/* Bottom sheets for quick detail (lazy-loaded) */}
       <ItemDetailSheet

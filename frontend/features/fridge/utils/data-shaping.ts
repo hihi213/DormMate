@@ -1,36 +1,65 @@
 import type {
   Bundle,
+  CompartmentType,
   FloorCode,
   Item,
   ItemPriority,
   ItemUnit,
   Owner,
   ResourceStatus,
-  ResourceType,
   Slot,
 } from "@/features/fridge/types"
 
+const SLOT_RADIX = 26
+
+export const toSlotLetter = (slotIndex: number): string => {
+  if (slotIndex < 0 || Number.isNaN(slotIndex)) {
+    return "?"
+  }
+  let value = slotIndex
+  if (!Number.isInteger(value)) {
+    value = Math.floor(value)
+  }
+  const builder: string[] = []
+  while (value >= 0) {
+    const remainder = value % SLOT_RADIX
+    builder.push(String.fromCharCode("A".charCodeAt(0) + remainder))
+    value = Math.floor(value / SLOT_RADIX) - 1
+  }
+  return builder.reverse().join("")
+}
+
+export const formatLabelNumber = (labelNumber: number): string => {
+  if (!labelNumber || labelNumber <= 0) {
+    return "000"
+  }
+  const safeValue = Math.min(labelNumber, 999)
+  return String(safeValue).padStart(3, "0")
+}
+
+export const formatBundleLabel = (slotIndex: number, labelNumber: number): string =>
+  `${toSlotLetter(slotIndex)}${formatLabelNumber(labelNumber)}`
+
 export type FridgeSlotDto = {
   slotId: string
-  slotCode: string
-  floor: number
+  slotIndex: number
+  slotLetter?: string | null
+  floorNo: number
   floorCode: string
-  type: ResourceType
-  status: ResourceStatus
-  labelRangeStart?: number | null
-  labelRangeEnd?: number | null
+  compartmentType: CompartmentType
+  resourceStatus: ResourceStatus
+  locked: boolean
+  lockedUntil?: string | null
   capacity?: number | null
-  temperature?: string | null
-  displayOrder?: number | null
   displayName?: string | null
-  isActive: boolean
 }
 
 export type FridgeBundleSummaryDto = {
   bundleId: string
-  slotId?: string | null
-  slotCode: string
-  labelNo: number
+  slotId: string
+  slotIndex: number
+  slotLabel?: string | null
+  labelNumber?: number | null
   labelDisplay?: string | null
   bundleName: string
   memo?: string | null
@@ -38,6 +67,7 @@ export type FridgeBundleSummaryDto = {
   ownerDisplayName?: string | null
   ownerRoomNumber?: string | null
   status: string
+  freshness?: string | null
   itemCount: number
   createdAt: string
   updatedAt: string
@@ -47,12 +77,12 @@ export type FridgeBundleSummaryDto = {
 export type FridgeItemDto = {
   itemId: string
   bundleId: string
-  sequenceNo: number
   name: string
   expiryDate: string
   quantity?: number | null
-  unit?: string | null
-  status: string
+  unitCode?: string | null
+  freshness?: string | null
+  updatedAfterInspection: boolean
   priority?: ItemPriority | null
   memo?: string | null
   createdAt: string
@@ -69,25 +99,20 @@ export type BundleListResponseDto = {
   totalCount: number
 }
 
-export const formatBundleLabel = (slotCode: string, labelNumber: number) =>
-  `${slotCode}-${String(labelNumber).padStart(3, "0")}`
-
 export function mapSlotFromDto(dto: FridgeSlotDto): Slot {
-  const label = dto.displayName && dto.displayName.trim().length > 0 ? dto.displayName : dto.slotCode
+  const slotLetter = dto.slotLetter && dto.slotLetter.length > 0 ? dto.slotLetter : toSlotLetter(dto.slotIndex)
   return {
     slotId: dto.slotId,
-    code: dto.slotCode,
-    displayOrder: dto.displayOrder ?? null,
-    labelRangeStart: dto.labelRangeStart ?? null,
-    labelRangeEnd: dto.labelRangeEnd ?? null,
-    label,
-    floor: dto.floor,
+    slotIndex: dto.slotIndex,
+    slotLetter,
+    floorNo: dto.floorNo,
     floorCode: dto.floorCode as FloorCode,
-    type: dto.type,
-    status: dto.status,
-    temperature: dto.temperature ?? null,
+    compartmentType: dto.compartmentType,
+    resourceStatus: dto.resourceStatus,
+    locked: dto.locked,
+    lockedUntil: dto.lockedUntil ?? null,
     capacity: dto.capacity ?? null,
-    isActive: dto.isActive,
+    displayName: dto.displayName ?? null,
   }
 }
 
@@ -95,17 +120,19 @@ export function mapBundleFromDto(
   dto: FridgeBundleDto,
   currentUserId?: string,
 ): { bundle: Bundle; units: ItemUnit[] } {
-  const labelNumber = dto.labelNo
-  const labelDisplay = dto.labelDisplay ?? formatBundleLabel(dto.slotCode, labelNumber)
+  const slotIndex = dto.slotIndex ?? 0
+  const labelNumber = dto.labelNumber ?? 0
+  const slotLetter = dto.slotLabel && dto.slotLabel.length > 0 ? dto.slotLabel : toSlotLetter(slotIndex)
+  const labelDisplay = dto.labelDisplay ?? formatBundleLabel(slotIndex, labelNumber)
   const ownerUserId = dto.ownerUserId ?? null
   const owner: Owner =
     ownerUserId && currentUserId && ownerUserId === currentUserId ? "me" : "other"
 
   const bundle: Bundle = {
     bundleId: dto.bundleId,
-    slotId: dto.slotId ?? undefined,
-    slotCode: dto.slotCode,
-    labelNo: labelNumber,
+    slotId: dto.slotId,
+    slotIndex,
+    slotLetter,
     labelNumber,
     labelDisplay,
     bundleName: dto.bundleName,
@@ -115,6 +142,9 @@ export function mapBundleFromDto(
     ownerRoomNumber: dto.ownerRoomNumber ?? null,
     owner,
     ownerId: ownerUserId ?? undefined,
+    status: (dto.status?.toUpperCase() as Bundle["status"]) ?? "ACTIVE",
+    freshness: dto.freshness ?? null,
+    itemCount: dto.itemCount,
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
     removedAt: dto.removedAt ?? null,
@@ -126,14 +156,17 @@ export function mapBundleFromDto(
 }
 
 export function mapItemFromDto(item: FridgeItemDto, bundle: Bundle, index: number): ItemUnit {
-  const seqNo = typeof item.sequenceNo === "number" && item.sequenceNo > 0 ? item.sequenceNo : index + 1
+  const seqNo = index + 1
   return {
     unitId: item.itemId,
     bundleId: bundle.bundleId,
     seqNo,
     name: item.name,
-    expiry: item.expiryDate,
+    expiryDate: item.expiryDate,
     quantity: item.quantity ?? null,
+    unitCode: item.unitCode ?? null,
+    freshness: item.freshness ?? null,
+    updatedAfterInspection: Boolean(item.updatedAfterInspection),
     memo: item.memo ?? null,
     priority: item.priority ?? undefined,
     createdAt: item.createdAt,
@@ -144,12 +177,8 @@ export function mapItemFromDto(item: FridgeItemDto, bundle: Bundle, index: numbe
 
 export type FridgeItemResponseDto = FridgeItemDto
 
-export function mapItemFromResponse(
-  dto: FridgeItemResponseDto,
-  bundle: Bundle,
-): ItemUnit {
-  const index = typeof dto.sequenceNo === "number" && dto.sequenceNo > 0 ? dto.sequenceNo - 1 : 0
-  return mapItemFromDto(dto, bundle, index)
+export function mapItemFromResponse(dto: FridgeItemResponseDto, bundle: Bundle): ItemUnit {
+  return mapItemFromDto(dto, bundle, 0)
 }
 
 export function toItems(bundles: Bundle[], units: ItemUnit[]): Item[] {
@@ -158,29 +187,31 @@ export function toItems(bundles: Bundle[], units: ItemUnit[]): Item[] {
     if (!bundle) {
       throw new Error(`Bundle not found for unit ${unit.unitId}`)
     }
-    const bundleLabel = bundle.labelDisplay || formatBundleLabel(bundle.slotCode, bundle.labelNumber)
-    const displayCode = `${bundleLabel}-${String(unit.seqNo).padStart(2, "0")}`
+    const bundleLabel = bundle.labelDisplay || formatBundleLabel(bundle.slotIndex, bundle.labelNumber)
+    const displayLabel = `${bundleLabel}-${String(unit.seqNo).padStart(2, "0")}`
     return {
-      id: displayCode,
+      id: displayLabel,
       bundleId: bundle.bundleId,
       unitId: unit.unitId,
-      slotCode: bundle.slotCode,
       slotId: bundle.slotId,
-      labelNo: bundle.labelNo,
+      slotIndex: bundle.slotIndex,
+      slotLetter: bundle.slotLetter,
       labelNumber: bundle.labelNumber,
       seqNo: unit.seqNo,
-      displayCode,
+      displayLabel,
       bundleLabelDisplay: bundleLabel,
       bundleName: bundle.bundleName,
       name: unit.name,
-      expiry: unit.expiry,
+      expiryDate: unit.expiryDate,
+      unitCode: unit.unitCode ?? null,
+      updatedAfterInspection: unit.updatedAfterInspection,
       memo: unit.memo ?? bundle.memo ?? null,
       quantity: unit.quantity ?? null,
       owner: bundle.owner,
       ownerId: bundle.ownerId,
       ownerUserId: bundle.ownerUserId ?? null,
       bundleMemo: bundle.memo ?? null,
-      status: undefined,
+      freshness: unit.freshness ?? null,
       priority: unit.priority,
       createdAt: unit.createdAt,
       updatedAt: unit.updatedAt,

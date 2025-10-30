@@ -4,15 +4,15 @@ import { useMemo, useState } from "react"
 import type { Slot } from "@/features/fridge/types"
 import { Button } from "@/components/ui/button"
 import { Switch } from "@/components/ui/switch"
-import { SearchIcon, Check } from "lucide-react"
+import { SearchIcon } from "lucide-react"
 import { SlotSelector } from "@/features/fridge/components/slot-selector"
 import SearchBar from "@/features/fridge/components/search-bar"
 
 export default function Filters({
   active = "all",
   onChange = () => {},
-  slotCode = "",
-  setSlotCode = () => {},
+  slotId = "",
+  setSlotId = () => {},
   slots = [],
   counts = { mine: 0, expiring: 0, expired: 0 },
   myOnly = true,
@@ -22,8 +22,8 @@ export default function Filters({
 }: {
   active?: "all" | "mine" | "expiring" | "expired"
   onChange?: (t: "all" | "mine" | "expiring" | "expired") => void
-  slotCode?: string
-  setSlotCode?: (code: string) => void
+  slotId?: string
+  setSlotId?: (id: string) => void
   slots?: Slot[]
   counts?: { mine: number; expiring: number; expired: number }
   myOnly?: boolean
@@ -42,8 +42,8 @@ export default function Filters({
       {/* Row 1: Slot picker + Search on the same line */}
       <div className="flex items-center gap-2">
         <SlotSelector
-          value={slotCode}
-          onChange={setSlotCode}
+          value={slotId}
+          onChange={setSlotId}
           slots={slots}
           showAllOption
           placeholder="전체 칸"
@@ -87,27 +87,5 @@ export default function Filters({
         </label>
       </div>
     </div>
-  )
-}
-
-function SlotOption({
-  label,
-  selected = false,
-  onSelect = () => {},
-}: {
-  label: string
-  selected?: boolean
-  onSelect?: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onSelect}
-      className={`w-full flex items-center justify-between px-3 py-2 text-sm hover:bg-gray-50 ${selected ? "bg-emerald-50" : ""}`}
-      aria-pressed={selected}
-    >
-      <span className="truncate mr-2">{label}</span>
-      {selected && <Check className="size-4 text-emerald-600 shrink-0" aria-hidden="true" />}
-    </button>
   )
 }

@@ -1,11 +1,12 @@
 "use client"
 
-import { useCallback, useEffect, useMemo } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { Dialog, DialogContent, DialogDescription } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { Loader2, Trash2, X } from "lucide-react"
 import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import type { Item } from "@/features/fridge/types"
+import { formatStickerLabel } from "@/features/fridge/utils/labels"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentUserId } from "@/lib/auth"
 import { daysLeft as calcDaysLeft } from "@/lib/date-utils"
@@ -114,8 +115,8 @@ function getDetailName(name: string, bundleName: string) {
   return name.startsWith(prefix) ? name.slice(prefix.length) : name
 }
 
-function formatDaysLeft(expiry: string) {
-  const left = calcDaysLeft(expiry)
+function formatDaysLeft(expiryDate: string) {
+  const left = calcDaysLeft(expiryDate)
   if (Number.isNaN(left)) return ""
   if (left === 0) return "오늘"
   return left > 0 ? `+${left}일` : `${left}일`
@@ -134,7 +135,7 @@ function BundleItemRow({ item, bundleName, canDelete, isDeleting, onDelete }: Bu
     <li className="flex items-center justify-between rounded-md border p-2">
       <div>
         <div className="text-sm font-medium">{getDetailName(item.name, bundleName)}</div>
-        <div className="text-xs text-muted-foreground">{formatDaysLeft(item.expiry)}</div>
+        <div className="text-xs text-muted-foreground">{formatDaysLeft(item.expiryDate)}</div>
       </div>
       {canDelete && (
         <Button

@@ -1,11 +1,10 @@
 package com.dormmate.backend.modules.fridge.domain;
 
-import java.time.OffsetDateTime;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import com.dormmate.backend.global.jpa.AbstractTimestampedEntity;
-import com.dormmate.backend.modules.auth.domain.DormUser;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -32,41 +31,24 @@ public class FridgeItem extends AbstractTimestampedEntity {
     @JoinColumn(name = "fridge_bundle_id", nullable = false)
     private FridgeBundle bundle;
 
-    @Column(name = "sequence_no", nullable = false)
-    private int sequenceNo;
-
     @Column(name = "item_name", nullable = false, length = 120)
     private String itemName;
 
     @Column(name = "quantity", nullable = false)
     private int quantity;
 
-    @Column(name = "unit", length = 16)
-    private String unit;
+    @Column(name = "unit_code", length = 16)
+    private String unitCode;
 
-    @Enumerated(EnumType.STRING)
-    @Column(name = "priority", length = 16)
-    private FridgeItemPriority priority;
-
-    @Column(name = "expires_on", nullable = false)
-    private LocalDate expiresOn;
+    @Column(name = "expiry_date", nullable = false)
+    private LocalDate expiryDate;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 16)
     private FridgeItemStatus status = FridgeItemStatus.ACTIVE;
 
-    @Column(name = "last_modified_at", nullable = false)
-    private OffsetDateTime lastModifiedAt;
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "last_modified_by")
-    private DormUser lastModifiedBy;
-
-    @Column(name = "post_inspection_modified", nullable = false)
-    private boolean postInspectionModified;
-
-    @Column(name = "memo")
-    private String memo;
+    @Column(name = "updated_after_inspection", nullable = false)
+    private boolean updatedAfterInspection;
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
@@ -81,14 +63,6 @@ public class FridgeItem extends AbstractTimestampedEntity {
 
     public void setBundle(FridgeBundle bundle) {
         this.bundle = bundle;
-    }
-
-    public int getSequenceNo() {
-        return sequenceNo;
-    }
-
-    public void setSequenceNo(int sequenceNo) {
-        this.sequenceNo = sequenceNo;
     }
 
     public String getItemName() {
@@ -107,28 +81,20 @@ public class FridgeItem extends AbstractTimestampedEntity {
         this.quantity = quantity;
     }
 
-    public String getUnit() {
-        return unit;
+    public String getUnitCode() {
+        return unitCode;
     }
 
-    public void setUnit(String unit) {
-        this.unit = unit;
+    public void setUnitCode(String unitCode) {
+        this.unitCode = unitCode;
     }
 
-    public FridgeItemPriority getPriority() {
-        return priority;
+    public LocalDate getExpiryDate() {
+        return expiryDate;
     }
 
-    public void setPriority(FridgeItemPriority priority) {
-        this.priority = priority;
-    }
-
-    public LocalDate getExpiresOn() {
-        return expiresOn;
-    }
-
-    public void setExpiresOn(LocalDate expiresOn) {
-        this.expiresOn = expiresOn;
+    public void setExpiryDate(LocalDate expiryDate) {
+        this.expiryDate = expiryDate;
     }
 
     public FridgeItemStatus getStatus() {
@@ -139,36 +105,12 @@ public class FridgeItem extends AbstractTimestampedEntity {
         this.status = status;
     }
 
-    public OffsetDateTime getLastModifiedAt() {
-        return lastModifiedAt;
+    public boolean isUpdatedAfterInspection() {
+        return updatedAfterInspection;
     }
 
-    public void setLastModifiedAt(OffsetDateTime lastModifiedAt) {
-        this.lastModifiedAt = lastModifiedAt;
-    }
-
-    public DormUser getLastModifiedBy() {
-        return lastModifiedBy;
-    }
-
-    public void setLastModifiedBy(DormUser lastModifiedBy) {
-        this.lastModifiedBy = lastModifiedBy;
-    }
-
-    public boolean isPostInspectionModified() {
-        return postInspectionModified;
-    }
-
-    public void setPostInspectionModified(boolean postInspectionModified) {
-        this.postInspectionModified = postInspectionModified;
-    }
-
-    public String getMemo() {
-        return memo;
-    }
-
-    public void setMemo(String memo) {
-        this.memo = memo;
+    public void setUpdatedAfterInspection(boolean updatedAfterInspection) {
+        this.updatedAfterInspection = updatedAfterInspection;
     }
 
     public OffsetDateTime getDeletedAt() {

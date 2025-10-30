@@ -14,11 +14,14 @@ import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.sql.ResultSet;
+import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.AfterEach;
@@ -28,6 +31,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ResultSetExtractor;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -35,9 +39,10 @@ import org.springframework.test.web.servlet.MvcResult;
 @AutoConfigureMockMvc
 class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
-    private static final String SLOT_FLOOR2_R2 = "2F-R2";
-    private static final String SLOT_FLOOR3_R1 = "3F-R1";
-    private static final String SLOT_FLOOR2_R1 = "2F-R1";
+    private static final int FLOOR_2 = 2;
+    private static final int FLOOR_3 = 3;
+    private static final int SLOT_INDEX_A = 0;
+    private static final int SLOT_INDEX_B = 1;
 
     @Autowired
     private MockMvc mockMvc;
@@ -66,6 +71,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     @Test
     void residentCannotCreateBundleOutsideAssignedSlot() throws Exception {
         String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID otherFloorSlotId = fetchSlotId(FLOOR_3, SLOT_INDEX_A);
 
         String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(3).toString();
         mockMvc.perform(
@@ -74,7 +80,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
-                                          "slotCode": "%s",
+                                          "slotId": "%s",
                                           "bundleName": "다른 층 침범",
                                           "items": [
                                             {
@@ -84,7 +90,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                                             }
                                           ]
                                         }
-                                        """.formatted(SLOT_FLOOR3_R1, expiresOn))
+                                        """.formatted(otherFloorSlotId, expiresOn))
                 )
                 .andExpect(status().isForbidden());
     }
@@ -92,45 +98,52 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     @Test
     void capacityExceededReturnsUnprocessableEntity() throws Exception {
         String accessToken = loginAndGetAccessToken("bob", "bob123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_B);
 
         Integer originalCapacity = jdbcTemplate.queryForObject(
-                "SELECT max_bundle_count FROM fridge_compartment WHERE slot_code = ?",
+                "SELECT max_bundle_count FROM fridge_compartment WHERE id = ?",
                 Integer.class,
-                SLOT_FLOOR2_R2
+                slotId
         );
-        Integer originalNextLabel = jdbcTemplate.queryForObject(
-                "SELECT next_label FROM bundle_label_sequence WHERE fridge_compartment_id = (SELECT id FROM fridge_compartment WHERE slot_code = ?)",
-                Integer.class,
-                SLOT_FLOOR2_R2
+
+        LabelSequenceState originalLabelState = jdbcTemplate.query(
+                """
+                        SELECT next_number, recycled_numbers::text AS recycled_numbers
+                        FROM bundle_label_sequence
+                        WHERE fridge_compartment_id = ?
+                        """,
+                singleLabelState(),
+                slotId
         );
 
         jdbcTemplate.update(
-                "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = (SELECT id FROM fridge_compartment WHERE slot_code = ?))",
-                SLOT_FLOOR2_R2
+                "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
+                slotId
         );
         jdbcTemplate.update(
-                "DELETE FROM fridge_bundle WHERE fridge_compartment_id = (SELECT id FROM fridge_compartment WHERE slot_code = ?)",
-                SLOT_FLOOR2_R2
+                "DELETE FROM fridge_bundle WHERE fridge_compartment_id = ?",
+                slotId
         );
         jdbcTemplate.update(
-                "UPDATE fridge_compartment SET max_bundle_count = ? WHERE slot_code = ?",
+                "UPDATE fridge_compartment SET max_bundle_count = ? WHERE id = ?",
                 1,
-                SLOT_FLOOR2_R2
+                slotId
         );
         jdbcTemplate.update(
                 """
-                        INSERT INTO bundle_label_sequence (fridge_compartment_id, next_label)
-                        VALUES ((SELECT id FROM fridge_compartment WHERE slot_code = ?), ?)
+                        INSERT INTO bundle_label_sequence (fridge_compartment_id, next_number, recycled_numbers)
+                        VALUES (?, ?, '[]'::jsonb)
                         ON CONFLICT (fridge_compartment_id) DO UPDATE
-                        SET next_label = EXCLUDED.next_label
+                        SET next_number = EXCLUDED.next_number,
+                            recycled_numbers = '[]'::jsonb
                         """,
-                SLOT_FLOOR2_R2,
+                slotId,
                 1
         );
 
         UUID firstBundleId = null;
         try {
-            JsonNode firstBundle = createBundle(accessToken, SLOT_FLOOR2_R2, "용량 테스트 1");
+            JsonNode firstBundle = createBundle(accessToken, slotId, "용량 테스트 1");
             firstBundleId = UUID.fromString(firstBundle.path("bundle").path("bundleId").asText());
 
             String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(5).toString();
@@ -140,7 +153,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                                     .contentType(MediaType.APPLICATION_JSON)
                                     .content("""
                                             {
-                                              "slotCode": "%s",
+                                              "slotId": "%s",
                                               "bundleName": "용량 테스트 2",
                                               "items": [
                                                 {
@@ -150,7 +163,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                                                 }
                                               ]
                                             }
-                                            """.formatted(SLOT_FLOOR2_R2, expiresOn))
+                                            """.formatted(slotId, expiresOn))
                     )
                     .andExpect(status().isUnprocessableEntity());
         } finally {
@@ -160,70 +173,76 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
             }
             if (originalCapacity != null) {
                 jdbcTemplate.update(
-                        "UPDATE fridge_compartment SET max_bundle_count = ? WHERE slot_code = ?",
+                        "UPDATE fridge_compartment SET max_bundle_count = ? WHERE id = ?",
                         originalCapacity,
-                        SLOT_FLOOR2_R2
+                        slotId
                 );
             }
-            if (originalNextLabel != null) {
+            if (originalLabelState != null) {
                 jdbcTemplate.update(
-                        "UPDATE bundle_label_sequence SET next_label = ? WHERE fridge_compartment_id = (SELECT id FROM fridge_compartment WHERE slot_code = ?)",
-                        originalNextLabel,
-                        SLOT_FLOOR2_R2
+                        "UPDATE bundle_label_sequence SET next_number = ?, recycled_numbers = ?::jsonb WHERE fridge_compartment_id = ?",
+                        originalLabelState.nextNumber(),
+                        Optional.ofNullable(originalLabelState.recycledNumbers()).orElse("[]"),
+                        slotId
+                );
+            } else {
+                jdbcTemplate.update(
+                        "DELETE FROM bundle_label_sequence WHERE fridge_compartment_id = ?",
+                        slotId
                 );
             }
         }
     }
 
     @Test
-    void slotViewReflectsCapacityAndActiveChanges() throws Exception {
+    void slotViewReflectsCapacityAndStatusChanges() throws Exception {
         String managerToken = loginAndGetAccessToken("bob", "bob123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         Integer originalCapacity = jdbcTemplate.queryForObject(
-                "SELECT max_bundle_count FROM fridge_compartment WHERE slot_code = ?",
+                "SELECT max_bundle_count FROM fridge_compartment WHERE id = ?",
                 Integer.class,
-                SLOT_FLOOR2_R1
+                slotId
         );
-        Boolean originalActive = jdbcTemplate.queryForObject(
-                "SELECT is_active FROM fridge_compartment WHERE slot_code = ?",
-                Boolean.class,
-                SLOT_FLOOR2_R1
+        String originalStatus = jdbcTemplate.queryForObject(
+                "SELECT status FROM fridge_compartment WHERE id = ?",
+                String.class,
+                slotId
         );
 
         int updatedCapacity = (originalCapacity != null ? originalCapacity : 0) + 3;
-        boolean updatedActive = originalActive != null && !originalActive;
+        String updatedStatus = "ACTIVE".equals(originalStatus) ? "SUSPENDED" : "ACTIVE";
 
         try {
             jdbcTemplate.update(
-                    "UPDATE fridge_compartment SET max_bundle_count = ?, is_active = ? WHERE slot_code = ?",
+                    "UPDATE fridge_compartment SET max_bundle_count = ?, status = ? WHERE id = ?",
                     updatedCapacity,
-                    updatedActive,
-                    SLOT_FLOOR2_R1
+                    updatedStatus,
+                    slotId
             );
 
             MvcResult result = mockMvc.perform(
                             get("/fridge/slots")
                                     .param("view", "full")
-                                    .param("size", "200")
                                     .header("Authorization", "Bearer " + managerToken)
                     )
                     .andExpect(status().isOk())
                     .andReturn();
 
             JsonNode slots = objectMapper.readTree(result.getResponse().getContentAsString());
-            JsonNode slot = findSlotByCode(slots, SLOT_FLOOR2_R1);
+            JsonNode slot = findSlot(slots, FLOOR_2, SLOT_INDEX_A);
 
             assertThat(slot.path("capacity").asInt()).isEqualTo(updatedCapacity);
-            assertThat(slot.path("isActive").asBoolean()).isEqualTo(updatedActive);
-            assertThat(slot.path("labelRangeStart").isMissingNode()).isFalse();
-            assertThat(slot.path("labelRangeEnd").isMissingNode()).isFalse();
+            assertThat(slot.path("resourceStatus").asText()).isEqualTo(updatedStatus);
         } finally {
-            jdbcTemplate.update(
-                    "UPDATE fridge_compartment SET max_bundle_count = ?, is_active = ? WHERE slot_code = ?",
-                    originalCapacity,
-                    originalActive,
-                    SLOT_FLOOR2_R1
-            );
+            if (originalCapacity != null && originalStatus != null) {
+                jdbcTemplate.update(
+                        "UPDATE fridge_compartment SET max_bundle_count = ?, status = ? WHERE id = ?",
+                        originalCapacity,
+                        originalStatus,
+                        slotId
+                );
+            }
         }
     }
 
@@ -231,21 +250,22 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     void bundleListAndDetailIncludeOwnerAndCounts() throws Exception {
         String aliceToken = loginAndGetAccessToken("alice", "alice123!");
         String managerToken = loginAndGetAccessToken("bob", "bob123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
-        clearSlotBundles(SLOT_FLOOR2_R1);
+        clearSlotBundles(slotId);
 
         String aliceBundleName = "alice-verification-bundle";
         String managerBundleName = "bob-verification-bundle";
 
-        JsonNode aliceBundle = createBundle(aliceToken, SLOT_FLOOR2_R1, aliceBundleName);
-        JsonNode bobBundle = createBundle(managerToken, SLOT_FLOOR2_R1, managerBundleName);
+        JsonNode aliceBundle = createBundle(aliceToken, slotId, aliceBundleName);
+        JsonNode bobBundle = createBundle(managerToken, slotId, managerBundleName);
 
         UUID aliceBundleId = UUID.fromString(aliceBundle.path("bundle").path("bundleId").asText());
         UUID bobBundleId = UUID.fromString(bobBundle.path("bundle").path("bundleId").asText());
 
         MvcResult listResult = mockMvc.perform(
                         get("/fridge/bundles")
-                                .param("slotCode", SLOT_FLOOR2_R1)
+                                .param("slotId", slotId.toString())
                                 .param("owner", "all")
                                 .header("Authorization", "Bearer " + managerToken)
                 )
@@ -281,8 +301,9 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     @Test
     void residentCanMarkItemAsRemoved() throws Exception {
         String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
-        JsonNode bundleResponse = createBundle(accessToken, SLOT_FLOOR2_R1, "미등록 처리 테스트");
+        JsonNode bundleResponse = createBundle(accessToken, slotId, "미등록 처리 테스트");
         UUID itemId = UUID.fromString(bundleResponse.path("bundle").path("items").get(0).path("itemId").asText());
 
         String removalTimestamp = OffsetDateTime.now(ZoneOffset.UTC).toString();
@@ -300,12 +321,12 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(jsonPath("$.removedAt").isNotEmpty());
 
         fridgeItemRepository.findById(itemId).ifPresent(item -> {
-            assertThat(item.getStatus()).isEqualTo(FridgeItemStatus.REMOVED);
+            assertThat(item.getStatus()).isEqualTo(FridgeItemStatus.DELETED);
             assertThat(item.getDeletedAt()).isNotNull();
         });
     }
 
-    private JsonNode createBundle(String accessToken, String slotCode, String bundleName) throws Exception {
+    private JsonNode createBundle(String accessToken, UUID slotId, String bundleName) throws Exception {
         String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(4).toString();
         MvcResult result = mockMvc.perform(
                         post("/fridge/bundles")
@@ -313,7 +334,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
-                                          "slotCode": "%s",
+                                          "slotId": "%s",
                                           "bundleName": "%s",
                                           "items": [
                                             {
@@ -323,7 +344,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                                             }
                                           ]
                                         }
-                                        """.formatted(slotCode, bundleName, expiresOn))
+                                        """.formatted(slotId, bundleName, expiresOn))
                 )
                 .andExpect(status().isCreated())
                 .andReturn();
@@ -349,13 +370,13 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         return response.path("tokens").path("accessToken").asText();
     }
 
-    private JsonNode findSlotByCode(JsonNode slots, String slotCode) {
+    private JsonNode findSlot(JsonNode slots, int floorNo, int slotIndex) {
         for (JsonNode slot : slots) {
-            if (slot.path("slotCode").asText().equals(slotCode)) {
+            if (slot.path("floorNo").asInt() == floorNo && slot.path("slotIndex").asInt() == slotIndex) {
                 return slot;
             }
         }
-        throw new AssertionError("slot not found: " + slotCode);
+        throw new AssertionError("slot not found: floor=%d slot=%d".formatted(floorNo, slotIndex));
     }
 
     private JsonNode findBundleSummaryById(JsonNode summaries, UUID bundleId) {
@@ -367,14 +388,41 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         throw new AssertionError("bundle summary not found: " + bundleId);
     }
 
-    private void clearSlotBundles(String slotCode) {
+    private void clearSlotBundles(UUID slotId) {
         jdbcTemplate.update(
-                "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = (SELECT id FROM fridge_compartment WHERE slot_code = ?))",
-                slotCode
+                "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
+                slotId
         );
         jdbcTemplate.update(
-                "DELETE FROM fridge_bundle WHERE fridge_compartment_id = (SELECT id FROM fridge_compartment WHERE slot_code = ?)",
-                slotCode
+                "DELETE FROM fridge_bundle WHERE fridge_compartment_id = ?",
+                slotId
         );
+    }
+
+    private UUID fetchSlotId(int floorNo, int slotIndex) {
+        return jdbcTemplate.queryForObject(
+                """
+                        SELECT fc.id
+                        FROM fridge_compartment fc
+                        JOIN fridge_unit fu ON fu.id = fc.fridge_unit_id
+                        WHERE fu.floor_no = ? AND fc.slot_index = ?
+                        """,
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                floorNo,
+                slotIndex
+        );
+    }
+
+    private ResultSetExtractor<LabelSequenceState> singleLabelState() {
+        return rs -> rs.next() ? mapLabelState(rs) : null;
+    }
+
+    private LabelSequenceState mapLabelState(ResultSet rs) throws SQLException {
+        int nextNumber = rs.getInt("next_number");
+        String recycled = rs.getString("recycled_numbers");
+        return new LabelSequenceState(nextNumber, recycled);
+    }
+
+    private record LabelSequenceState(int nextNumber, String recycledNumbers) {
     }
 }

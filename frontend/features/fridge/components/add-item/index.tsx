@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useAddItemWorkflow, formatExpiryDisplay } from "./use-add-item-workflow"
 import { getCurrentUserId } from "@/lib/auth"
+import { formatCompartmentLabel } from "@/features/fridge/utils/labels"
 
 const LIST_SCROLL_BOX_HEIGHT = "clamp(240px, 35vh, 360px)"
 
@@ -39,42 +40,44 @@ export default function AddItemDialog({
   open = false,
   onOpenChange = () => {},
   slots = [],
-  currentSlotCode = "",
+  currentSlotId = "",
 }: {
   open?: boolean
   onOpenChange?: (v: boolean) => void
   slots?: Slot[]
-  currentSlotCode?: string
+  currentSlotId?: string
 }) {
   const { addBundle, bundles } = useFridge()
   const { toast } = useToast()
   const uid = getCurrentUserId()
 
-  const ownedSlotCodes = useMemo(() => {
+  const ownedSlotIds = useMemo(() => {
     if (!uid) return []
-    const codes = new Set<string>()
+    const ids = new Set<string>()
     bundles.forEach((bundle) => {
-      if (bundle.slotCode && bundle.ownerId && bundle.ownerId === uid) {
-        codes.add(bundle.slotCode)
-      } else if (bundle.slotCode && bundle.ownerUserId && bundle.ownerUserId === uid) {
-        codes.add(bundle.slotCode)
+      if (bundle.slotId && bundle.ownerId && bundle.ownerId === uid) {
+        ids.add(bundle.slotId)
+      } else if (bundle.slotId && bundle.ownerUserId && bundle.ownerUserId === uid) {
+        ids.add(bundle.slotId)
       } else if (!bundle.ownerId && bundle.owner === "me") {
-        codes.add(bundle.slotCode)
+        ids.add(bundle.slotId)
       }
     })
-    const activeCodes = Array.from(codes).filter((code) => {
-      const slot = slots.find((s) => s.code === code)
-      return slot ? slot.isActive !== false : true
+    const activeIds = Array.from(ids).filter((slotId) => {
+      const slot = slots.find((s) => s.slotId === slotId)
+      return slot ? slot.resourceStatus === "ACTIVE" : true
     })
-    activeCodes.sort((a, b) => {
-      const idxA = slots.findIndex((slot) => slot.code === a)
-      const idxB = slots.findIndex((slot) => slot.code === b)
-      return (idxA === -1 ? Number.MAX_SAFE_INTEGER : idxA) - (idxB === -1 ? Number.MAX_SAFE_INTEGER : idxB)
+    activeIds.sort((a, b) => {
+      const slotA = slots.find((slot) => slot.slotId === a)
+      const slotB = slots.find((slot) => slot.slotId === b)
+      const idxA = slotA ? slotA.slotIndex : Number.MAX_SAFE_INTEGER
+      const idxB = slotB ? slotB.slotIndex : Number.MAX_SAFE_INTEGER
+      return idxA - idxB
     })
-    return activeCodes
+    return activeIds
   }, [bundles, uid, slots])
 
-  const fallbackSlot = currentSlotCode || ownedSlotCodes[0] || slots[0]?.code || ""
+  const fallbackSlot = currentSlotId || ownedSlotIds[0] || slots[0]?.slotId || ""
 
   const closeDialog = useCallback(() => onOpenChange(false), [onOpenChange])
 
@@ -155,17 +158,19 @@ export default function AddItemDialog({
   }, [entries.length, listCollapsed])
 
   const selectedSlot = useMemo(
-    () => (metadataSlot ? slots.find((slot) => slot.code === metadataSlot) ?? null : null),
+    () => (metadataSlot ? slots.find((slot) => slot.slotId === metadataSlot) ?? null : null),
     [slots, metadataSlot],
   )
   const currentBundleCount = useMemo(() => {
     if (!metadataSlot) return 0
-    return bundles.filter((bundle) => bundle.slotCode === metadataSlot).length
+    return bundles.filter((bundle) => bundle.slotId === metadataSlot).length
   }, [bundles, metadataSlot])
   const slotCapacity = selectedSlot?.capacity ?? null
   const remainingCapacity = slotCapacity != null ? Math.max(slotCapacity - currentBundleCount, 0) : null
   const isSlotFull = slotCapacity != null && remainingCapacity <= 0
-  const selectedSlotLabel = selectedSlot?.label ?? (metadataSlot || "선택된 칸")
+  const selectedSlotLabel = selectedSlot
+    ? selectedSlot.displayName ?? formatCompartmentLabel(selectedSlot.slotIndex)
+    : metadataSlot
 
   const stepLabel = isMetadataStep ? "2 / 2" : "1 / 2"
   const headerTitle = isMetadataStep ? "포장 정보 입력" : "포장 목록"
@@ -296,7 +301,7 @@ export default function AddItemDialog({
                         <div className="min-w-0 flex-1">
                           <p className="truncate text-sm font-medium text-gray-900">{entry.name}</p>
                           <p className="text-xs text-muted-foreground">
-                            유통기한 {formatExpiryDisplay(entry.expiry)}{" "}
+                            유통기한 {formatExpiryDisplay(entry.expiryDate)}{" "}
                             <span className="ml-1 text-emerald-600">x{entry.qty}</span>
                           </p>
                         </div>
@@ -361,7 +366,7 @@ export default function AddItemDialog({
             {isMetadataStep ? (
               <MetadataFields
                 slots={slots}
-                slotCode={metadataSlot}
+                slotId={metadataSlot}
                 packName={packName}
                 packMemo={packMemo}
                 onChangeSlot={setMetadataSlot}
@@ -378,7 +383,7 @@ export default function AddItemDialog({
                 template={template}
                 onTemplateChange={handleTemplateChange}
                 onQuantityChange={(qty) => handleTemplateChange({ qty })}
-                onExpiryChange={(expiry) => handleTemplateChange({ expiry })}
+                onExpiryChange={(expiryDate) => handleTemplateChange({ expiryDate })}
                 onSubmit={handleSubmitForm}
                 nameInputRef={nameInputRef}
                 highlightName={nameFlash}
@@ -397,7 +402,7 @@ export default function AddItemDialog({
 
 function MetadataFields({
   slots,
-  slotCode,
+  slotId,
   packName,
   packMemo,
   onChangeSlot,
@@ -410,7 +415,7 @@ function MetadataFields({
   isSlotFull,
 }: {
   slots: Slot[]
-  slotCode: string
+  slotId: string
   packName: string
   packMemo: string
   onChangeSlot: (value: string) => void
@@ -429,7 +434,7 @@ function MetadataFields({
     <div className="space-y-4 pb-4">
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-700">보관 칸</p>
-        <SlotSelector value={slotCode} onChange={onChangeSlot} slots={slots} />
+        <SlotSelector value={slotId} onChange={onChangeSlot} slots={slots} />
         {capacityKnown && (
           <div
             className={cn(

@@ -10,36 +10,36 @@ import { useMemo, useState } from "react"
 import { AlertTriangle, Bell, Check } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
 import { formatShortDate } from "@/lib/date-utils"
-import { formatBundleLabel } from "@/features/fridge/utils/data-shaping"
+import { formatStickerLabel } from "@/features/fridge/utils/labels"
 
 export default function InspectorPanel({
   lastInspectionAt = 0,
   onSetInspectionNow = () => {},
   items = [],
-  slotCode = "",
+  slotId = "",
 }: {
   lastInspectionAt?: number
   onSetInspectionNow?: () => void
   items?: Item[]
-  slotCode?: string
+  slotId?: string
 }) {
   const { toast } = useToast()
   const [selectedIds, setSelected] = useState<string[]>([])
 
   const expired = useMemo(
-    () => items.filter((i) => daysLeft(i.expiry) < 0 && (slotCode ? i.slotCode === slotCode : true)),
-    [items, slotCode],
+    () => items.filter((i) => daysLeft(i.expiryDate) < 0 && (slotId ? i.slotId === slotId : true)),
+    [items, slotId],
   )
   const changedAfter = useMemo(
     () =>
       items.filter((i) => {
         const updatedAtMs = new Date(i.updatedAt).getTime()
-        const matchesSlot = slotCode ? i.slotCode === slotCode : true
+        const matchesSlot = slotId ? i.slotId === slotId : true
         if (!matchesSlot) return false
         if (!lastInspectionAt) return false
         return updatedAtMs > lastInspectionAt
       }),
-    [items, lastInspectionAt, slotCode],
+    [items, lastInspectionAt, slotId],
   )
 
   const toggle = (id: string) =>
@@ -61,11 +61,11 @@ export default function InspectorPanel({
           {expired.slice(0, 5).map((i) => (
             <Row
               key={i.unitId}
-              id={i.displayCode}
+              id={i.displayLabel}
               name={i.name}
-              label={i.bundleLabelDisplay ?? formatBundleLabel(i.slotCode, i.labelNumber)}
+              label={i.bundleLabelDisplay ?? formatStickerLabel(i.slotIndex, i.labelNumber)}
               onToggle={toggle}
-              selected={selectedIds.includes(i.displayCode)}
+              selected={selectedIds.includes(i.displayLabel)}
             />
           ))}
           {expired.length > 5 && <More text={`외 ${expired.length - 5}건 더 보기`} />}
@@ -76,11 +76,11 @@ export default function InspectorPanel({
           {changedAfter.slice(0, 5).map((i) => (
             <Row
               key={i.unitId}
-              id={i.displayCode}
+              id={i.displayLabel}
               name={i.name}
-              label={i.bundleLabelDisplay ?? formatBundleLabel(i.slotCode, i.labelNumber)}
+              label={i.bundleLabelDisplay ?? formatStickerLabel(i.slotIndex, i.labelNumber)}
               onToggle={toggle}
-              selected={selectedIds.includes(i.displayCode)}
+              selected={selectedIds.includes(i.displayLabel)}
             />
           ))}
           {changedAfter.length > 5 && <More text={`외 ${changedAfter.length - 5}건 더 보기`} />}

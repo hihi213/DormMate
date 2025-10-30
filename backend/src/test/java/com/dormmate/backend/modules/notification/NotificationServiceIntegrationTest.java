@@ -56,6 +56,9 @@ class NotificationServiceIntegrationTest extends AbstractPostgresIntegrationTest
 
     @BeforeEach
     void setUp() {
+        notificationPreferenceRepository.deleteAll();
+        notificationRepository.deleteAll();
+
         String uniqueSuffix = UUID.randomUUID().toString();
 
         targetUser = new DormUser();
@@ -70,7 +73,8 @@ class NotificationServiceIntegrationTest extends AbstractPostgresIntegrationTest
     @Test
     @DisplayName("검사 결과 알림이 경고/폐기 대상 사용자에게 생성된다")
     void sendInspectionResultNotifications_createsNotification() {
-        InspectionSession session = buildSession(101L,
+        UUID sessionId = UUID.fromString("00000000-0000-0000-0000-000000000101");
+        InspectionSession session = buildSession(sessionId,
                 buildAction(InspectionActionType.WARN_INFO_MISMATCH),
                 buildAction(InspectionActionType.DISPOSE_EXPIRED));
 
@@ -81,7 +85,7 @@ class NotificationServiceIntegrationTest extends AbstractPostgresIntegrationTest
 
         Notification saved = notifications.getFirst();
         assertThat(saved.getUser().getId()).isEqualTo(targetUser.getId());
-        assertThat(saved.getMetadata()).containsEntry("sessionId", 101L);
+        assertThat(saved.getMetadata()).containsEntry("sessionId", sessionId);
         assertThat(saved.getTtlAt()).isAfter(OffsetDateTime.now(ZoneOffset.UTC));
 
         // 중복 방지 확인
@@ -93,22 +97,23 @@ class NotificationServiceIntegrationTest extends AbstractPostgresIntegrationTest
     @DisplayName("알림 수신이 비활성화된 사용자는 알림이 생성되지 않는다")
     void sendInspectionResultNotifications_respectsPreference() {
         NotificationPreference preference = new NotificationPreference(
-                new NotificationPreferenceId(targetUser.getId(), "FRIDGE_INSPECTION_RESULT"),
+                new NotificationPreferenceId(targetUser.getId(), "FRIDGE_RESULT"),
                 targetUser
         );
         preference.setEnabled(false);
         notificationPreferenceRepository.save(preference);
 
-        InspectionSession session = buildSession(202L, buildAction(InspectionActionType.WARN_STORAGE_POOR));
+        UUID sessionId = UUID.fromString("00000000-0000-0000-0000-000000000202");
+        InspectionSession session = buildSession(sessionId, buildAction(InspectionActionType.WARN_STORAGE_POOR));
 
         notificationService.sendInspectionResultNotifications(session);
 
         Optional<Notification> notification = notificationRepository.findByUserIdAndDedupeKey(targetUser.getId(),
-                "202:" + targetUser.getId());
+                "FRIDGE_RESULT:" + sessionId + ":" + targetUser.getId());
         assertThat(notification).isEmpty();
     }
 
-    private InspectionSession buildSession(Long id, InspectionAction... actions) {
+    private InspectionSession buildSession(UUID id, InspectionAction... actions) {
         InspectionSession session = new InspectionSession();
         setField(session, "id", id);
         session.setStartedAt(OffsetDateTime.now(ZoneOffset.UTC));

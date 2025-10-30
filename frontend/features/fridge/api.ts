@@ -1,5 +1,5 @@
 import { safeApiCall } from "@/lib/api-client"
-import type { Bundle, ItemPriority, ItemUnit, Slot } from "@/features/fridge/types"
+import type { Bundle, ItemUnit, Slot } from "@/features/fridge/types"
 import {
   BundleListResponseDto,
   FridgeBundleDto,
@@ -80,16 +80,15 @@ export async function fetchFridgeInventory(
 
 type CreateBundleUnitInput = {
   name: string
-  expiry: string
+  expiryDate: string
   quantity?: number
-  priority?: ItemPriority
-  memo?: string
+  unitCode?: string | null
 }
 
 export type CreateBundlePayload = {
-  slotCode: string
+  slotId: string
   bundleName: string
-  memo?: string
+  memo?: string | null
   units: CreateBundleUnitInput[]
 }
 
@@ -98,22 +97,20 @@ type CreateBundleResponseDto = {
 }
 
 const normalizeDate = (value: string) => (value?.length ? value.slice(0, 10) : value)
-const normalizePriority = (priority?: ItemPriority | null) => priority?.toUpperCase()
 
 export async function createBundle(
   payload: CreateBundlePayload,
   currentUserId?: string,
 ): Promise<{ bundle: Bundle; units: ItemUnit[] }> {
   const body = {
-    slotCode: payload.slotCode,
+    slotId: payload.slotId,
     bundleName: payload.bundleName,
     memo: payload.memo ?? undefined,
     items: payload.units.map((unit) => ({
       name: unit.name,
-      expiryDate: normalizeDate(unit.expiry),
+      expiryDate: normalizeDate(unit.expiryDate),
       quantity: unit.quantity ?? 1,
-      priority: normalizePriority(unit.priority),
-      memo: unit.memo ?? undefined,
+      unitCode: unit.unitCode ?? undefined,
     })),
   }
 
@@ -162,10 +159,10 @@ export async function updateBundle(
 
 export type UpdateItemPayload = {
   name?: string
-  expiry?: string
+  expiryDate?: string
   quantity?: number
-  priority?: ItemPriority
-  memo?: string
+  unitCode?: string | null
+  memo?: string | null
   removedAt?: string | null
 }
 
@@ -176,9 +173,9 @@ export async function updateItem(
 ): Promise<ItemUnit> {
   const body = {
     name: payload.name?.trim(),
-    expiryDate: payload.expiry ? normalizeDate(payload.expiry) : undefined,
+    expiryDate: payload.expiryDate ? normalizeDate(payload.expiryDate) : undefined,
     quantity: payload.quantity,
-    priority: normalizePriority(payload.priority),
+    unitCode: payload.unitCode ?? undefined,
     memo: payload.memo ?? undefined,
     removedAt: payload.removedAt ?? undefined,
   }

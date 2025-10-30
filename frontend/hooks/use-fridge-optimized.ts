@@ -11,18 +11,18 @@ export function useFilteredItems(filters: FilterOptions) {
     const query = filters.searchQuery?.trim().toLowerCase() ?? ""
 
     const matchesBaseFilters = (item: Item) => {
-      if (filters.slotCode && item.slotCode !== filters.slotCode) return false
-      if (typeof filters.resourceId === "number" && item.resourceId !== filters.resourceId) return false
+      if (filters.slotId && item.slotId !== filters.slotId) return false
+      if (typeof filters.slotIndex === "number" && item.resourceId !== filters.slotIndex) return false
 
       switch (filters.tab) {
         case "mine":
           if (item.owner !== "me") return false
           break
         case "expiring":
-          if (resolveStatus(item.expiry) !== "expiring") return false
+          if (resolveStatus(item.expiryDate) !== "expiring") return false
           break
         case "expired":
-          if (resolveStatus(item.expiry) !== "expired") return false
+          if (resolveStatus(item.expiryDate) !== "expired") return false
           break
         default:
           break
@@ -64,10 +64,10 @@ export function useFilteredItems(filters: FilterOptions) {
           aValue = new Date(a.createdAt).getTime()
           bValue = new Date(b.createdAt).getTime()
           break
-        case "expiry":
+        case "expiryDate":
         default:
-          aValue = new Date(a.expiry).getTime()
-          bValue = new Date(b.expiry).getTime()
+          aValue = new Date(a.expiryDate).getTime()
+          bValue = new Date(b.expiryDate).getTime()
           break
       }
 
@@ -90,12 +90,12 @@ export function useFridgeStats() {
 
   return useMemo(() => {
     const total = items.length
-    const expired = items.filter((item) => resolveStatus(item.expiry) === "expired").length
-    const expiringSoon = items.filter((item) => resolveStatus(item.expiry) === "expiring").length
-    const fresh = items.filter((item) => resolveStatus(item.expiry) === "ok").length
+    const expired = items.filter((item) => resolveStatus(item.expiryDate) === "expired").length
+    const expiringSoon = items.filter((item) => resolveStatus(item.expiryDate) === "expiring").length
+    const fresh = items.filter((item) => resolveStatus(item.expiryDate) === "ok").length
 
     const bySlot = items.reduce<Record<string, number>>((acc, item) => {
-      const key = item.slotCode
+      const key = item.slotId
       acc[key] = (acc[key] || 0) + 1
       return acc
     }, {})
@@ -122,7 +122,7 @@ export function useItemsBySlot() {
 
   return useMemo(() => {
     const grouped = items.reduce<Record<string, Item[]>>((acc, item) => {
-      const key = item.slotCode || `resource-${item.resourceId}`
+      const key = item.slotId || `slot-${item.slotIndex}`
       if (!acc[key]) {
         acc[key] = []
       }
@@ -130,9 +130,9 @@ export function useItemsBySlot() {
       return acc
     }, {})
 
-    return slots.map(slot => ({
+    return slots.map((slot) => ({
       slot,
-      items: grouped[slot.code] || [],
+      items: grouped[slot.slotId] || [],
     }))
   }, [items, slots])
 }
@@ -152,20 +152,19 @@ export function useBundles() {
       }
     })
 
-    return Array.from(bundleMap.entries()).map(([bundleId, items]) => ({
+    return Array.from(bundleMap.entries()).map(([bundleId, groupedItems]) => ({
       bundleId,
-      items,
-      bundleCode: items[0]?.bundleLabelDisplay || "",
-      slotCode: items[0]?.slotCode || "",
-      name: items[0]?.bundleName || "",
-      count: items.length,
+      items: groupedItems,
+      bundleCode: groupedItems[0]?.bundleLabelDisplay || "",
+      slotLabel: groupedItems[0]?.slotLetter || "",
+      name: groupedItems[0]?.bundleName || "",
+      count: groupedItems.length,
     }))
   }, [items])
 }
 
 const derivePriority = (item: Item): ItemPriority => {
-  if (item.priority) return item.priority
-  const diff = daysLeft(item.expiry)
+  const diff = daysLeft(item.expiryDate)
   if (diff <= 1) return "high"
   if (diff <= 3) return "medium"
   return "low"

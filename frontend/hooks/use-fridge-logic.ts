@@ -8,8 +8,8 @@ const isMineFor = (item: Item, currentUserId?: string) => {
 }
 
 export function useFridgeLogic(items: Item[], slots: Slot[], currentUserId?: string) {
-  const getItemStatus = useCallback((expiry: string): ItemStatus => {
-    const days = daysLeft(expiry)
+  const getItemStatus = useCallback((expiryDate: string): ItemStatus => {
+    const days = daysLeft(expiryDate)
     if (days < 0) return "expired"
     if (days <= 3) return "expiring"
     return "ok"
@@ -18,7 +18,7 @@ export function useFridgeLogic(items: Item[], slots: Slot[], currentUserId?: str
   const itemsWithStatus = useMemo(() => {
     return items.map((item) => ({
       ...item,
-      status: getItemStatus(item.expiry),
+      status: getItemStatus(item.expiryDate),
     }))
   }, [items, getItemStatus])
 
@@ -40,8 +40,8 @@ export function useFridgeLogic(items: Item[], slots: Slot[], currentUserId?: str
             break
         }
 
-        if (options.slotCode && item.slotCode !== options.slotCode) return false
         if (options.slotId && item.slotId !== options.slotId) return false
+        if (typeof options.slotIndex === "number" && item.slotIndex !== options.slotIndex) return false
 
         if (options.myOnly && !mine) return false
         return true
@@ -79,10 +79,10 @@ export function useFridgeLogic(items: Item[], slots: Slot[], currentUserId?: str
             aValue = new Date(a.createdAt).getTime()
             bValue = new Date(b.createdAt).getTime()
             break
-          case "expiry":
+          case "expiryDate":
           default:
-            aValue = new Date(a.expiry).getTime()
-            bValue = new Date(b.expiry).getTime()
+            aValue = new Date(a.expiryDate).getTime()
+            bValue = new Date(b.expiryDate).getTime()
             break
         }
 
@@ -112,7 +112,7 @@ export function useFridgeLogic(items: Item[], slots: Slot[], currentUserId?: str
     }
 
     items.forEach((item) => {
-      const key = item.slotCode
+      const key = item.slotId
       stats.bySlot[key] = (stats.bySlot[key] || 0) + 1
     })
 
@@ -138,10 +138,12 @@ export function useFridgeLogic(items: Item[], slots: Slot[], currentUserId?: str
         bundleId,
         items: list.sort((a, b) => a.seqNo - b.seqNo),
         name: first?.bundleName ?? "포장",
-        slotCode: first?.slotCode ?? "",
+        slotId: first?.slotId ?? "",
+        slotIndex: first?.slotIndex ?? 0,
         earliestExpiry: list.reduce(
-          (earliest, unit) => (new Date(unit.expiry) < new Date(earliest) ? unit.expiry : earliest),
-          first?.expiry ?? new Date().toISOString().slice(0, 10),
+          (earliest, unit) =>
+            new Date(unit.expiryDate) < new Date(earliest) ? unit.expiryDate : earliest,
+          first?.expiryDate ?? new Date().toISOString().slice(0, 10),
         ),
       }
     })
@@ -157,7 +159,7 @@ export function useFridgeLogic(items: Item[], slots: Slot[], currentUserId?: str
   const getExpiringItems = useCallback(
     (daysThreshold = 3) => {
       return itemsWithStatus.filter((item) => {
-        const days = daysLeft(item.expiry)
+        const days = daysLeft(item.expiryDate)
         return days >= 0 && days <= daysThreshold
       })
     },

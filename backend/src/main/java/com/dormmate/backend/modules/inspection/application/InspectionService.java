@@ -8,7 +8,6 @@ import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -29,6 +28,7 @@ import com.dormmate.backend.modules.fridge.domain.FridgeBundleStatus;
 import com.dormmate.backend.modules.fridge.domain.FridgeCompartment;
 import com.dormmate.backend.modules.fridge.domain.FridgeItem;
 import com.dormmate.backend.modules.fridge.domain.FridgeItemStatus;
+import com.dormmate.backend.modules.fridge.domain.LabelFormatter;
 import com.dormmate.backend.modules.inspection.domain.InspectionAction;
 import com.dormmate.backend.modules.inspection.domain.InspectionActionItem;
 import com.dormmate.backend.modules.inspection.domain.InspectionActionType;
@@ -48,7 +48,6 @@ import com.dormmate.backend.global.security.SecurityUtils;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.util.StringUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
@@ -89,9 +88,6 @@ public class InspectionService {
 
         FridgeCompartment compartment = fridgeCompartmentRepository.findById(request.slotId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SLOT_NOT_FOUND"));
-        if (StringUtils.hasText(request.slotCode()) && !Objects.equals(compartment.getSlotCode(), request.slotCode())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SLOT_CODE_MISMATCH");
-        }
 
         boolean alreadyActive = inspectionSessionRepository
                 .findByFridgeCompartmentAndStatus(compartment, InspectionStatus.IN_PROGRESS)
@@ -111,6 +107,9 @@ public class InspectionService {
         session.setStatus(InspectionStatus.IN_PROGRESS);
         session.setStartedAt(now);
 
+        compartment.setLocked(true);
+        compartment.setLockedUntil(now.plusHours(2));
+
         InspectionParticipant participant = new InspectionParticipant();
         participant.setInspectionSession(session);
         participant.setDormUser(currentUser);
@@ -127,7 +126,7 @@ public class InspectionService {
         List<InspectionSession> sessions = inspectionSessionRepository.findByStatus(InspectionStatus.IN_PROGRESS);
         sessions = sessions.stream()
                 .filter(session -> floor == null
-                        || session.getFridgeCompartment().getFridgeUnit().getFloor() == floor.shortValue())
+                        || session.getFridgeCompartment().getFridgeUnit().getFloorNo() == floor.shortValue())
                 .sorted(Comparator.comparing(InspectionSession::getStartedAt))
                 .toList();
         if (sessions.isEmpty()) {
@@ -137,13 +136,13 @@ public class InspectionService {
     }
 
     @Transactional(readOnly = true)
-    public InspectionSessionResponse getSession(Long sessionId) {
+    public InspectionSessionResponse getSession(UUID sessionId) {
         InspectionSession session = inspectionSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND"));
         return mapSession(session);
     }
 
-    public void cancelSession(Long sessionId) {
+    public void cancelSession(UUID sessionId) {
         InspectionSession session = inspectionSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND"));
         ensureManagerRole();
@@ -153,10 +152,12 @@ public class InspectionService {
         OffsetDateTime now = OffsetDateTime.now(clock);
         session.setStatus(InspectionStatus.CANCELLED);
         session.setEndedAt(now);
+        session.getFridgeCompartment().setLocked(false);
+        session.getFridgeCompartment().setLockedUntil(null);
         inspectionSessionRepository.save(session);
     }
 
-    public InspectionSessionResponse recordActions(Long sessionId, InspectionActionRequest request) {
+    public InspectionSessionResponse recordActions(UUID sessionId, InspectionActionRequest request) {
         InspectionSession session = inspectionSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND"));
         ensureManagerRole();
@@ -201,17 +202,15 @@ public class InspectionService {
                 actionItem.setInspectionAction(action);
                 actionItem.setFridgeItem(item);
                 actionItem.setSnapshotName(item.getItemName());
-                actionItem.setSnapshotExpiresOn(item.getExpiresOn());
+                actionItem.setSnapshotExpiresOn(item.getExpiryDate());
                 actionItem.setQuantityAtAction(item.getQuantity());
                 action.getItems().add(actionItem);
             }
 
             if (actionType == InspectionActionType.DISPOSE_EXPIRED && item != null) {
-                item.setStatus(FridgeItemStatus.REMOVED);
+                item.setStatus(FridgeItemStatus.DELETED);
                 item.setDeletedAt(now);
-                item.setLastModifiedAt(now);
-                item.setLastModifiedBy(currentUser);
-                item.setPostInspectionModified(true);
+                item.setUpdatedAfterInspection(true);
                 fridgeItemRepository.save(item);
             }
         }
@@ -220,7 +219,7 @@ public class InspectionService {
         return mapSession(session);
     }
 
-    public InspectionSessionResponse submitSession(Long sessionId, SubmitInspectionRequest request) {
+    public InspectionSessionResponse submitSession(UUID sessionId, SubmitInspectionRequest request) {
         InspectionSession session = inspectionSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND"));
         ensureManagerRole();
@@ -238,6 +237,8 @@ public class InspectionService {
         session.setNotes(request != null ? request.notes() : null);
         session.setTotalBundleCount(fridgeBundleRepository
                 .findByFridgeCompartmentAndStatus(session.getFridgeCompartment(), FridgeBundleStatus.ACTIVE).size());
+        session.getFridgeCompartment().setLocked(false);
+        session.getFridgeCompartment().setLockedUntil(null);
 
         InspectionSession saved = inspectionSessionRepository.save(session);
         notificationService.sendInspectionResultNotifications(saved);
@@ -285,12 +286,17 @@ public class InspectionService {
 
         List<InspectionActionSummaryResponse> summaries = buildSummary(session);
 
-        String floorCode = compartment.getFridgeUnit().getFloor() + "F";
+        int slotIndex = compartment.getSlotIndex();
+        String slotLetter = LabelFormatter.toSlotLetter(slotIndex);
+        int floorNo = compartment.getFridgeUnit().getFloorNo();
+        String floorCode = floorNo + "F";
 
         return new InspectionSessionResponse(
                 session.getId(),
                 compartment.getId(),
-                compartment.getSlotCode(),
+                slotIndex,
+                slotLetter,
+                floorNo,
                 floorCode,
                 session.getStatus().name(),
                 session.getStartedBy().getId(),

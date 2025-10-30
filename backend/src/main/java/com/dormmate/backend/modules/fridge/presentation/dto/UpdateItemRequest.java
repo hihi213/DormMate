@@ -9,8 +9,7 @@ public record UpdateItemRequest(
         @Size(min = 1, max = 120) String name,
         LocalDate expiryDate,
         @Min(1) Integer quantity,
-        String priority,
-        String memo,
+        String unitCode,
         java.time.OffsetDateTime removedAt
 ) {
 }

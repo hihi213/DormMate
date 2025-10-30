@@ -15,9 +15,11 @@ export type InspectionActionSummary = {
 }
 
 export type InspectionSession = {
-  sessionId: number
-  slotId?: string
-  slotCode: string
+  sessionId: string
+  slotId: string
+  slotIndex: number
+  slotLetter: string
+  floorNo: number
   floorCode?: string | null
   status: InspectionStatus
   startedBy: string
@@ -42,4 +44,3 @@ export type InspectionSubmitPayload = {
 }
 
 export type AvailableSlot = Slot
-

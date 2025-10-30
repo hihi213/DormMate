@@ -14,7 +14,7 @@ import { getCurrentUserId } from "@/lib/auth"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { ExpiryInput } from "@/components/shared/expiry-input"
-import { formatBundleLabel } from "@/features/fridge/utils/data-shaping"
+import { formatStickerLabel } from "@/features/fridge/utils/labels"
 import { formatShortDate } from "@/lib/date-utils"
 
 export default function BundleDetailSheet({
@@ -35,11 +35,11 @@ export default function BundleDetailSheet({
   const group = useMemo(() => items.filter((x) => x.bundleId === bundleId), [items, bundleId])
   const first = group[0]
   const bundleName = first?.bundleName ?? "묶음"
-  const groupCode = first ? formatBundleLabel(first.slotCode, first.labelNumber) : ""
+  const groupCode = first ? formatStickerLabel(first.slotIndex, first.labelNumber) : ""
   const representativeMemo = first?.bundleMemo || ""
   const canManage = first && first.ownerId ? uid === first.ownerId : false
 
-  const sorted = useMemo(() => group.slice().sort((a, b) => daysLeft(a.expiry) - daysLeft(b.expiry)), [group])
+  const sorted = useMemo(() => group.slice().sort((a, b) => daysLeft(a.expiryDate) - daysLeft(b.expiryDate)), [group])
   const [bundleNameDraft, setBundleNameDraft] = useState(bundleName)
   const [memoDraft, setMemoDraft] = useState(representativeMemo)
   const [infoEditing, setInfoEditing] = useState(false)
@@ -47,7 +47,7 @@ export default function BundleDetailSheet({
   const [bundleRemoving, setBundleRemoving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null)
-  const [itemDraft, setItemDraft] = useState<{ name: string; expiry: string } | null>(null)
+  const [itemDraft, setItemDraft] = useState<{ name: string; expiryDate: string } | null>(null)
 
 useEffect(() => {
   if (!infoEditing) {
@@ -64,7 +64,7 @@ useEffect(() => {
 useEffect(() => {
   if (initialEdit && sorted.length > 0) {
     setEditingUnitId(sorted[0].unitId)
-    setItemDraft({ name: splitDetail(sorted[0].name, bundleName)[0], expiry: sorted[0].expiry })
+    setItemDraft({ name: splitDetail(sorted[0].name, bundleName)[0], expiryDate: sorted[0].expiryDate })
   } else if (!initialEdit) {
     setEditingUnitId(null)
     setItemDraft(null)
@@ -183,10 +183,10 @@ const handleDeleteBundle = async () => {
   }
 }
 
-const beginEditItem = (unitId: string, currentName: string, currentExpiry: string) => {
+const beginEditItem = (unitId: string, currentName: string, currentExpiryDate: string) => {
   const [detailName] = splitDetail(currentName, bundleName)
   setEditingUnitId(unitId)
-  setItemDraft({ name: detailName, expiry: currentExpiry })
+  setItemDraft({ name: detailName, expiryDate: currentExpiryDate })
 }
 
 const cancelEditItem = () => {
@@ -208,7 +208,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
     const newName = useBundlePrefix ? `${bundleName} - ${nameTrimmed}` : nameTrimmed
     const result = await updateItem(unitId, {
       name: newName,
-      expiry: itemDraft.expiry,
+      expiryDate: itemDraft.expiryDate,
     })
     if (result.success) {
       toast({
@@ -342,16 +342,16 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
               <Card>
                 <CardContent className="py-3 space-y-3">
                   {sorted.map((it) => {
-                    const d = daysLeft(it.expiry)
+                    const d = daysLeft(it.expiryDate)
                     const dText = ddayLabel(d)
                     const statusColor = d < 0 ? "text-rose-600" : d <= 1 ? "text-amber-600" : "text-emerald-700"
                     const [detailName, suffix] = splitDetail(it.name, bundleName)
                     const isEditing = canManage && editingUnitId === it.unitId
                     const draftName = isEditing && itemDraft ? itemDraft.name : detailName
-                    const draftExpiry = isEditing && itemDraft ? itemDraft.expiry : it.expiry
-                    const displayCode =
-                      it.displayCode ??
-                      `${it.bundleLabelDisplay ?? formatBundleLabel(it.slotCode, it.labelNumber)}-${String(it.seqNo).padStart(2, "0")}`
+                    const draftExpiry = isEditing && itemDraft ? itemDraft.expiryDate : it.expiryDate
+                    const displayLabel =
+                      it.displayLabel ??
+                      `${it.bundleLabelDisplay ?? formatStickerLabel(it.slotIndex, it.labelNumber)}-${String(it.seqNo).padStart(2, "0")}`
                     const showItemMemo = it.memo && it.memo !== representativeMemo
                     return (
                       <div key={it.unitId} className="rounded-md border p-3 space-y-3">
@@ -367,7 +367,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                       setItemDraft((prev) =>
                                         prev
                                           ? { ...prev, name: e.target.value }
-                                          : { name: e.target.value, expiry: draftExpiry },
+                                          : { name: e.target.value, expiryDate: draftExpiry },
                                       )
                                     }
                                   />
@@ -380,7 +380,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                     value={draftExpiry}
                                     onChange={(next) =>
                                       setItemDraft((prev) =>
-                                        prev ? { ...prev, expiry: next } : { name: draftName, expiry: next },
+                                        prev ? { ...prev, expiryDate: next } : { name: draftName, expiryDate: next },
                                       )
                                     }
                                     presets={[]}
@@ -397,7 +397,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                 <div className="flex flex-wrap items-center gap-2">
                                   <span className="text-base font-semibold truncate">{detailName}</span>
                                   <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[11px] text-slate-600">
-                                    {displayCode}
+                                    {displayLabel}
                                   </span>
                                   {it.quantity != null && (
                                     <span className="rounded-full border border-emerald-200 px-2 py-0.5 text-[11px] text-emerald-700">
@@ -405,7 +405,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                     </span>
                                   )}
                                 </div>
-                                <div className={`text-sm ${statusColor}`}>{`${formatShortDate(it.expiry)} • ${dText}`}</div>
+                                <div className={`text-sm ${statusColor}`}>{`${formatShortDate(it.expiryDate)} • ${dText}`}</div>
                                 {showItemMemo && (
                                   <p className="text-xs text-muted-foreground">{`메모: ${it.memo}`}</p>
                                 )}
@@ -438,7 +438,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                   variant="ghost"
                                   size="icon"
                                   aria-label="수정"
-                                  onClick={() => beginEditItem(it.unitId, it.name, it.expiry)}
+                                  onClick={() => beginEditItem(it.unitId, it.name, it.expiryDate)}
                                 >
                                   <Pencil className="size-4" />
                                 </Button>

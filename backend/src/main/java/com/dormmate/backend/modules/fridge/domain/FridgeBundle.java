@@ -39,18 +39,14 @@ public class FridgeBundle extends AbstractTimestampedEntity {
     @JoinColumn(name = "fridge_compartment_id", nullable = false)
     private FridgeCompartment fridgeCompartment;
 
-    @Column(name = "label_code", nullable = false, length = 3)
-    private String labelCode;
+    @Column(name = "label_number", nullable = false)
+    private int labelNumber;
 
     @Column(name = "bundle_name", nullable = false, length = 120)
     private String bundleName;
 
     @Column(name = "memo")
     private String memo;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "visibility", nullable = false, length = 16)
-    private BundleVisibility visibility = BundleVisibility.OWNER_ONLY;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 16)
@@ -82,12 +78,12 @@ public class FridgeBundle extends AbstractTimestampedEntity {
         this.fridgeCompartment = fridgeCompartment;
     }
 
-    public String getLabelCode() {
-        return labelCode;
+    public int getLabelNumber() {
+        return labelNumber;
     }
 
-    public void setLabelCode(String labelCode) {
-        this.labelCode = labelCode;
+    public void setLabelNumber(int labelNumber) {
+        this.labelNumber = labelNumber;
     }
 
     public String getBundleName() {
@@ -104,14 +100,6 @@ public class FridgeBundle extends AbstractTimestampedEntity {
 
     public void setMemo(String memo) {
         this.memo = memo;
-    }
-
-    public BundleVisibility getVisibility() {
-        return visibility;
-    }
-
-    public void setVisibility(BundleVisibility visibility) {
-        this.visibility = visibility;
     }
 
     public FridgeBundleStatus getStatus() {

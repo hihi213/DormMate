@@ -85,7 +85,7 @@ function MergedByUrgency({
     } else if (j >= bundlesLen) {
       rows.push({ kind: "single", item: singles[i++] })
     } else {
-      if (singles[i].expiry <= bundles[j][0].expiry) rows.push({ kind: "single", item: singles[i++] })
+      if (singles[i].expiryDate <= bundles[j][0].expiryDate) rows.push({ kind: "single", item: singles[i++] })
       else rows.push({ kind: "bundle", items: bundles[j++] })
     }
   }
@@ -95,7 +95,7 @@ function MergedByUrgency({
       {rows.map((row) => {
         if (row.kind === "single") {
           const it = row.item
-          const status = resolveStatus(it.expiry)
+          const status = resolveStatus(it.expiryDate)
           const isMine = it.ownerId ? uid === it.ownerId : it.owner === "me"
 
           return (
@@ -118,7 +118,7 @@ function MergedByUrgency({
                     if (result.success) {
                       toast({
                         title: "삭제됨",
-                        description: `${it.bundleLabelDisplay || it.displayCode} 항목이 삭제되었습니다.`,
+                        description: `${it.bundleLabelDisplay || it.displayLabel} 항목이 삭제되었습니다.`,
                       })
                     } else {
                       toast({
@@ -147,7 +147,7 @@ function MergedByUrgency({
           const grp = row.items
           const first = grp[0]
           const bundleName = first.bundleName
-          const status = resolveStatus(grp[0].expiry) // earliest after sort
+          const status = resolveStatus(grp[0].expiryDate) // earliest after sort
           const count = grp.length
           const isMine = first.ownerId ? uid === first.ownerId : false
 

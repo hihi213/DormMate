@@ -3,6 +3,7 @@ package com.dormmate.backend.modules.inspection.domain;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import com.dormmate.backend.global.jpa.AbstractTimestampedEntity;
 import com.dormmate.backend.modules.auth.domain.DormUser;
@@ -14,22 +15,22 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.FetchType;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.OneToMany;
 import jakarta.persistence.Table;
 
+import org.hibernate.annotations.UuidGenerator;
+
 @Entity
 @Table(name = "inspection_session")
 public class InspectionSession extends AbstractTimestampedEntity {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false, updatable = false)
-    private Long id;
+    @UuidGenerator
+    @Column(name = "id", nullable = false, updatable = false, columnDefinition = "uuid")
+    private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "fridge_compartment_id", nullable = false)
@@ -71,7 +72,7 @@ public class InspectionSession extends AbstractTimestampedEntity {
     @OneToMany(mappedBy = "inspectionSession", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     private List<UnregisteredItemEvent> unregisteredItems = new ArrayList<>();
 
-    public Long getId() {
+    public UUID getId() {
         return id;
     }
 

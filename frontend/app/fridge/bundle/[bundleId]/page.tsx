@@ -5,7 +5,7 @@ import type { ReactNode } from "react"
 import { useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import { FridgeProvider, useFridge } from "@/features/fridge/hooks/fridge-context"
-import { formatBundleLabel } from "@/features/fridge/utils/data-shaping"
+import { formatStickerLabel } from "@/features/fridge/utils/labels"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { ArrowLeft, CalendarDays, Loader2, Pencil, Trash2 } from "lucide-react"
@@ -43,11 +43,11 @@ function BundleInner() {
   const group = useMemo(() => items.filter((x) => x.bundleId === bundleId), [items, bundleId])
   const first = group[0]
   const bundleName = first?.bundleName ?? "묶음"
-  const groupCode = first ? formatBundleLabel(first.slotCode, first.labelNumber) : ""
+  const groupCode = first ? formatStickerLabel(first.slotIndex, first.labelNumber) : ""
   const canManage = first && first.ownerId ? uid === first.ownerId : false
 
   // Sorted detail items by urgency
-  const sorted = useMemo(() => group.slice().sort((a, b) => daysLeft(a.expiry) - daysLeft(b.expiry)), [group])
+  const sorted = useMemo(() => group.slice().sort((a, b) => daysLeft(a.expiryDate) - daysLeft(b.expiryDate)), [group])
 
   if (group.length === 0) {
     return (
@@ -96,7 +96,7 @@ function BundleInner() {
         <Card>
           <CardContent className="py-3 space-y-2">
             {sorted.map((it) => {
-              const d = daysLeft(it.expiry)
+              const d = daysLeft(it.expiryDate)
               const dText = ddayLabel(d)
               const statusColor = d < 0 ? "text-rose-600" : d <= 1 ? "text-amber-600" : "text-emerald-700"
               const [detailName, suffix] = splitDetail(it.name, bundleName)
@@ -105,20 +105,21 @@ function BundleInner() {
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0">
                       <div className="text-sm font-medium truncate">{detailName}</div>
+                      <div className="mt-0.5 text-xs text-muted-foreground">{formatStickerLabel(it.slotIndex, it.labelNumber)}</div>
                       <div className={`mt-0.5 inline-flex items-center gap-1 text-sm ${statusColor}`}>
                         <CalendarDays className="size-4" />
-                        <span>{`${formatShortDate(it.expiry)} • ${dText}`}</span>
+                        <span>{`${formatShortDate(it.expiryDate)} • ${dText}`}</span>
                       </div>
                       {canManage && edit && (
                         <EditRow
-                          value={{ name: detailName, expiry: it.expiry, memo: it.memo || "" }}
+                          value={{ name: detailName, expiryDate: it.expiryDate, memo: it.memo || "" }}
                           saving={savingId === it.unitId}
                           onSave={async (v) => {
                             if (savingId) return
                             setSavingId(it.unitId)
                             const result = await updateItem(it.unitId, {
                               name: suffix ? `${bundleName} - ${v.name}` : `${bundleName} - ${v.name}`,
-                              expiry: v.expiry,
+                              expiryDate: v.expiryDate,
                               memo: v.memo || undefined,
                             })
                             setSavingId(null)
@@ -219,8 +220,8 @@ function EditRow({
   onSave = async () => {},
   saving = false,
 }: {
-  value: { name: string; expiry: string; memo: string }
-  onSave?: (v: { name: string; expiry: string; memo: string }) => void | Promise<unknown>
+  value: { name: string; expiryDate: string; memo: string }
+  onSave?: (v: { name: string; expiryDate: string; memo: string }) => void | Promise<unknown>
   saving?: boolean
 }) {
   const [v, setV] = useState(value)
@@ -248,9 +249,9 @@ function EditRow({
         <Label className="text-xs">{"유통기한"}</Label>
         <Input
           type="date"
-          value={v.expiry}
+          value={v.expiryDate}
           min={toISO(new Date())}
-          onChange={(e) => setV((p) => ({ ...p, expiry: e.target.value }))}
+          onChange={(e) => setV((p) => ({ ...p, expiryDate: e.target.value }))}
         />
       </div>
       <div>

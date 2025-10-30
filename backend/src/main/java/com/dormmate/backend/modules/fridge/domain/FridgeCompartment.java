@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import com.dormmate.backend.global.common.ResourceStatus;
 import com.dormmate.backend.global.jpa.AbstractTimestampedEntity;
 
 import jakarta.persistence.CascadeType;
@@ -35,27 +36,22 @@ public class FridgeCompartment extends AbstractTimestampedEntity {
     @JoinColumn(name = "fridge_unit_id", nullable = false)
     private FridgeUnit fridgeUnit;
 
-    @Column(name = "slot_code", nullable = false, unique = true, length = 24)
-    private String slotCode;
-
-    @Column(name = "display_order", nullable = false)
-    private short displayOrder;
+    @Column(name = "slot_index", nullable = false)
+    private int slotIndex;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "compartment_type", nullable = false, length = 16)
     private CompartmentType compartmentType;
 
     @Column(name = "max_bundle_count", nullable = false)
-    private short maxBundleCount;
+    private int maxBundleCount;
 
-    @Column(name = "label_range_start", nullable = false)
-    private short labelRangeStart;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 16)
+    private ResourceStatus status = ResourceStatus.ACTIVE;
 
-    @Column(name = "label_range_end", nullable = false)
-    private short labelRangeEnd;
-
-    @Column(name = "is_active", nullable = false)
-    private boolean active = true;
+    @Column(name = "is_locked", nullable = false)
+    private boolean locked;
 
     @Column(name = "locked_until")
     private OffsetDateTime lockedUntil;
@@ -81,20 +77,12 @@ public class FridgeCompartment extends AbstractTimestampedEntity {
         this.fridgeUnit = fridgeUnit;
     }
 
-    public String getSlotCode() {
-        return slotCode;
+    public int getSlotIndex() {
+        return slotIndex;
     }
 
-    public void setSlotCode(String slotCode) {
-        this.slotCode = slotCode;
-    }
-
-    public short getDisplayOrder() {
-        return displayOrder;
-    }
-
-    public void setDisplayOrder(short displayOrder) {
-        this.displayOrder = displayOrder;
+    public void setSlotIndex(int slotIndex) {
+        this.slotIndex = slotIndex;
     }
 
     public CompartmentType getCompartmentType() {
@@ -105,36 +93,28 @@ public class FridgeCompartment extends AbstractTimestampedEntity {
         this.compartmentType = compartmentType;
     }
 
-    public short getMaxBundleCount() {
+    public int getMaxBundleCount() {
         return maxBundleCount;
     }
 
-    public void setMaxBundleCount(short maxBundleCount) {
+    public void setMaxBundleCount(int maxBundleCount) {
         this.maxBundleCount = maxBundleCount;
     }
 
-    public short getLabelRangeStart() {
-        return labelRangeStart;
+    public ResourceStatus getStatus() {
+        return status;
     }
 
-    public void setLabelRangeStart(short labelRangeStart) {
-        this.labelRangeStart = labelRangeStart;
+    public void setStatus(ResourceStatus status) {
+        this.status = status;
     }
 
-    public short getLabelRangeEnd() {
-        return labelRangeEnd;
+    public boolean isLocked() {
+        return locked;
     }
 
-    public void setLabelRangeEnd(short labelRangeEnd) {
-        this.labelRangeEnd = labelRangeEnd;
-    }
-
-    public boolean isActive() {
-        return active;
-    }
-
-    public void setActive(boolean active) {
-        this.active = active;
+    public void setLocked(boolean locked) {
+        this.locked = locked;
     }
 
     public OffsetDateTime getLockedUntil() {
@@ -159,5 +139,9 @@ public class FridgeCompartment extends AbstractTimestampedEntity {
 
     public void setLabelSequence(BundleLabelSequence labelSequence) {
         this.labelSequence = labelSequence;
+    }
+
+    public boolean isResourceActive() {
+        return status.isActive();
     }
 }

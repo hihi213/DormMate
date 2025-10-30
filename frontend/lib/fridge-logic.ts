@@ -1,4 +1,5 @@
 import type { Item } from "@/features/fridge/types"
+import { formatBundleLabel } from "@/features/fridge/utils/data-shaping"
 import { daysLeft } from "./date-utils"
 
 export function getBundleName(name: string) {
@@ -14,7 +15,7 @@ export function getDetailName(name: string, bundleName: string) {
 export function earliestDays(group: Item[]) {
   let min = Number.POSITIVE_INFINITY
   for (const it of group) {
-    const dl = daysLeft(it.expiry)
+    const dl = daysLeft(it.expiryDate)
     if (dl < min) min = dl
   }
   return min
@@ -27,6 +28,6 @@ export function resolveStatus(expiryISO: string): "expired" | "expiring" | "ok" 
   return "ok"
 }
 
-export function formatBundleCode(slotCode: string, labelNo: number) {
-  return `${slotCode}-${String(labelNo).padStart(3, "0")}`
+export function formatBundleCode(slotIndex: number, labelNumber: number) {
+  return formatBundleLabel(slotIndex, labelNumber)
 }
