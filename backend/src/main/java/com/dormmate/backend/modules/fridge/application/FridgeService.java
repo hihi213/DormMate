@@ -326,35 +326,24 @@ public class FridgeService {
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
         ensureBundleActive(bundle);
 
-        boolean changed = false;
         if (StringUtils.hasText(request.name())) {
             item.setItemName(request.name().trim());
-            changed = true;
         }
         if (request.expiryDate() != null) {
             item.setExpiryDate(request.expiryDate());
-            changed = true;
         }
         if (request.quantity() != null) {
             item.setQuantity(request.quantity());
-            changed = true;
         }
         if (request.unitCode() != null) {
             item.setUnitCode(request.unitCode().isBlank() ? null : request.unitCode().trim());
-            changed = true;
         }
         if (request.removedAt() != null) {
             item.setStatus(FridgeItemStatus.DELETED);
             item.setDeletedAt(request.removedAt());
-            changed = true;
         } else if (item.getStatus() == FridgeItemStatus.DELETED) {
             item.setStatus(FridgeItemStatus.ACTIVE);
             item.setDeletedAt(null);
-            changed = true;
-        }
-
-        if (changed) {
-            item.setUpdatedAfterInspection(true);
         }
 
         FridgeItem saved = fridgeItemRepository.save(item);
@@ -376,7 +365,6 @@ public class FridgeService {
         OffsetDateTime ts = OffsetDateTime.now(clock);
         item.setStatus(FridgeItemStatus.DELETED);
         item.setDeletedAt(ts);
-        item.setUpdatedAfterInspection(true);
 
         fridgeItemRepository.save(item);
     }
@@ -554,7 +542,6 @@ public class FridgeService {
         item.setQuantity(quantity);
         item.setUnitCode(unitCode != null && !unitCode.isBlank() ? unitCode.trim() : null);
         item.setStatus(FridgeItemStatus.ACTIVE);
-        item.setUpdatedAfterInspection(false);
         item.setDeletedAt(null);
         return item;
     }

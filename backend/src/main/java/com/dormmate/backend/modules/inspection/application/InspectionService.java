@@ -205,12 +205,13 @@ public class InspectionService {
                 actionItem.setSnapshotExpiresOn(item.getExpiryDate());
                 actionItem.setQuantityAtAction(item.getQuantity());
                 action.getItems().add(actionItem);
+
+                item.setLastInspectedAt(now);
             }
 
             if (actionType == InspectionActionType.DISPOSE_EXPIRED && item != null) {
                 item.setStatus(FridgeItemStatus.DELETED);
                 item.setDeletedAt(now);
-                item.setUpdatedAfterInspection(true);
                 fridgeItemRepository.save(item);
             }
         }

@@ -431,4 +431,5 @@ logs/
 # --- 보안/비공개 문서(절대 커밋 금지) ---
 # 개인 계획/기능 정리 문서
 /nogitReadME.md
-/docs
+docs/ai-impl/
+docs/ops/

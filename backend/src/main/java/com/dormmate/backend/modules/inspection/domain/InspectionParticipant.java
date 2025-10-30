@@ -18,6 +18,7 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 
+// SSE 기반 다중 검사자 합류 기능을 차기 단계에서 열 때 사용할 예정인 엔티티다.
 @Entity
 @Table(name = "inspection_participant")
 public class InspectionParticipant extends AbstractTimestampedEntity {
