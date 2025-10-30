@@ -47,8 +47,8 @@ public class FridgeItem extends AbstractTimestampedEntity {
     @Column(name = "status", nullable = false, length = 16)
     private FridgeItemStatus status = FridgeItemStatus.ACTIVE;
 
-    @Column(name = "updated_after_inspection", nullable = false)
-    private boolean updatedAfterInspection;
+    @Column(name = "last_inspected_at")
+    private OffsetDateTime lastInspectedAt;
 
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
@@ -105,12 +105,12 @@ public class FridgeItem extends AbstractTimestampedEntity {
         this.status = status;
     }
 
-    public boolean isUpdatedAfterInspection() {
-        return updatedAfterInspection;
+    public OffsetDateTime getLastInspectedAt() {
+        return lastInspectedAt;
     }
 
-    public void setUpdatedAfterInspection(boolean updatedAfterInspection) {
-        this.updatedAfterInspection = updatedAfterInspection;
+    public void setLastInspectedAt(OffsetDateTime lastInspectedAt) {
+        this.lastInspectedAt = lastInspectedAt;
     }
 
     public OffsetDateTime getDeletedAt() {

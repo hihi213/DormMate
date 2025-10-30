@@ -82,6 +82,7 @@ export type FridgeItemDto = {
   quantity?: number | null
   unitCode?: string | null
   freshness?: string | null
+  lastInspectedAt?: string | null
   updatedAfterInspection: boolean
   priority?: ItemPriority | null
   memo?: string | null
@@ -166,6 +167,7 @@ export function mapItemFromDto(item: FridgeItemDto, bundle: Bundle, index: numbe
     quantity: item.quantity ?? null,
     unitCode: item.unitCode ?? null,
     freshness: item.freshness ?? null,
+    lastInspectedAt: item.lastInspectedAt ?? null,
     updatedAfterInspection: Boolean(item.updatedAfterInspection),
     memo: item.memo ?? null,
     priority: item.priority ?? undefined,
@@ -205,6 +207,7 @@ export function toItems(bundles: Bundle[], units: ItemUnit[]): Item[] {
       expiryDate: unit.expiryDate,
       unitCode: unit.unitCode ?? null,
       updatedAfterInspection: unit.updatedAfterInspection,
+      lastInspectedAt: unit.lastInspectedAt ?? null,
       memo: unit.memo ?? bundle.memo ?? null,
       quantity: unit.quantity ?? null,
       owner: bundle.owner,

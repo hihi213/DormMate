@@ -57,6 +57,7 @@ export type ItemUnit = {
   quantity?: number | null
   unitCode?: string | null
   freshness?: string | null
+  lastInspectedAt?: string | null
   updatedAfterInspection: boolean
   memo?: string | null
   priority?: ItemPriority
@@ -81,6 +82,7 @@ export type Item = {
   name: string
   expiryDate: string
   unitCode?: string | null
+  lastInspectedAt?: string | null
   updatedAfterInspection: boolean
   memo?: string | null
   quantity?: number | null

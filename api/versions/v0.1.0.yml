@@ -202,6 +202,10 @@ components:
           nullable: true
         freshness:
           $ref: '#/components/schemas/ItemFreshness'
+        lastInspectedAt:
+          type: string
+          format: date-time
+          nullable: true
         updatedAfterInspection: { type: boolean }
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }

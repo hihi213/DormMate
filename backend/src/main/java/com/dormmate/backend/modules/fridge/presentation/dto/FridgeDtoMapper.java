@@ -1,6 +1,7 @@
 package com.dormmate.backend.modules.fridge.presentation.dto;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
@@ -86,6 +87,11 @@ public final class FridgeDtoMapper {
     }
 
     public static FridgeItemResponse toItemResponse(FridgeItem item) {
+        OffsetDateTime lastInspectedAt = item.getLastInspectedAt();
+        boolean updatedAfterInspection = lastInspectedAt != null
+                && item.getUpdatedAt() != null
+                && item.getUpdatedAt().isAfter(lastInspectedAt);
+
         return new FridgeItemResponse(
                 item.getId(),
                 item.getBundle().getId(),
@@ -94,7 +100,8 @@ public final class FridgeDtoMapper {
                 item.getQuantity(),
                 item.getUnitCode(),
                 computeItemFreshness(item),
-                item.isUpdatedAfterInspection(),
+                lastInspectedAt,
+                updatedAfterInspection,
                 item.getCreatedAt(),
                 item.getUpdatedAt(),
                 item.getDeletedAt()

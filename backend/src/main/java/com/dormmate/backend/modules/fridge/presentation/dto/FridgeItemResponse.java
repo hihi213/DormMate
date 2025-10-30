@@ -15,6 +15,7 @@ public record FridgeItemResponse(
         Integer quantity,
         String unitCode,
         String freshness,
+        OffsetDateTime lastInspectedAt,
         boolean updatedAfterInspection,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
