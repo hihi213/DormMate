@@ -3,14 +3,7 @@
 import type React from "react"
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 
-import type {
-  ActionResult,
-  Bundle,
-  Item,
-  ItemPriority,
-  ItemUnit,
-  Slot,
-} from "@/features/fridge/types"
+import type { ActionResult, Bundle, Item, ItemUnit, Slot } from "@/features/fridge/types"
 import { useFridgeLogic } from "@/hooks/use-fridge-logic"
 import {
   fetchFridgeInventory,
@@ -21,17 +14,22 @@ import {
   deleteItem as deleteItemApi,
   deleteBundle as deleteBundleApi,
 } from "@/features/fridge/api"
-import { formatBundleLabel, toItems } from "@/features/fridge/utils/data-shaping"
+import { toItems } from "@/features/fridge/utils/data-shaping"
+import {
+  formatCompartmentLabel,
+  formatStickerLabel,
+  formatStickerWithSequence,
+} from "@/features/fridge/utils/labels"
 import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
 
 type AddBundlePayload = {
-  slotCode: string
+  slotId: string
   bundleName: string
-  memo?: string
-  units: { name: string; expiry: string; quantity?: number; priority?: ItemPriority }[]
+  memo?: string | null
+  units: { name: string; expiryDate: string; quantity?: number; unitCode?: string | null }[]
 }
 
-type UpdateItemPatch = Partial<Pick<Item, "name" | "expiry" | "memo" | "quantity" | "priority" | "status">> & {
+type UpdateItemPatch = Partial<Pick<Item, "name" | "expiryDate" | "quantity" | "unitCode" | "freshness">> & {
   removedAt?: string | null
 }
 
@@ -47,12 +45,11 @@ type FridgeContextValue = {
     payload: AddBundlePayload,
   ) => Promise<ActionResult<{ bundleId: string; unitIds: string[]; bundle: Bundle; units: ItemUnit[] }>>
   addSingleItem: (payload: {
-    slotCode: string
+    slotId: string
     name: string
-    expiry: string
-    memo?: string
+    expiryDate: string
     quantity?: number
-    priority?: ItemPriority
+    unitCode?: string | null
   }) => Promise<ActionResult<Item>>
   updateItem: (unitId: string, patch: UpdateItemPatch) => Promise<ActionResult>
   deleteItem: (unitId: string) => Promise<ActionResult>
@@ -60,8 +57,8 @@ type FridgeContextValue = {
   deleteBundle: (bundleId: string) => Promise<ActionResult>
   setLastInspectionNow: () => void
   setInspector: (on: boolean) => void
-  getSlotLabel: (slotCode: string) => string
-  isSlotActive: (slotCode: string) => boolean
+  getSlotLabel: (slotId: string, fallbackIndex?: number) => string
+  isSlotActive: (slotId: string) => boolean
 }
 
 const FridgeContext = createContext<FridgeContextValue | null>(null)
@@ -132,30 +129,19 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const items = useMemo(() => toItems(bundles, units), [bundles, units])
   const logic = useFridgeLogic(items, slots, currentUserId)
 
-  const getSlotByCode = useCallback(
-    (slotCode: string) => {
-      if (slots.length === 0) {
-        throw new Error("등록된 칸 정보가 없습니다.")
-      }
-      return slots.find((slot) => slot.code === slotCode) ?? slots[0]
-    },
-    [slots],
-  )
-
   const addBundle = useCallback<FridgeContextValue["addBundle"]>(
     async (payload) => {
       try {
         const normalizedUnits = payload.units.map((unit) => ({
           name: unit.name.trim(),
-          expiry: unit.expiry,
+          expiryDate: unit.expiryDate,
           quantity: unit.quantity ?? 1,
-          priority: unit.priority,
-          memo: payload.memo?.trim() || undefined,
+          unitCode: unit.unitCode ?? null,
         }))
 
         const { bundle, units: createdUnits } = await createBundleApi(
           {
-            slotCode: payload.slotCode,
+            slotId: payload.slotId,
             bundleName: payload.bundleName.trim(),
             memo: payload.memo?.trim() || undefined,
             units: normalizedUnits,
@@ -190,15 +176,14 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
     async (payload) => {
       const trimmedName = payload.name.trim()
       const result = await addBundle({
-        slotCode: payload.slotCode,
+        slotId: payload.slotId,
         bundleName: trimmedName || "무제 포장",
-        memo: payload.memo,
         units: [
           {
             name: trimmedName || "무제 품목",
-            expiry: payload.expiry,
+            expiryDate: payload.expiryDate,
             quantity: payload.quantity,
-            priority: payload.priority,
+            unitCode: payload.unitCode ?? null,
           },
         ],
       })
@@ -210,30 +195,31 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       const bundle = result.data.bundle
       const createdUnit = result.data.units[0]
       const bundleLabelDisplay =
-        bundle.labelDisplay || formatBundleLabel(bundle.slotCode, bundle.labelNumber)
-      const displayCode = `${bundleLabelDisplay}-${String(createdUnit.seqNo).padStart(2, "0")}`
+        bundle.labelDisplay || formatStickerLabel(bundle.slotIndex, bundle.labelNumber)
+      const displayLabel = formatStickerWithSequence(bundle.slotIndex, bundle.labelNumber, createdUnit.seqNo)
       const newItem: Item = {
-        id: displayCode,
+        id: displayLabel,
         bundleId: bundle.bundleId,
         unitId: createdUnit.unitId,
-        slotCode: bundle.slotCode,
         slotId: bundle.slotId,
-        labelNo: bundle.labelNo,
+        slotIndex: bundle.slotIndex,
+        slotLetter: bundle.slotLetter,
         labelNumber: bundle.labelNumber,
         seqNo: createdUnit.seqNo,
-        displayCode,
-        bundleLabelDisplay: bundleLabelDisplay,
+        displayLabel,
+        bundleLabelDisplay,
         bundleName: bundle.bundleName,
         name: createdUnit.name,
-        expiry: createdUnit.expiry,
+        expiryDate: createdUnit.expiryDate,
+        unitCode: createdUnit.unitCode ?? null,
+        updatedAfterInspection: createdUnit.updatedAfterInspection,
         memo: createdUnit.memo ?? bundle.memo ?? null,
         quantity: createdUnit.quantity ?? null,
         owner: bundle.owner,
         ownerId: bundle.ownerId,
         ownerUserId: bundle.ownerUserId ?? null,
         bundleMemo: bundle.memo ?? null,
-        status: undefined,
-        priority: createdUnit.priority,
+        freshness: createdUnit.freshness ?? null,
         createdAt: createdUnit.createdAt,
         updatedAt: createdUnit.updatedAt,
         removedAt: createdUnit.removedAt ?? null,
@@ -261,10 +247,9 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           unitId,
           {
             name: patch.name,
-            expiry: patch.expiry,
+            expiryDate: patch.expiryDate,
             quantity: patch.quantity,
-            priority: patch.priority,
-            memo: patch.memo,
+            unitCode: patch.unitCode ?? null,
             removedAt: patch.removedAt,
           },
           targetBundle,
@@ -276,10 +261,11 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
               ? {
                   ...unit,
                   name: updatedUnit.name,
-                  expiry: updatedUnit.expiry,
+                  expiryDate: updatedUnit.expiryDate,
                   quantity: updatedUnit.quantity ?? null,
-                  memo: updatedUnit.memo ?? null,
-                  priority: updatedUnit.priority,
+                  unitCode: updatedUnit.unitCode ?? null,
+                  freshness: updatedUnit.freshness ?? null,
+                  updatedAfterInspection: updatedUnit.updatedAfterInspection,
                   updatedAt: updatedUnit.updatedAt,
                   removedAt: updatedUnit.removedAt ?? null,
                 }
@@ -292,10 +278,8 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
             if (bundle.bundleId !== targetBundle.bundleId) {
               return bundle
             }
-            const nextMemo = patch.memo !== undefined ? patch.memo ?? null : bundle.memo ?? null
             return {
               ...bundle,
-              memo: nextMemo,
               updatedAt: updatedUnit.updatedAt,
             }
           }),
@@ -428,13 +412,26 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const getSlotLabel = useCallback(
-    (slotCode: string) => getSlotByCode(slotCode)?.label ?? slotCode,
-    [getSlotByCode],
+    (slotId: string, fallbackIndex?: number) => {
+      const slot = slots.find((candidate) => candidate.slotId === slotId)
+      if (slot) {
+        return slot.displayName ?? formatCompartmentLabel(slot.slotIndex)
+      }
+      if (typeof fallbackIndex === "number") {
+        return formatCompartmentLabel(fallbackIndex)
+      }
+      return "?"
+    },
+    [slots],
   )
 
   const isSlotActive = useCallback(
-    (slotCode: string) => getSlotByCode(slotCode)?.isActive ?? false,
-    [getSlotByCode],
+    (slotId: string) => {
+      const slot = slots.find((candidate) => candidate.slotId === slotId)
+      if (!slot) return false
+      return slot.resourceStatus === "ACTIVE" && !slot.locked
+    },
+    [slots],
   )
 
   const value = useMemo<FridgeContextValue>(

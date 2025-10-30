@@ -1,7 +1,8 @@
 import { safeApiCall } from "@/lib/api-client"
-import { mapBundleFromDto, toItems } from "@/features/fridge/utils/data-shaping"
+import { mapBundleFromDto, toItems, toSlotLetter } from "@/features/fridge/utils/data-shaping"
 import type { Bundle, ItemUnit, Slot } from "@/features/fridge/types"
 import { mapSlotFromDto } from "@/features/fridge/utils/data-shaping"
+import type { FridgeBundleDto } from "@/features/fridge/utils/data-shaping"
 import type {
   InspectionAction,
   InspectionActionEntry,
@@ -15,22 +16,23 @@ type InspectionActionSummaryDto = {
 }
 
 type InspectionSessionDto = {
-  sessionId: number
-  slotId?: string | null
-  slotCode: string
+  sessionId: string
+  slotId: string
+  slotIndex: number
+  slotLabel?: string | null
+  floorNo: number
   floorCode?: string | null
   status: InspectionSession["status"]
   startedBy: string
   startedAt: string
   endedAt?: string | null
-  bundles: any[]
+  bundles: FridgeBundleDto[]
   summary: InspectionActionSummaryDto[]
   notes?: string | null
 }
 
 type StartInspectionRequest = {
   slotId: string
-  slotCode?: string | null
 }
 
 type ActionRequestDto = {
@@ -74,7 +76,7 @@ export async function fetchActiveInspection(floor?: number): Promise<InspectionS
   return mapInspectionSessionDto(result.data)
 }
 
-export async function fetchInspection(sessionId: number): Promise<InspectionSession> {
+export async function fetchInspection(sessionId: string): Promise<InspectionSession> {
   const { data, error } = await safeApiCall<InspectionSessionDto>(`/fridge/inspections/${sessionId}`, {
     method: "GET",
   })
@@ -84,7 +86,7 @@ export async function fetchInspection(sessionId: number): Promise<InspectionSess
   return mapInspectionSessionDto(data)
 }
 
-export async function cancelInspection(sessionId: number): Promise<void> {
+export async function cancelInspection(sessionId: string): Promise<void> {
   const { error } = await safeApiCall(`/fridge/inspections/${sessionId}`, {
     method: "DELETE",
     parseResponseAs: "none",
@@ -95,7 +97,7 @@ export async function cancelInspection(sessionId: number): Promise<void> {
 }
 
 export async function recordInspectionActions(
-  sessionId: number,
+  sessionId: string,
   actions: InspectionActionEntry[],
 ): Promise<InspectionSession> {
   if (!actions.length) {
@@ -126,7 +128,7 @@ export async function recordInspectionActions(
   return mapInspectionSessionDto(data)
 }
 
-export async function submitInspection(sessionId: number, payload: InspectionSubmitPayload): Promise<InspectionSession> {
+export async function submitInspection(sessionId: string, payload: InspectionSubmitPayload): Promise<InspectionSession> {
   const { data, error } = await safeApiCall<InspectionSessionDto>(
     `/fridge/inspections/${sessionId}/submit`,
     {
@@ -152,7 +154,7 @@ function mapInspectionSessionDto(dto: InspectionSessionDto): InspectionSession {
   const bundles: Bundle[] = []
   const units: ItemUnit[] = []
 
-  dto.bundles.forEach((bundleDto, index) => {
+  dto.bundles.forEach((bundleDto) => {
     const { bundle, units: mappedUnits } = mapBundleFromDto(bundleDto, undefined)
     bundles.push(bundle)
     units.push(...mappedUnits)
@@ -162,8 +164,10 @@ function mapInspectionSessionDto(dto: InspectionSessionDto): InspectionSession {
 
   return {
     sessionId: dto.sessionId,
-    slotId: dto.slotId ?? undefined,
-    slotCode: dto.slotCode,
+    slotId: dto.slotId,
+    slotIndex: dto.slotIndex,
+    slotLetter: dto.slotLabel && dto.slotLabel.length > 0 ? dto.slotLabel : toSlotLetter(dto.slotIndex),
+    floorNo: dto.floorNo,
     floorCode: dto.floorCode ?? null,
     status: dto.status,
     startedBy: dto.startedBy,
@@ -176,4 +180,3 @@ function mapInspectionSessionDto(dto: InspectionSessionDto): InspectionSession {
     notes: dto.notes ?? null,
   }
 }
-

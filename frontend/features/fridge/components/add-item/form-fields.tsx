@@ -14,7 +14,7 @@ interface FormFieldsProps {
   template: TemplateState
   onTemplateChange: (updates: Partial<TemplateState>) => void
   onQuantityChange: (qty: number) => void
-  onExpiryChange: (expiry: string) => void
+  onExpiryChange: (expiryDate: string) => void
   onSubmit: () => void
   nameInputRef?: React.MutableRefObject<HTMLInputElement | null> | null
   onNameLimit?: () => void
@@ -82,7 +82,7 @@ export function FormFields({
       <ExpiryInput
         id="expiry"
         label="유통기한"
-        value={template.expiry}
+        value={template.expiryDate}
         onChange={onExpiryChange}
         warningThresholdDays={WARNING_EXPIRY_DAYS}
         emphasizeToday

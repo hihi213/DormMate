@@ -10,14 +10,12 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 public record FridgeItemResponse(
         UUID itemId,
         UUID bundleId,
-        int sequenceNo,
         String name,
         LocalDate expiryDate,
         Integer quantity,
-        String unit,
-        String status,
-        String priority,
-        String memo,
+        String unitCode,
+        String freshness,
+        boolean updatedAfterInspection,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         OffsetDateTime removedAt

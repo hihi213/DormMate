@@ -1,5 +1,7 @@
 package com.dormmate.backend.modules.inspection.presentation;
 
+import java.util.UUID;
+
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionRequest;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionSessionResponse;
 import com.dormmate.backend.modules.inspection.presentation.dto.StartInspectionRequest;
@@ -43,19 +45,19 @@ public class InspectionController {
     }
 
     @GetMapping("/{sessionId}")
-    public ResponseEntity<InspectionSessionResponse> getSession(@PathVariable("sessionId") Long sessionId) {
+    public ResponseEntity<InspectionSessionResponse> getSession(@PathVariable("sessionId") UUID sessionId) {
         return ResponseEntity.ok(inspectionService.getSession(sessionId));
     }
 
     @DeleteMapping("/{sessionId}")
-    public ResponseEntity<Void> cancelSession(@PathVariable("sessionId") Long sessionId) {
+    public ResponseEntity<Void> cancelSession(@PathVariable("sessionId") UUID sessionId) {
         inspectionService.cancelSession(sessionId);
         return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/{sessionId}/actions")
     public ResponseEntity<InspectionSessionResponse> recordActions(
-            @PathVariable("sessionId") Long sessionId,
+            @PathVariable("sessionId") UUID sessionId,
             @Valid @RequestBody InspectionActionRequest request
     ) {
         return ResponseEntity.ok(inspectionService.recordActions(sessionId, request));
@@ -63,7 +65,7 @@ public class InspectionController {
 
     @PostMapping("/{sessionId}/submit")
     public ResponseEntity<InspectionSessionResponse> submitSession(
-            @PathVariable("sessionId") Long sessionId,
+            @PathVariable("sessionId") UUID sessionId,
             @RequestBody(required = false) SubmitInspectionRequest request
     ) {
         return ResponseEntity.ok(inspectionService.submitSession(sessionId, request));

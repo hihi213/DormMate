@@ -21,6 +21,8 @@ ALTER TABLE fridge_unit
     ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
     ADD COLUMN retired_at TIMESTAMPTZ;
 
+ALTER TABLE fridge_unit ADD CONSTRAINT ck_fridge_unit_status CHECK (status IN ('ACTIVE', 'SUSPENDED', 'REPORTED', 'RETIRED'));
+
 ALTER TABLE fridge_unit DROP CONSTRAINT IF EXISTS uq_fridge_unit_floor_label;
 ALTER TABLE fridge_unit DROP CONSTRAINT IF EXISTS ck_fridge_unit_cold_type;
 
@@ -38,6 +40,8 @@ ALTER TABLE fridge_compartment ALTER COLUMN slot_index SET NOT NULL;
 ALTER TABLE fridge_compartment
     ADD COLUMN status VARCHAR(16) NOT NULL DEFAULT 'ACTIVE',
     ADD COLUMN is_locked BOOLEAN NOT NULL DEFAULT FALSE;
+
+ALTER TABLE fridge_compartment ADD CONSTRAINT ck_fridge_compartment_status CHECK (status IN ('ACTIVE', 'SUSPENDED', 'REPORTED', 'RETIRED'));
 
 ALTER TABLE fridge_compartment ALTER COLUMN max_bundle_count TYPE INTEGER;
 
@@ -64,7 +68,6 @@ ALTER TABLE fridge_compartment ADD CONSTRAINT uq_fridge_compartment_slot UNIQUE 
 DROP INDEX IF EXISTS uq_compartment_room_active;
 
 ALTER TABLE compartment_room_access DROP COLUMN IF EXISTS priority_order;
-ALTER TABLE compartment_room_access DROP COLUMN IF EXISTS updated_at;
 
 CREATE INDEX idx_compartment_room_access_active
     ON compartment_room_access (fridge_compartment_id)

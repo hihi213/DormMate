@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toYMD } from "@/lib/date-utils"
 import { summarizeEntries, validateTemplate } from "./validation"
 import type { PendingEntry, TemplateState } from "./types"
-import type { Bundle, ItemPriority, ItemUnit } from "@/features/fridge/types"
+import type { Bundle, ItemUnit } from "@/features/fridge/types"
 import { AUTO_PACK_NAME_LIMIT, NAME_LIMIT, PACK_LABEL_LIMIT, QTY_LIMIT } from "./constants"
 
 export const formatExpiryDisplay = (expiry: string) => {
@@ -20,10 +20,10 @@ const generateAutoPackName = (entries: PendingEntry[]) => {
   return extraCount > 0 ? `${truncated} 외 ${extraCount}건` : truncated
 }
 
-const createInitialTemplate = (slotCode: string): TemplateState => ({
-  slotCode,
+const createInitialTemplate = (slotId: string): TemplateState => ({
+  slotId,
   name: "",
-  expiry: toYMD(new Date()),
+  expiryDate: toYMD(new Date()),
   qty: 1,
   lockName: false,
 })
@@ -31,10 +31,10 @@ const createInitialTemplate = (slotCode: string): TemplateState => ({
 type ToastFn = (opts: { title: string; description?: string }) => void
 
 type AddBundleFn = (data: {
-  slotCode: string
+  slotId: string
   bundleName: string
-  memo?: string
-  units: { name: string; expiry: string; quantity: number; priority?: ItemPriority }[]
+  memo?: string | null
+  units: { name: string; expiryDate: string; quantity: number; unitCode?: string | null }[]
 }) => {
   success: boolean
   data?: { bundleId: string; unitIds: string[]; bundle: Bundle; units: ItemUnit[] }
@@ -70,8 +70,8 @@ export const useAddItemWorkflow = ({
   useEffect(() => {
     if (!fallbackSlot) return
     setTemplate((prev) => {
-      if (prev.slotCode) return prev
-      return { ...prev, slotCode: fallbackSlot }
+      if (prev.slotId) return prev
+      return { ...prev, slotId: fallbackSlot }
     })
   }, [fallbackSlot])
 
@@ -106,9 +106,9 @@ export const useAddItemWorkflow = ({
 
   useEffect(() => {
     if (!isMetadataStep) {
-      setMetadataSlot(template.slotCode || fallbackSlot)
+      setMetadataSlot(template.slotId || fallbackSlot)
     }
-  }, [isMetadataStep, template.slotCode, fallbackSlot])
+  }, [isMetadataStep, template.slotId, fallbackSlot])
 
   useEffect(() => {
     if (!nameFlash) return
@@ -123,11 +123,11 @@ export const useAddItemWorkflow = ({
   const resetForm = useCallback(
     (options: { keepExpiry?: boolean } = {}) => {
       setTemplate((prev) => {
-        const base = createInitialTemplate(prev.slotCode)
+        const base = createInitialTemplate(prev.slotId)
         return {
           ...base,
-          slotCode: prev.slotCode,
-          expiry: options.keepExpiry ? prev.expiry : base.expiry,
+          slotId: prev.slotId,
+          expiryDate: options.keepExpiry ? prev.expiryDate : base.expiryDate,
         }
       })
       setEditingEntryId(null)
@@ -164,7 +164,7 @@ export const useAddItemWorkflow = ({
       setEntries((prev) =>
         prev.map((entry) =>
           entry.id === editingEntryId
-            ? { ...entry, name: nameNormalized, expiry: template.expiry, qty: template.qty }
+            ? { ...entry, name: nameNormalized, expiryDate: template.expiryDate, qty: template.qty }
             : entry,
         ),
       )
@@ -176,7 +176,7 @@ export const useAddItemWorkflow = ({
     let applied = false
     setEntries((prev) => {
       const existingIndex = prev.findIndex(
-        (entry) => entry.name === nameNormalized && entry.expiry === template.expiry,
+        (entry) => entry.name === nameNormalized && entry.expiryDate === template.expiryDate,
       )
 
       if (existingIndex >= 0) {
@@ -198,7 +198,7 @@ export const useAddItemWorkflow = ({
       const newEntry: PendingEntry = {
         id: crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`,
         name: nameNormalized,
-        expiry: template.expiry,
+        expiryDate: template.expiryDate,
         qty: template.qty,
       }
       return [newEntry, ...prev]
@@ -222,7 +222,7 @@ export const useAddItemWorkflow = ({
 
   const handleEditEntry = useCallback(
     (entry: PendingEntry) => {
-      setTemplate((prev) => ({ ...prev, name: entry.name, expiry: entry.expiry, qty: entry.qty }))
+      setTemplate((prev) => ({ ...prev, name: entry.name, expiryDate: entry.expiryDate, qty: entry.qty }))
       setEditingEntryId(entry.id)
       setNameFlash(true)
       setTimeout(() => nameInputRef.current?.focus(), 50)
@@ -244,7 +244,7 @@ export const useAddItemWorkflow = ({
       return
     }
 
-    const slotToUse = template.slotCode || fallbackSlot
+    const slotToUse = template.slotId || fallbackSlot
     if (!slotToUse) {
       toast({ title: "보관 칸을 선택할 수 없습니다.", description: "사용 가능한 보관 칸이 없습니다. 관리자에게 문의해 주세요." })
       return
@@ -253,7 +253,7 @@ export const useAddItemWorkflow = ({
     setPackName((prev) => (prev.trim().length > 0 ? prev : autoPackName))
     setMetadataSlot(slotToUse)
     setIsMetadataStep(true)
-  }, [editingEntryId, entries, toast, template.slotCode, fallbackSlot, autoPackName])
+  }, [editingEntryId, entries, toast, template.slotId, fallbackSlot, autoPackName])
 
   const handleConfirmSave = useCallback(async () => {
     if (entries.length === 0) {
@@ -272,7 +272,7 @@ export const useAddItemWorkflow = ({
     const payloadUnits = entries.flatMap((entry) =>
       Array.from({ length: entry.qty }).map(() => ({
         name: entry.name,
-        expiry: entry.expiry,
+        expiryDate: entry.expiryDate,
         quantity: 1,
       })),
     )
@@ -281,7 +281,7 @@ export const useAddItemWorkflow = ({
       setIsSaving(true)
 
       const result = await addBundle({
-        slotCode: metadataSlot,
+        slotId: metadataSlot,
         bundleName: packLabel,
         memo: memo || undefined,
         units: payloadUnits,
@@ -302,7 +302,7 @@ export const useAddItemWorkflow = ({
       })
 
       setEntries([])
-      setTemplate((prev) => ({ ...createInitialTemplate(metadataSlot), slotCode: metadataSlot }))
+      setTemplate((prev) => ({ ...createInitialTemplate(metadataSlot), slotId: metadataSlot }))
       setPackName("")
       setPackMemo("")
       setIsMetadataStep(false)

@@ -40,11 +40,11 @@ function DetailInner() {
   const uid = getCurrentUserId()
   const canEdit = !!(it && (it.ownerId ? uid === it.ownerId : it.owner === "me"))
 
-  const [form, setForm] = useState({ name: "", expiry: "", memo: "" })
+  const [form, setForm] = useState({ name: "", expiryDate: "", memo: "" })
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState(false)
   useEffect(() => {
-    if (it) setForm({ name: it.name, expiry: it.expiry, memo: it.memo || "" })
+    if (it) setForm({ name: it.name, expiryDate: it.expiryDate, memo: it.memo || "" })
   }, [it])
 
   if (!it) {
@@ -58,7 +58,7 @@ function DetailInner() {
     )
   }
 
-  const d = daysLeft(it.expiry)
+  const d = daysLeft(it.expiryDate)
   const dText = ddayLabel(d)
   const isExpired = d < 0
   const statusColor = isExpired ? "text-rose-600" : d <= 1 ? "text-amber-600" : "text-emerald-700"
@@ -116,12 +116,13 @@ function DetailInner() {
           <CardContent className="py-3">
             <div className="text-sm">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <Field label="보관 칸" value={it.slotCode || "-"} />
+                <Field label="보관 칸" value={formatCompartmentLabel(it.slotIndex)} />
+                <Field label="스티커" value={formatStickerLabel(it.slotIndex, it.labelNumber)} />
                 <Field
                   label="유통기한"
                   value={
                     <span className="inline-flex items-center gap-2">
-                      <span>{formatShortDate(it.expiry)}</span>
+                      <span>{formatShortDate(it.expiryDate)}</span>
                       <span className={`inline-flex items-center gap-1 text-sm ${statusColor}`}>
                         <CalendarDays className="size-4" />
                         {dText}
@@ -150,14 +151,12 @@ function DetailInner() {
                 <Input
                   id="expiry"
                   type="date"
-                  value={form.expiry}
+                  value={form.expiryDate}
                   min={toISO(new Date())}
                   onChange={(e) => setForm((f) => ({ ...f, expiry: e.target.value }))}
                 />
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="memo">{"메모(선택)"}</Label>
-                <Input id="memo" value={form.memo} onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))} />
               </div>
               <div className="flex justify-end">
                 <Button
@@ -168,7 +167,7 @@ function DetailInner() {
                     setSaving(true)
                     const result = await updateItem(it.unitId, {
                       name: form.name,
-                      expiry: form.expiry,
+                      expiryDate: form.expiryDate,
                       memo: form.memo || undefined,
                     })
                     setSaving(false)

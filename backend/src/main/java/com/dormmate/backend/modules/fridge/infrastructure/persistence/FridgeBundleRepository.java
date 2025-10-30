@@ -17,8 +17,8 @@ public interface FridgeBundleRepository extends JpaRepository<FridgeBundle, UUID
 
     List<FridgeBundle> findByFridgeCompartmentAndStatus(FridgeCompartment compartment, FridgeBundleStatus status);
 
-    Optional<FridgeBundle> findByFridgeCompartmentAndLabelCodeAndStatus(
+    Optional<FridgeBundle> findByFridgeCompartmentAndLabelNumberAndStatus(
             FridgeCompartment compartment,
-            String labelCode,
+            int labelNumber,
             FridgeBundleStatus status);
 }

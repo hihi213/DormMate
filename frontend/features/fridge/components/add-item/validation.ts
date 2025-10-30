@@ -11,12 +11,12 @@ const expirySchema = z
   .refine((value) => value >= todayISO, "오늘 이후 날짜를 선택해 주세요.")
 
 const templateSchema = z.object({
-  slotCode: z.string().min(1, "보관 칸을 선택해 주세요."),
+  slotId: z.string().min(1, "보관 칸을 선택해 주세요."),
   name: z
     .string()
     .transform((val) => val.trim())
     .pipe(z.string().min(1, "물품(묶음)명을 입력해 주세요.").max(NAME_LIMIT)),
-  expiry: expirySchema,
+  expiryDate: expirySchema,
   qty: z.number().int().min(1, "수량은 1개 이상이어야 합니다.").max(QTY_LIMIT, `최대 ${QTY_LIMIT}개까지 등록할 수 있습니다.`),
 })
 

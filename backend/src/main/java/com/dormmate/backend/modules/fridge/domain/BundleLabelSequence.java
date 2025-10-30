@@ -1,5 +1,7 @@
 package com.dormmate.backend.modules.fridge.domain;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.UUID;
 
 import com.dormmate.backend.global.jpa.AbstractTimestampedEntity;
@@ -12,6 +14,9 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.MapsId;
 import jakarta.persistence.OneToOne;
 import jakarta.persistence.Table;
+
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 @Entity
 @Table(name = "bundle_label_sequence")
@@ -26,8 +31,12 @@ public class BundleLabelSequence extends AbstractTimestampedEntity {
     @JoinColumn(name = "fridge_compartment_id")
     private FridgeCompartment fridgeCompartment;
 
-    @Column(name = "next_label", nullable = false)
-    private short nextLabel;
+    @Column(name = "next_number", nullable = false)
+    private int nextNumber;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "recycled_numbers", nullable = false, columnDefinition = "jsonb")
+    private List<Integer> recycledNumbers = new ArrayList<>();
 
     public UUID getFridgeCompartmentId() {
         return fridgeCompartmentId;
@@ -41,11 +50,19 @@ public class BundleLabelSequence extends AbstractTimestampedEntity {
         this.fridgeCompartment = fridgeCompartment;
     }
 
-    public short getNextLabel() {
-        return nextLabel;
+    public int getNextNumber() {
+        return nextNumber;
     }
 
-    public void setNextLabel(short nextLabel) {
-        this.nextLabel = nextLabel;
+    public void setNextNumber(int nextNumber) {
+        this.nextNumber = nextNumber;
+    }
+
+    public List<Integer> getRecycledNumbers() {
+        return recycledNumbers;
+    }
+
+    public void setRecycledNumbers(List<Integer> recycledNumbers) {
+        this.recycledNumbers = recycledNumbers;
     }
 }

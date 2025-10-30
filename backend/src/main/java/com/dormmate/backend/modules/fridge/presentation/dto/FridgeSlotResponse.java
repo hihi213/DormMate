@@ -1,5 +1,6 @@
 package com.dormmate.backend.modules.fridge.presentation.dto;
 
+import java.time.OffsetDateTime;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -7,17 +8,15 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record FridgeSlotResponse(
         UUID slotId,
-        String slotCode,
-        int floor,
+        int slotIndex,
+        String slotLetter,
+        int floorNo,
         String floorCode,
-        String type,
-        String status,
-        Integer labelRangeStart,
-        Integer labelRangeEnd,
+        String compartmentType,
+        String resourceStatus,
+        boolean locked,
+        OffsetDateTime lockedUntil,
         Integer capacity,
-        String temperature,
-        Integer displayOrder,
-        String displayName,
-        boolean isActive
+        String displayName
 ) {
 }

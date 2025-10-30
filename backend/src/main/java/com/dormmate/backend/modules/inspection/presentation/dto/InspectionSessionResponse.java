@@ -9,9 +9,11 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record InspectionSessionResponse(
-        Long sessionId,
+        UUID sessionId,
         UUID slotId,
-        String slotCode,
+        int slotIndex,
+        String slotLabel,
+        int floorNo,
         String floorCode,
         String status,
         UUID startedBy,

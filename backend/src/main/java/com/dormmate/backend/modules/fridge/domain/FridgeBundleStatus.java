@@ -2,7 +2,7 @@ package com.dormmate.backend.modules.fridge.domain;
 
 public enum FridgeBundleStatus {
     ACTIVE,
-    REMOVED;
+    DELETED;
 
     public boolean isActive() {
         return this == ACTIVE;

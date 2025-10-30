@@ -50,12 +50,12 @@ public class FridgeController {
 
     @GetMapping("/bundles")
     public ResponseEntity<BundleListResponse> getBundles(
-            @RequestParam(name = "slotCode", required = false) String slotCode,
+            @RequestParam(name = "slotId", required = false) UUID slotId,
             @RequestParam(name = "owner", required = false) String owner,
             @RequestParam(name = "status", required = false) String status,
             @RequestParam(name = "search", required = false) String search
     ) {
-        return ResponseEntity.ok(fridgeService.getBundles(slotCode, owner, status, search));
+        return ResponseEntity.ok(fridgeService.getBundles(slotId, owner, status, search));
     }
 
     @Operation(
@@ -63,7 +63,7 @@ public class FridgeController {
             description = """
                     배정된 칸에 새로운 포장을 추가한다. \
                     허용량(`capacity`)을 초과하면 422 `CAPACITY_EXCEEDED`가 반환된다. \
-                    데모 시나리오에서는 `slotCode`가 `2F-R1`인 칸만 설명용으로 허용량이 3으로 제한돼 있다.
+                    데모 시나리오에서는 2층 A칸(`slotIndex` 0)만 설명용으로 허용량이 3으로 제한돼 있다.
                     """
     )
     @ApiResponses({

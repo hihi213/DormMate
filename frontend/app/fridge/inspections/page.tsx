@@ -13,6 +13,7 @@ import { SlotSelector } from "@/features/fridge/components/slot-selector"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentUser } from "@/lib/auth"
 import { formatShortDate } from "@/lib/date-utils"
+import { formatCompartmentLabel } from "@/features/fridge/utils/labels"
 import type { Slot } from "@/features/fridge/types"
 import type { InspectionAction, InspectionSession } from "@/features/inspections/types"
 import {
@@ -39,7 +40,7 @@ function InspectionsInner() {
   const [loading, setLoading] = useState(true)
   const [starting, setStarting] = useState(false)
   const [canceling, setCanceling] = useState(false)
-  const [selectedSlotCode, setSelectedSlotCode] = useState<string>("")
+  const [selectedSlotId, setSelectedSlotId] = useState<string>("")
   const [error, setError] = useState<string | null>(null)
 
   const currentUser = getCurrentUser()
@@ -51,7 +52,7 @@ function InspectionsInner() {
       setError(null)
       try {
         const [slotList, session] = await Promise.all([fetchInspectionSlots(), fetchActiveInspection()])
-        setSlots(slotList.filter((slot) => slot.isActive))
+        setSlots(slotList.filter((slot) => slot.resourceStatus === "ACTIVE"))
         setActiveSession(session)
       } catch (err) {
         const message = err instanceof Error ? err.message : "검사 정보를 불러오지 못했습니다."
@@ -79,7 +80,7 @@ function InspectionsInner() {
     return slots.filter((slot) => slot.slotId !== activeSession.slotId)
   }, [slots, activeSession])
 
-  const selectedSlot = availableSlots.find((slot) => slot.code === selectedSlotCode)
+  const selectedSlot = availableSlots.find((slot) => slot.slotId === selectedSlotId)
 
   const handleStartInspection = async () => {
     if (!selectedSlot || starting) return
@@ -87,12 +88,11 @@ function InspectionsInner() {
       setStarting(true)
       const session = await startInspection({
         slotId: selectedSlot.slotId,
-        slotCode: selectedSlot.code,
       })
       setActiveSession(session)
       toast({
         title: "검사를 시작했습니다.",
-        description: `${session.slotCode} 칸 검사 세션이 생성되었습니다.`,
+        description: `$\{formatCompartmentLabel(session.slotIndex)\} 칸 검사 세션이 생성되었습니다.`,
       })
       router.push(`/fridge/inspect?sessionId=${session.sessionId}`)
     } catch (err) {
@@ -182,7 +182,7 @@ function InspectionsInner() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="text-sm text-gray-800">
-                <p className="font-semibold">{`${activeSession.slotCode} 검사 세션`}</p>
+                <p className="font-semibold">{`${formatCompartmentLabel(activeSession.slotIndex)} 검사 세션`}</p>
                 <p className="text-xs text-muted-foreground">
                   {`시작: ${formatShortDate(activeSession.startedAt)} (${new Date(activeSession.startedAt).toLocaleTimeString("ko-KR", {
                     hour: "2-digit",
@@ -228,11 +228,10 @@ function InspectionsInner() {
           </CardHeader>
           <CardContent className="space-y-4">
             <SlotSelector
-              value={selectedSlotCode}
-              onChange={setSelectedSlotCode}
+              value={selectedSlotId}
+              onChange={setSelectedSlotId}
               slots={availableSlots}
               placeholder={availableSlots.length ? "검사할 보관 칸 선택" : "검사 가능한 보관 칸이 없습니다"}
-              disabled={!availableSlots.length || starting}
             />
             <Button
               onClick={handleStartInspection}

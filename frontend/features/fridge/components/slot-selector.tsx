@@ -7,7 +7,7 @@ import React from "react"
 
 interface SlotSelectorProps {
   value: string
-  onChange: (slotCode: string) => void
+  onChange: (slotId: string) => void
   slots: Slot[]
   placeholder?: string
   showAllOption?: boolean
@@ -27,15 +27,17 @@ export function SlotSelector({
   // 기본값이 없고 칸이 있을 때 첫 번째 칸을 자동 선택
   React.useEffect(() => {
     if (!value && slots.length > 0 && !showAllOption) {
-      onChange(slots[0].code)
+      onChange(slots[0].slotId)
     }
   }, [value, slots, onChange, showAllOption])
 
   const currentSlotLabel =
-    showAllOption && !value ? "전체 칸" : slots.find((s) => s.code === value)?.label || placeholder
+    showAllOption && !value
+      ? "전체 칸"
+      : slots.find((s) => s.slotId === value)?.displayName ?? placeholder
 
-  const handleSlotSelect = (slotCode: string) => {
-    onChange(slotCode)
+  const handleSlotSelect = (slotId: string) => {
+    onChange(slotId)
     setOpen(false)
   }
 
@@ -71,10 +73,10 @@ export function SlotSelector({
             )}
             {slots.map((slot) => (
               <SlotOption
-                key={slot.code}
-                label={`${slot.label} (${slot.code})`}
-                selected={value === slot.code}
-                onSelect={() => handleSlotSelect(slot.code)}
+                key={slot.slotId}
+                label={slot.displayName ?? slot.slotLetter}
+                selected={value === slot.slotId}
+                onSelect={() => handleSlotSelect(slot.slotId)}
               />
             ))}
           </div>

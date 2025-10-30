@@ -33,9 +33,6 @@ public class CompartmentRoomAccess extends AbstractTimestampedEntity {
     @JoinColumn(name = "room_id", nullable = false)
     private Room room;
 
-    @Column(name = "priority_order", nullable = false)
-    private short priorityOrder;
-
     @Column(name = "assigned_at", nullable = false)
     private OffsetDateTime assignedAt;
 
@@ -60,14 +57,6 @@ public class CompartmentRoomAccess extends AbstractTimestampedEntity {
 
     public void setRoom(Room room) {
         this.room = room;
-    }
-
-    public short getPriorityOrder() {
-        return priorityOrder;
-    }
-
-    public void setPriorityOrder(short priorityOrder) {
-        this.priorityOrder = priorityOrder;
     }
 
     public OffsetDateTime getAssignedAt() {

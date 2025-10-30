@@ -10,7 +10,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -36,8 +35,9 @@ import com.dormmate.backend.modules.fridge.domain.FridgeBundle;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundleStatus;
 import com.dormmate.backend.modules.fridge.domain.FridgeCompartment;
 import com.dormmate.backend.modules.fridge.domain.FridgeItem;
-import com.dormmate.backend.modules.fridge.domain.FridgeItemPriority;
 import com.dormmate.backend.modules.fridge.domain.FridgeItemStatus;
+import com.dormmate.backend.modules.fridge.domain.FridgeUnit;
+import com.dormmate.backend.modules.fridge.domain.LabelFormatter;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.RoomAssignmentRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.BundleLabelSequenceRepository;
@@ -97,58 +97,49 @@ public class FridgeService {
 
     @Transactional(readOnly = true)
     public List<FridgeSlotResponse> getSlots(Integer floorParam, String view) {
-        int floor = floorParam != null ? floorParam : 2;
+        boolean fullView = "full".equalsIgnoreCase(view);
         UUID currentUserId = SecurityUtils.getCurrentUserId();
         boolean isAdmin = SecurityUtils.hasRole("ADMIN");
         boolean isManager = SecurityUtils.hasRole("FLOOR_MANAGER");
 
+        List<FridgeUnit> units = floorParam != null
+                ? fridgeUnitRepository.findByFloorNo(floorParam.shortValue())
+                : fridgeUnitRepository.findAll();
+
         Set<UUID> accessibleCompartmentIds = new HashSet<>();
-        if (!isAdmin) {
+        if (!isAdmin && !isManager) {
             RoomAssignment assignment = roomAssignmentRepository.findActiveAssignment(currentUserId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED"));
-            if (!isManager) {
-                accessibleCompartmentIds.addAll(
-                        compartmentRoomAccessRepository.findByRoomIdAndReleasedAtIsNull(assignment.getRoom().getId())
-                                .stream()
-                                .map(access -> access.getFridgeCompartment().getId())
-                                .toList());
-            } else {
-                // 층별장은 같은 층 전체 접근 허용
-                accessibleCompartmentIds.addAll(
-                        compartmentRoomAccessRepository.findByRoomIdAndReleasedAtIsNull(assignment.getRoom().getId())
-                                .stream()
-                                .map(access -> access.getFridgeCompartment().getId())
-                                .toList());
-            }
+            compartmentRoomAccessRepository.findByRoomIdAndReleasedAtIsNull(assignment.getRoom().getId())
+                    .forEach(access -> accessibleCompartmentIds.add(access.getFridgeCompartment().getId()));
         }
 
         List<FridgeSlotResponse> results = new ArrayList<>();
-        fridgeUnitRepository.findByFloor((short) floor).forEach(unit -> {
+        for (FridgeUnit unit : units) {
             List<FridgeCompartment> compartments = fridgeCompartmentRepository
-                    .findByFridgeUnitOrderByDisplayOrder(unit);
+                    .findByFridgeUnitOrderBySlotIndexAsc(unit);
             for (FridgeCompartment compartment : compartments) {
-                if (!isAdmin && accessibleCompartmentIds.isEmpty() && !isManager) {
-                    // 접근 가능한 칸이 없는 경우 skip
-                    continue;
-                }
                 if (!isAdmin && !isManager && !accessibleCompartmentIds.contains(compartment.getId())) {
                     continue;
                 }
-
-                results.add(mapSlot(unit.getFloor(), compartment, "full".equalsIgnoreCase(view)));
+                results.add(mapSlot(unit, compartment, fullView));
             }
-        });
-        results.sort(Comparator.comparing(FridgeSlotResponse::displayOrder, Comparator.nullsLast(Integer::compareTo)));
+        }
+
+        results.sort(Comparator
+                .comparingInt(FridgeSlotResponse::floorNo)
+                .thenComparingInt(FridgeSlotResponse::slotIndex));
         return results;
     }
 
     @Transactional(readOnly = true)
-    public BundleListResponse getBundles(String slotCode, String ownerSelector, String statusSelector, String search) {
+    public BundleListResponse getBundles(UUID slotId, String ownerSelector, String statusSelector, String search) {
         UUID currentUserId = SecurityUtils.getCurrentUserId();
         DormUser currentUser = loadUser(currentUserId);
         boolean isAdmin = SecurityUtils.hasRole("ADMIN");
         boolean isManager = SecurityUtils.hasRole("FLOOR_MANAGER");
-        boolean includeRemoved = "removed".equalsIgnoreCase(statusSelector);
+        boolean includeDeleted = "deleted".equalsIgnoreCase(statusSelector)
+                || "removed".equalsIgnoreCase(statusSelector);
 
         UUID ownerFilter = null;
         if ("all".equalsIgnoreCase(ownerSelector)) {
@@ -161,18 +152,13 @@ public class FridgeService {
 
         List<FridgeBundle> candidates = new ArrayList<>();
 
-        if (slotCode != null && !slotCode.isBlank()) {
-            FridgeCompartment compartment = fridgeCompartmentRepository.findBySlotCode(slotCode)
+        if (slotId != null) {
+            FridgeCompartment compartment = fridgeCompartmentRepository.findById(slotId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SLOT_NOT_FOUND"));
             verifyBundleReadAccess(currentUser, compartment, isAdmin, isManager);
-            candidates.addAll(fridgeBundleRepository.findByFridgeCompartmentAndStatus(
-                    compartment,
-                    includeRemoved ? FridgeBundleStatus.REMOVED : FridgeBundleStatus.ACTIVE));
-            if (includeRemoved) {
-                // include removed bundles as well
-                candidates.addAll(fridgeBundleRepository.findByFridgeCompartmentAndStatus(
-                        compartment,
-                        FridgeBundleStatus.ACTIVE));
+            candidates.addAll(fridgeBundleRepository.findByFridgeCompartmentAndStatus(compartment, FridgeBundleStatus.ACTIVE));
+            if (includeDeleted) {
+                candidates.addAll(fridgeBundleRepository.findByFridgeCompartmentAndStatus(compartment, FridgeBundleStatus.DELETED));
             }
         } else if (ownerFilter != null) {
             candidates.addAll(fridgeBundleRepository.findByOwner(currentUser));
@@ -181,7 +167,7 @@ public class FridgeService {
             candidates.addAll(fridgeBundleRepository.findAll());
         }
 
-        if (!includeRemoved) {
+        if (!includeDeleted) {
             candidates = candidates.stream()
                     .filter(b -> b.getStatus() == FridgeBundleStatus.ACTIVE)
                     .toList();
@@ -234,7 +220,7 @@ public class FridgeService {
     public CreateBundleResponse createBundle(CreateBundleRequest request) {
         UUID currentUserId = SecurityUtils.getCurrentUserId();
         DormUser currentUser = loadUser(currentUserId);
-        FridgeCompartment compartment = fridgeCompartmentRepository.findBySlotCode(request.slotCode())
+        FridgeCompartment compartment = fridgeCompartmentRepository.findById(request.slotId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SLOT_NOT_FOUND"));
 
         verifyBundleWriteAccess(currentUser, compartment);
@@ -246,23 +232,19 @@ public class FridgeService {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "CAPACITY_EXCEEDED");
         }
 
-        String nextLabel = allocateLabel(compartment);
+        int labelNumber = allocateLabelNumber(compartment);
         OffsetDateTime now = OffsetDateTime.now(clock);
 
         FridgeBundle bundle = new FridgeBundle();
         bundle.setOwner(currentUser);
         bundle.setFridgeCompartment(compartment);
-        bundle.setLabelCode(nextLabel);
+        bundle.setLabelNumber(labelNumber);
         bundle.setBundleName(request.bundleName());
         bundle.setMemo(request.memo());
 
-        List<FridgeItem> items = new ArrayList<>();
-        int seq = 1;
         for (CreateBundleItemInput input : request.items()) {
-            items.add(buildItem(currentUser, bundle, seq++, input.name(), input.expiryDate(), input.quantity(),
-                    input.priority(), input.memo(), now));
+            bundle.getItems().add(buildItem(bundle, input.name(), input.expiryDate(), input.quantity(), input.unitCode()));
         }
-        bundle.getItems().addAll(items);
 
         FridgeBundle saved = fridgeBundleRepository.save(bundle);
         RoomAssignment ownerAssignment = roomAssignmentRepository.findActiveAssignment(currentUserId)
@@ -324,14 +306,8 @@ public class FridgeService {
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
         ensureBundleActive(bundle);
 
-        OffsetDateTime now = OffsetDateTime.now(clock);
-        int nextSequence = bundle.getItems().stream()
-                .mapToInt(FridgeItem::getSequenceNo)
-                .max()
-                .orElse(0) + 1;
-
-        FridgeItem item = buildItem(currentUser, bundle, nextSequence, request.name(), request.expiryDate(),
-                request.quantity(), request.priority(), request.memo(), now);
+        FridgeItem item = buildItem(bundle, request.name(), request.expiryDate(),
+                request.quantity(), request.unitCode());
         bundle.getItems().add(item);
         fridgeBundleRepository.save(bundle);
 
@@ -350,33 +326,36 @@ public class FridgeService {
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
         ensureBundleActive(bundle);
 
-        OffsetDateTime now = OffsetDateTime.now(clock);
-
+        boolean changed = false;
         if (StringUtils.hasText(request.name())) {
             item.setItemName(request.name().trim());
+            changed = true;
         }
         if (request.expiryDate() != null) {
-            item.setExpiresOn(request.expiryDate());
+            item.setExpiryDate(request.expiryDate());
+            changed = true;
         }
         if (request.quantity() != null) {
             item.setQuantity(request.quantity());
+            changed = true;
         }
-        if (request.priority() != null) {
-            item.setPriority(parsePriority(request.priority()));
-        }
-        if (request.memo() != null) {
-            item.setMemo(request.memo());
+        if (request.unitCode() != null) {
+            item.setUnitCode(request.unitCode().isBlank() ? null : request.unitCode().trim());
+            changed = true;
         }
         if (request.removedAt() != null) {
-            item.setStatus(FridgeItemStatus.REMOVED);
+            item.setStatus(FridgeItemStatus.DELETED);
             item.setDeletedAt(request.removedAt());
-        } else {
+            changed = true;
+        } else if (item.getStatus() == FridgeItemStatus.DELETED) {
             item.setStatus(FridgeItemStatus.ACTIVE);
             item.setDeletedAt(null);
+            changed = true;
         }
-        item.setPostInspectionModified(true);
-        item.setLastModifiedAt(now);
-        item.setLastModifiedBy(currentUser);
+
+        if (changed) {
+            item.setUpdatedAfterInspection(true);
+        }
 
         FridgeItem saved = fridgeItemRepository.save(item);
         return FridgeDtoMapper.toItemResponse(saved);
@@ -394,11 +373,10 @@ public class FridgeService {
         ensureCompartmentNotLocked(bundle.getFridgeCompartment());
         ensureBundleActive(bundle);
 
-        item.setStatus(FridgeItemStatus.REMOVED);
-        item.setDeletedAt(OffsetDateTime.now(clock));
-        item.setLastModifiedAt(OffsetDateTime.now(clock));
-        item.setLastModifiedBy(currentUser);
-        item.setPostInspectionModified(true);
+        OffsetDateTime ts = OffsetDateTime.now(clock);
+        item.setStatus(FridgeItemStatus.DELETED);
+        item.setDeletedAt(ts);
+        item.setUpdatedAfterInspection(true);
 
         fridgeItemRepository.save(item);
     }
@@ -424,44 +402,47 @@ public class FridgeService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND"));
     }
 
-    private FridgeSlotResponse mapSlot(short floor, FridgeCompartment compartment, boolean fullView) {
-        String type = "FRIDGE_COMP";
-        String status = compartment.isActive() ? "ACTIVE" : "OUT_OF_SERVICE";
-        String temperature = switch (compartment.getCompartmentType()) {
-            case FREEZER -> "freezer";
-            case REFRIGERATOR -> "refrigerator";
-        };
-        String displayName = generateDisplayName(floor, compartment);
+    private FridgeSlotResponse mapSlot(FridgeUnit unit, FridgeCompartment compartment, boolean fullView) {
+        int slotIndex = compartment.getSlotIndex();
+        String slotLetter = LabelFormatter.toSlotLetter(slotIndex);
+        int floorNo = unit.getFloorNo();
+        String floorCode = floorNo + "F";
+        String displayName = fullView ? generateDisplayName(unit, compartment) : null;
 
         return new FridgeSlotResponse(
                 compartment.getId(),
-                compartment.getSlotCode(),
-                floor,
-                floor + "F",
-                type,
-                status,
-                fullView ? (int) compartment.getLabelRangeStart() : null,
-                fullView ? (int) compartment.getLabelRangeEnd() : null,
-                fullView ? (int) compartment.getMaxBundleCount() : null,
-                fullView ? temperature : null,
-                fullView ? (int) compartment.getDisplayOrder() : null,
-                fullView ? displayName : null,
-                compartment.isActive()
+                slotIndex,
+                slotLetter,
+                floorNo,
+                floorCode,
+                compartment.getCompartmentType().name(),
+                compartment.getStatus().name(),
+                compartment.isLocked(),
+                compartment.getLockedUntil(),
+                fullView ? compartment.getMaxBundleCount() : null,
+                displayName
         );
     }
 
-    private String generateDisplayName(short floor, FridgeCompartment compartment) {
-        String typeLabel = compartment.getCompartmentType() == com.dormmate.backend.modules.fridge.domain.CompartmentType.FREEZER
+    private String generateDisplayName(FridgeUnit unit, FridgeCompartment compartment) {
+        String typeLabel = compartment.getCompartmentType() == com.dormmate.backend.modules.fridge.domain.CompartmentType.FREEZE
                 ? "냉동"
                 : "냉장";
-        return floor + "F " + typeLabel + " " + compartment.getDisplayOrder() + "칸";
+        return unit.getFloorNo() + "F " + typeLabel + " " + (compartment.getSlotIndex() + 1) + "칸";
     }
 
     private boolean matchesSearch(FridgeBundle bundle, String keyword) {
         if (bundle.getBundleName() != null && bundle.getBundleName().toLowerCase().contains(keyword)) {
             return true;
         }
-        if (bundle.getLabelCode() != null && bundle.getLabelCode().toLowerCase().contains(keyword)) {
+        String labelNumber = LabelFormatter.formatLabelNumber(bundle.getLabelNumber()).toLowerCase();
+        if (labelNumber.contains(keyword)) {
+            return true;
+        }
+        String labelDisplay = LabelFormatter.toBundleLabel(
+                bundle.getFridgeCompartment().getSlotIndex(),
+                bundle.getLabelNumber()).toLowerCase();
+        if (labelDisplay.contains(keyword)) {
             return true;
         }
         return bundle.getItems().stream()
@@ -486,7 +467,7 @@ public class FridgeService {
         RoomAssignment assignment = roomAssignmentRepository.findActiveAssignment(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED"));
         List<CompartmentRoomAccess> accesses = compartmentRoomAccessRepository
-                .findByFridgeCompartmentAndReleasedAtIsNullOrderByPriorityOrderAsc(compartment);
+                .findByFridgeCompartmentIdAndReleasedAtIsNullOrderByAssignedAtAsc(compartment.getId());
         boolean accessible = accesses.stream()
                 .map(CompartmentRoomAccess::getRoom)
                 .map(Room::getId)
@@ -505,50 +486,52 @@ public class FridgeService {
         verifyBundleReadAccess(currentUser, compartment, isAdmin, isManager);
     }
 
-    private String allocateLabel(FridgeCompartment compartment) {
+    private int allocateLabelNumber(FridgeCompartment compartment) {
         BundleLabelSequence sequence = bundleLabelSequenceRepository
                 .findByFridgeCompartmentId(compartment.getId())
                 .orElseGet(() -> {
                     BundleLabelSequence created = new BundleLabelSequence();
                     created.setFridgeCompartment(compartment);
-                    created.setNextLabel((short) 1);
+                    created.setNextNumber(1);
+                    created.setRecycledNumbers(new ArrayList<>());
                     return created;
                 });
 
-        short current = sequence.getNextLabel();
+        List<Integer> recycled = new ArrayList<>(sequence.getRecycledNumbers());
+        if (!recycled.isEmpty()) {
+            recycled.sort(Integer::compareTo);
+            int reused = recycled.remove(0);
+            sequence.setRecycledNumbers(recycled);
+            bundleLabelSequenceRepository.save(sequence);
+            return reused;
+        }
+
+        int candidate = sequence.getNextNumber();
         for (int i = 0; i < MAX_LABEL; i++) {
-            String labelCode = String.format("%03d", current);
+            int labelCandidate = wrapLabel(candidate + i);
             boolean exists = fridgeBundleRepository
-                    .findByFridgeCompartmentAndLabelCodeAndStatus(compartment, labelCode, FridgeBundleStatus.ACTIVE)
+                    .findByFridgeCompartmentAndLabelNumberAndStatus(compartment, labelCandidate, FridgeBundleStatus.ACTIVE)
                     .isPresent();
             if (!exists) {
-                sequence.setNextLabel(nextLabelValue(current));
+                sequence.setNextNumber(wrapLabel(labelCandidate + 1));
                 bundleLabelSequenceRepository.save(sequence);
-                return labelCode;
+                return labelCandidate;
             }
-            current = nextLabelValue(current);
         }
         throw new ResponseStatusException(HttpStatus.CONFLICT, "LABEL_POOL_EXHAUSTED");
     }
 
-    private short nextLabelValue(short value) {
-        short next = (short) (value + 1);
-        if (next > MAX_LABEL) {
-            next = 1;
-        }
-        return next;
+    private int wrapLabel(int value) {
+        int normalized = value % MAX_LABEL;
+        return normalized == 0 ? MAX_LABEL : normalized;
     }
 
     private FridgeItem buildItem(
-            DormUser currentUser,
             FridgeBundle bundle,
-            int sequence,
             String name,
             LocalDate expiryDate,
             Integer quantityOpt,
-            String priorityRaw,
-            String memo,
-            OffsetDateTime now
+            String unitCode
     ) {
         int quantity = quantityOpt != null ? quantityOpt : 1;
         if (quantity <= 0) {
@@ -560,45 +543,57 @@ public class FridgeService {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_NAME");
         }
 
+        if (expiryDate == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_EXPIRY");
+        }
+
         FridgeItem item = new FridgeItem();
         item.setBundle(bundle);
-        item.setSequenceNo(sequence);
         item.setItemName(itemName);
-        item.setExpiresOn(expiryDate);
+        item.setExpiryDate(expiryDate);
         item.setQuantity(quantity);
-        item.setUnit(null);
-        item.setPriority(parsePriority(priorityRaw));
-        item.setMemo(StringUtils.hasText(memo) ? memo.trim() : null);
+        item.setUnitCode(unitCode != null && !unitCode.isBlank() ? unitCode.trim() : null);
         item.setStatus(FridgeItemStatus.ACTIVE);
-        item.setPostInspectionModified(false);
-        item.setLastModifiedAt(now);
-        item.setLastModifiedBy(currentUser);
+        item.setUpdatedAfterInspection(false);
+        item.setDeletedAt(null);
         return item;
     }
 
-    private FridgeItemPriority parsePriority(String priorityRaw) {
-        if (!StringUtils.hasText(priorityRaw)) {
-            return null;
-        }
-        try {
-            return FridgeItemPriority.valueOf(priorityRaw.trim().toUpperCase());
-        } catch (IllegalArgumentException ex) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_PRIORITY");
-        }
-    }
-
     private void softDeleteBundle(FridgeBundle bundle, OffsetDateTime removedAt) {
+        if (bundle.getStatus() == FridgeBundleStatus.DELETED) {
+            return;
+        }
         OffsetDateTime ts = Objects.requireNonNullElse(removedAt, OffsetDateTime.now(clock));
-        bundle.setStatus(FridgeBundleStatus.REMOVED);
+        bundle.setStatus(FridgeBundleStatus.DELETED);
         bundle.setDeletedAt(ts);
         bundle.getItems().forEach(item -> {
-            item.setStatus(FridgeItemStatus.REMOVED);
+            item.setStatus(FridgeItemStatus.DELETED);
             item.setDeletedAt(ts);
         });
+
+        bundleLabelSequenceRepository.findByFridgeCompartmentId(bundle.getFridgeCompartment().getId())
+                .ifPresent(sequence -> {
+                    List<Integer> recycled = new ArrayList<>(sequence.getRecycledNumbers());
+                    if (!recycled.contains(bundle.getLabelNumber())) {
+                        recycled.add(bundle.getLabelNumber());
+                        recycled.sort(Integer::compareTo);
+                        sequence.setRecycledNumbers(recycled);
+                        bundleLabelSequenceRepository.save(sequence);
+                    }
+                });
     }
 
     private void ensureCompartmentNotLocked(FridgeCompartment compartment) {
         OffsetDateTime now = OffsetDateTime.now(clock);
+        if (compartment.getLockedUntil() != null && compartment.getLockedUntil().isBefore(now)) {
+            compartment.setLocked(false);
+            compartment.setLockedUntil(null);
+        }
+        if (compartment.isLocked()) {
+            if (compartment.getLockedUntil() == null || compartment.getLockedUntil().isAfter(now)) {
+                throw new ResponseStatusException(HttpStatus.LOCKED, "COMPARTMENT_LOCKED");
+            }
+        }
         if (compartment.getLockedUntil() != null && compartment.getLockedUntil().isAfter(now)) {
             throw new ResponseStatusException(HttpStatus.LOCKED, "COMPARTMENT_LOCKED");
         }

@@ -1,9 +1,11 @@
 package com.dormmate.backend.modules.fridge.domain;
 
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
+import com.dormmate.backend.global.common.ResourceStatus;
 import com.dormmate.backend.global.jpa.AbstractTimestampedEntity;
 
 import jakarta.persistence.CascadeType;
@@ -27,18 +29,18 @@ public class FridgeUnit extends AbstractTimestampedEntity {
     @Column(name = "id", nullable = false, updatable = false, columnDefinition = "uuid")
     private UUID id;
 
-    @Column(name = "floor", nullable = false)
-    private short floor;
+    @Column(name = "floor_no", nullable = false)
+    private short floorNo;
 
-    @Column(name = "label", nullable = false, length = 20)
-    private String label;
+    @Column(name = "display_name", length = 50)
+    private String displayName;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "cold_type", nullable = false, length = 16)
-    private ColdType coldType;
+    @Column(name = "status", nullable = false, length = 16)
+    private ResourceStatus status = ResourceStatus.ACTIVE;
 
-    @Column(name = "description", length = 255)
-    private String description;
+    @Column(name = "retired_at")
+    private OffsetDateTime retiredAt;
 
     @OneToMany(mappedBy = "fridgeUnit", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = false)
     private List<FridgeCompartment> compartments = new ArrayList<>();
@@ -47,36 +49,36 @@ public class FridgeUnit extends AbstractTimestampedEntity {
         return id;
     }
 
-    public short getFloor() {
-        return floor;
+    public short getFloorNo() {
+        return floorNo;
     }
 
-    public void setFloor(short floor) {
-        this.floor = floor;
+    public void setFloorNo(short floorNo) {
+        this.floorNo = floorNo;
     }
 
-    public String getLabel() {
-        return label;
+    public String getDisplayName() {
+        return displayName;
     }
 
-    public void setLabel(String label) {
-        this.label = label;
+    public void setDisplayName(String displayName) {
+        this.displayName = displayName;
     }
 
-    public ColdType getColdType() {
-        return coldType;
+    public ResourceStatus getStatus() {
+        return status;
     }
 
-    public void setColdType(ColdType coldType) {
-        this.coldType = coldType;
+    public void setStatus(ResourceStatus status) {
+        this.status = status;
     }
 
-    public String getDescription() {
-        return description;
+    public OffsetDateTime getRetiredAt() {
+        return retiredAt;
     }
 
-    public void setDescription(String description) {
-        this.description = description;
+    public void setRetiredAt(OffsetDateTime retiredAt) {
+        this.retiredAt = retiredAt;
     }
 
     public List<FridgeCompartment> getCompartments() {

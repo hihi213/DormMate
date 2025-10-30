@@ -13,7 +13,8 @@ import { useToast } from "@/hooks/use-toast"
 import { getCurrentUserId } from "@/lib/auth"
 import { Input } from "@/components/ui/input"
 import { ExpiryInput } from "@/components/shared/expiry-input"
-import { formatShortDate } from "@/lib/date-utils"
+import { daysLeft, formatShortDate } from "@/lib/date-utils"
+import { formatCompartmentLabel, formatStickerLabel } from "@/features/fridge/utils/labels"
 
 export default function ItemDetailSheet({
   open = false,
@@ -36,14 +37,14 @@ export default function ItemDetailSheet({
   const uid = getCurrentUserId()
   const canEdit = !!(it && (it.ownerId ? uid === it.ownerId : it.owner === "me"))
 
-  const [form, setForm] = useState({ name: "", expiry: "", memo: "" })
+  const [form, setForm] = useState({ name: "", expiryDate: "" })
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState(false)
   useEffect(() => {
-    if (it) setForm({ name: it.name, expiry: it.expiry, memo: it.memo || "" })
+    if (it) setForm({ name: it.name, expiryDate: it.expiryDate })
   }, [it])
 
-  const d = it ? daysLeft(it.expiry) : Number.NaN
+  const d = it ? daysLeft(it.expiryDate) : Number.NaN
   const dText = isNaN(d) ? "" : ddayLabel(d)
   const statusColor = isNaN(d)
     ? "text-gray-600"
@@ -119,14 +120,15 @@ export default function ItemDetailSheet({
               {/* Summary */}
               <Card className="border-emerald-200">
                 <CardContent className="py-3">
-                  <div className="text-sm">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <Field label="보관 칸" value={it.slotCode || "-"} />
-                      <Field
-                        label="유통기한"
-                        value={
+                    <div className="text-sm">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <Field label="보관 칸" value={formatCompartmentLabel(it.slotIndex)} />
+                        <Field label="스티커" value={formatStickerLabel(it.slotIndex, it.labelNumber)} />
+                        <Field
+                          label="유통기한"
+                          value={
                           <span className="inline-flex items-center gap-2">
-                            <span>{formatShortDate(it.expiry)}</span>
+                            <span>{formatShortDate(it.expiryDate)}</span>
                             <span className={`inline-flex items-center gap-1 text-sm ${statusColor}`}>
                               <CalendarDays className="size-4" />
                               {dText}
@@ -157,18 +159,10 @@ export default function ItemDetailSheet({
                     <ExpiryInput
                       id="expiry"
                       label="유통기한"
-                      value={form.expiry}
-                      onChange={(next) => setForm((f) => ({ ...f, expiry: next }))}
+                      value={form.expiryDate}
+                      onChange={(next) => setForm((f) => ({ ...f, expiryDate: next }))}
                       warningThresholdDays={3}
                     />
-                    <div className="grid gap-2">
-                      <Label htmlFor="memo">{"메모(선택)"}</Label>
-                      <Input
-                        id="memo"
-                        value={form.memo}
-                        onChange={(e) => setForm((f) => ({ ...f, memo: e.target.value }))}
-                      />
-                    </div>
                     <div className="flex justify-end">
                       <Button
                         className="bg-emerald-600 hover:bg-emerald-700"
@@ -178,8 +172,7 @@ export default function ItemDetailSheet({
                           setSaving(true)
                           const result = await updateItem(it.unitId, {
                             name: form.name,
-                            expiry: form.expiry,
-                            memo: form.memo || undefined,
+                            expiryDate: form.expiryDate,
                           })
                           setSaving(false)
                           if (result.success) {
@@ -217,11 +210,6 @@ function Field({ label, value, className = "" }: { label: string; value: React.R
       <div className="text-sm">{value}</div>
     </div>
   )
-}
-function daysLeft(dateISO: string) {
-  const today = new Date(new Date().toDateString())
-  const d = new Date(dateISO)
-  return Math.floor((d.getTime() - today.getTime()) / 86400000)
 }
 function ddayLabel(n: number) {
   if (isNaN(n)) return ""
