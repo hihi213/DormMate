@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { CalendarDays, ClipboardCheck, Loader2, PauseCircle, Play, ShieldCheck } from "lucide-react"
 
@@ -13,7 +13,7 @@ import { SlotSelector } from "@/features/fridge/components/slot-selector"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentUser } from "@/lib/auth"
 import { formatShortDate } from "@/lib/date-utils"
-import { formatCompartmentLabel } from "@/features/fridge/utils/labels"
+import { formatCompartmentLabel, formatSlotDisplayName } from "@/features/fridge/utils/labels"
 import type { Slot } from "@/features/fridge/types"
 import type { InspectionAction, InspectionSession } from "@/features/inspections/types"
 import {
@@ -82,6 +82,22 @@ function InspectionsInner() {
 
   const selectedSlot = availableSlots.find((slot) => slot.slotId === selectedSlotId)
 
+  const getSlotLabel = useCallback(
+    (slotId?: string, slotIndex?: number) => {
+      if (slotId) {
+        const slot = slots.find((candidate) => candidate.slotId === slotId)
+        if (slot) {
+          return formatSlotDisplayName(slot)
+        }
+      }
+      if (typeof slotIndex === "number") {
+        return formatCompartmentLabel(slotIndex)
+      }
+      return "?"
+    },
+    [slots],
+  )
+
   const handleStartInspection = async () => {
     if (!selectedSlot || starting) return
     try {
@@ -92,7 +108,7 @@ function InspectionsInner() {
       setActiveSession(session)
       toast({
         title: "검사를 시작했습니다.",
-        description: `$\{formatCompartmentLabel(session.slotIndex)\} 칸 검사 세션이 생성되었습니다.`,
+        description: `${getSlotLabel(session.slotId, session.slotIndex)} 검사 세션이 생성되었습니다.`,
       })
       router.push(`/fridge/inspect?sessionId=${session.sessionId}`)
     } catch (err) {
@@ -182,7 +198,10 @@ function InspectionsInner() {
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="text-sm text-gray-800">
-                <p className="font-semibold">{`${formatCompartmentLabel(activeSession.slotIndex)} 검사 세션`}</p>
+                <p className="font-semibold">{`${getSlotLabel(
+                  activeSession.slotId,
+                  activeSession.slotIndex,
+                )} 검사 세션`}</p>
                 <p className="text-xs text-muted-foreground">
                   {`시작: ${formatShortDate(activeSession.startedAt)} (${new Date(activeSession.startedAt).toLocaleTimeString("ko-KR", {
                     hour: "2-digit",

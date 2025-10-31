@@ -8,7 +8,7 @@ import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import type { Item } from "@/features/fridge/types"
 import { formatStickerLabel } from "@/features/fridge/utils/labels"
 import { useToast } from "@/hooks/use-toast"
-import { getCurrentUserId } from "@/lib/auth"
+import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
 import { daysLeft as calcDaysLeft } from "@/lib/date-utils"
 
 export default function BundleDialog({
@@ -22,8 +22,9 @@ export default function BundleDialog({
   bundleId?: string
   bundleName?: string
 }) {
-  const { items, deleteItem } = useFridge()
+  const { items, bundles, deleteItem } = useFridge()
   const { toast } = useToast()
+  const currentUser = getCurrentUser()
   const closeDialog = useCallback(() => onOpenChange(false), [onOpenChange])
   const [deletingId, setDeletingId] = useState<string | null>(null)
 
@@ -32,12 +33,24 @@ export default function BundleDialog({
     return items.filter((it) => it.bundleId === bundleId).sort((a, b) => a.id.localeCompare(b.id))
   }, [items, bundleId])
 
-  const representativeMemo = sortedItems[0]?.bundleMemo
+  const representativeMemo = sortedItems[0]?.bundleMemo ?? ""
   const groupCode = sortedItems[0]?.bundleLabelDisplay
   const ownerId = sortedItems[0]?.ownerId
+  const bundleMeta = useMemo(
+    () => bundles.find((candidate) => candidate.bundleId === bundleId) ?? null,
+    [bundles, bundleId],
+  )
 
   const uid = getCurrentUserId()
-  const canManage = Boolean(sortedItems.length && ownerId && uid === ownerId)
+  const ownerUserId = bundleMeta?.ownerUserId ?? sortedItems[0]?.ownerUserId ?? null
+  const derivedOwner =
+    sortedItems[0]?.owner ?? (ownerUserId && uid ? (ownerUserId === uid ? "me" : "other") : "other")
+  const isOwner = sortedItems.length > 0 && derivedOwner === "me"
+  const isAdmin = currentUser?.isAdmin ?? false
+  const ownerInfo =
+    [bundleMeta?.ownerRoomNumber ?? sortedItems[0]?.ownerRoomNumber, bundleMeta?.ownerDisplayName].filter(Boolean).join(" • ") ||
+    "소유자 정보 없음"
+  const canManage = isOwner && Boolean(sortedItems.length)
 
   // Auto close when nothing left
   useEffect(() => {
@@ -84,8 +97,19 @@ export default function BundleDialog({
         <div className="p-3">
           {groupCode && <div className="text-xs text-muted-foreground mb-1">{`대표 식별번호: ${groupCode}`}</div>}
 
-          {representativeMemo && (
-            <div className="text-xs text-muted-foreground mb-2">{`대표 메모: ${representativeMemo}`}</div>
+          {sortedItems.length > 0 && (
+            <div className="text-xs text-muted-foreground mb-2">
+              {isOwner
+                ? representativeMemo
+                  ? `대표 메모: ${representativeMemo}`
+                  : "대표 메모가 없습니다."
+                : isAdmin
+                  ? `${ownerInfo} 물품입니다. 메모는 비공개예요.`
+                  : "다른 사람 물품이라 가려졌어요~"}
+            </div>
+          )}
+          {!isOwner && isAdmin && (
+            <div className="text-xs text-muted-foreground mb-2">{`소유자: ${ownerInfo}`}</div>
           )}
 
           <ul className="space-y-2">

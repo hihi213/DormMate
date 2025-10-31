@@ -25,7 +25,7 @@ export default function ItemDetailPage() {
 function DetailInner() {
   const router = useRouter()
   const search = useSearchParams()
-  const { items, updateItem, deleteItem } = useFridge()
+  const { items, updateItem, deleteItem, getSlotLabel } = useFridge()
   const [itemId, setItemId] = useState<string>("")
   const [edit, setEdit] = useState<boolean>(false)
   const { toast } = useToast()
@@ -116,7 +116,7 @@ function DetailInner() {
           <CardContent className="py-3">
             <div className="text-sm">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <Field label="보관 칸" value={formatCompartmentLabel(it.slotIndex)} />
+                <Field label="보관 칸" value={getSlotLabel(it.slotId, it.slotIndex)} />
                 <Field label="스티커" value={formatStickerLabel(it.slotIndex, it.labelNumber)} />
                 <Field
                   label="유통기한"

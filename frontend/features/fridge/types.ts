@@ -94,6 +94,8 @@ export type Item = {
   owner?: Owner
   ownerId?: string
   ownerUserId?: string | null
+  ownerDisplayName?: string | null
+  ownerRoomNumber?: string | null
   bundleMemo?: string | null
   freshness?: string | null
   priority?: ItemPriority
@@ -156,4 +158,5 @@ export type ActionResult<T = void> = {
   data?: T
   error?: string
   message?: string
+  code?: string
 }

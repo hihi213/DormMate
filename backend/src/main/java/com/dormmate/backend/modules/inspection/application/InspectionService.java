@@ -118,7 +118,7 @@ public class InspectionService {
         session.getParticipants().add(participant);
 
         InspectionSession saved = inspectionSessionRepository.save(session);
-        return mapSession(saved);
+        return mapSession(saved, currentUser);
     }
 
     @Transactional(readOnly = true)
@@ -132,14 +132,16 @@ public class InspectionService {
         if (sessions.isEmpty()) {
             return Optional.empty();
         }
-        return Optional.of(mapSession(sessions.getFirst()));
+        DormUser currentUser = loadCurrentUser();
+        return Optional.of(mapSession(sessions.getFirst(), currentUser));
     }
 
     @Transactional(readOnly = true)
     public InspectionSessionResponse getSession(UUID sessionId) {
         InspectionSession session = inspectionSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND"));
-        return mapSession(session);
+        DormUser currentUser = loadCurrentUser();
+        return mapSession(session, currentUser);
     }
 
     public void cancelSession(UUID sessionId) {
@@ -217,7 +219,7 @@ public class InspectionService {
         }
 
         inspectionSessionRepository.save(session);
-        return mapSession(session);
+        return mapSession(session, currentUser);
     }
 
     public InspectionSessionResponse submitSession(UUID sessionId, SubmitInspectionRequest request) {
@@ -243,7 +245,7 @@ public class InspectionService {
 
         InspectionSession saved = inspectionSessionRepository.save(session);
         notificationService.sendInspectionResultNotifications(saved);
-        return mapSession(saved);
+        return mapSession(saved, currentUser);
     }
 
     private void ensureManagerRole() {
@@ -274,15 +276,20 @@ public class InspectionService {
         }
     }
 
-    private InspectionSessionResponse mapSession(InspectionSession session) {
+    private InspectionSessionResponse mapSession(InspectionSession session, DormUser viewer) {
         FridgeCompartment compartment = session.getFridgeCompartment();
         List<FridgeBundle> bundles = fridgeBundleRepository
                 .findByFridgeCompartmentAndStatus(compartment, FridgeBundleStatus.ACTIVE);
 
         Map<UUID, RoomAssignment> assignments = loadAssignmentsForBundles(bundles);
+        UUID viewerId = viewer.getId();
         List<FridgeBundleResponse> bundleResponses = bundles.stream()
                 .sorted(Comparator.comparing(FridgeBundle::getCreatedAt).reversed())
-                .map(bundle -> FridgeDtoMapper.toResponse(bundle, assignments.get(bundle.getOwner().getId())))
+                .map(bundle -> FridgeDtoMapper.toResponse(
+                        bundle,
+                        assignments.get(bundle.getOwner().getId()),
+                        bundle.getOwner().getId().equals(viewerId)
+                ))
                 .toList();
 
         List<InspectionActionSummaryResponse> summaries = buildSummary(session);
