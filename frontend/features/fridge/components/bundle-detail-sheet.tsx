@@ -10,7 +10,7 @@ import { Loader2, Trash2, X, Pencil, Check } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import { useToast } from "@/hooks/use-toast"
-import { getCurrentUserId } from "@/lib/auth"
+import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { ExpiryInput } from "@/components/shared/expiry-input"
@@ -28,18 +28,43 @@ export default function BundleDetailSheet({
   bundleId?: string
   initialEdit?: boolean
 }) {
-  const { items, updateItem, deleteItem, renameBundle, deleteBundle: removeBundle, isSlotActive } = useFridge()
+  const { items, bundles, updateItem, deleteItem, renameBundle, deleteBundle: removeBundle, isSlotActive } = useFridge()
   const { toast } = useToast()
   const uid = getCurrentUserId()
+  const currentUser = getCurrentUser()
 
   const group = useMemo(() => items.filter((x) => x.bundleId === bundleId), [items, bundleId])
   const first = group[0]
+  const bundleMeta = useMemo(
+    () => bundles.find((candidate) => candidate.bundleId === bundleId) ?? null,
+    [bundles, bundleId],
+  )
   const bundleName = first?.bundleName ?? "묶음"
   const groupCode = first ? formatStickerLabel(first.slotIndex, first.labelNumber) : ""
-  const representativeMemo = first?.bundleMemo || ""
+  const representativeMemo = first?.bundleMemo ?? ""
   const slotActive = first ? isSlotActive(first.slotId) : true
-  const canManage = first && first.ownerId ? uid === first.ownerId : false
-  const canEditBundle = canManage && slotActive
+  const [slotEditable, setSlotEditable] = useState(slotActive)
+  useEffect(() => {
+    setSlotEditable(slotActive)
+  }, [slotActive])
+
+  const ownerUserId = bundleMeta?.ownerUserId ?? first?.ownerUserId ?? null
+  const derivedOwner =
+    first?.owner ?? (ownerUserId && uid ? (ownerUserId === uid ? "me" : "other") : "other")
+  const isOwner = derivedOwner === "me"
+  const canManage = isOwner
+  const isAdmin = currentUser?.isAdmin ?? false
+  const ownerInfo =
+    [bundleMeta?.ownerRoomNumber, bundleMeta?.ownerDisplayName].filter(Boolean).join(" • ") || "소유자 정보 없음"
+  const ownerLabel = isOwner ? "내 물품" : isAdmin ? ownerInfo : "타인"
+  const memoDescription = isOwner
+    ? representativeMemo
+      ? `대표 메모: ${representativeMemo}`
+      : "대표 메모가 없습니다."
+    : isAdmin
+      ? `${ownerInfo} 물품입니다. 메모는 비공개예요.`
+      : "다른 사람 물품이라 가려졌어요~"
+  const canEditBundle = isOwner && slotEditable
 
   const sorted = useMemo(() => group.slice().sort((a, b) => daysLeft(a.expiryDate) - daysLeft(b.expiryDate)), [group])
   const [bundleNameDraft, setBundleNameDraft] = useState(bundleName)
@@ -49,7 +74,7 @@ export default function BundleDetailSheet({
   const [bundleRemoving, setBundleRemoving] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null)
-  const [itemDraft, setItemDraft] = useState<{ name: string; expiryDate: string } | null>(null)
+  const [itemDraft, setItemDraft] = useState<{ name: string; expiryDate: string; quantity: number } | null>(null)
 
 useEffect(() => {
   if (!infoEditing) {
@@ -66,7 +91,12 @@ useEffect(() => {
 useEffect(() => {
   if (initialEdit && sorted.length > 0) {
     setEditingUnitId(sorted[0].unitId)
-    setItemDraft({ name: splitDetail(sorted[0].name, bundleName)[0], expiryDate: sorted[0].expiryDate })
+    const initialQuantity = sorted[0].quantity ?? 1
+    setItemDraft({
+      name: splitDetail(sorted[0].name, bundleName)[0],
+      expiryDate: sorted[0].expiryDate,
+      quantity: initialQuantity > 0 ? initialQuantity : 1,
+    })
   } else if (!initialEdit) {
     setEditingUnitId(null)
     setItemDraft(null)
@@ -83,7 +113,7 @@ useEffect(() => {
 }, [open])
 
 const startInfoEdit = () => {
-  if (!slotActive) {
+  if (!slotEditable) {
     toast({
       title: "수정할 수 없습니다",
       description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
@@ -104,7 +134,7 @@ const cancelInfoEdit = () => {
 
 const handleSaveBundleInfo = async () => {
   if (!bundleId) return
-  if (!slotActive) {
+  if (!slotEditable) {
     toast({
       title: "수정할 수 없습니다",
       description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
@@ -145,6 +175,9 @@ const handleSaveBundleInfo = async () => {
     if (nameChanged) {
       const renameResult = await renameBundle(bundleId, trimmedName)
       if (!renameResult.success) {
+        if (renameResult.code === "COMPARTMENT_SUSPENDED") {
+          setSlotEditable(false)
+        }
         throw new Error(renameResult.error ?? "대표명을 수정하는 중 문제가 발생했습니다.")
       }
     }
@@ -153,9 +186,18 @@ const handleSaveBundleInfo = async () => {
       const results = await Promise.all(
         sorted.map((it) => updateItem(it.unitId, { memo: trimmedMemo ? trimmedMemo : undefined })),
       )
-      const allOk = results.every((res) => res.success)
+      let suspended = false
+      const allOk = results.every((res) => {
+        if (!res.success && res.code === "COMPARTMENT_SUSPENDED") {
+          suspended = true
+        }
+        return res.success
+      })
       if (!allOk) {
-        throw new Error("일부 물품 메모 저장에 실패했습니다.")
+        if (suspended) {
+          setSlotEditable(false)
+        }
+        throw new Error(suspended ? "해당 칸이 점검 중이라 메모를 저장할 수 없습니다." : "일부 물품 메모 저장에 실패했습니다.")
       }
     }
 
@@ -176,7 +218,7 @@ const handleSaveBundleInfo = async () => {
 
 const handleDeleteBundle = async () => {
   if (!canEditBundle || !bundleId) return
-  if (!slotActive) {
+  if (!slotEditable) {
     toast({
       title: "삭제할 수 없습니다",
       description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
@@ -192,6 +234,9 @@ const handleDeleteBundle = async () => {
       toast({ title: "묶음이 삭제되었습니다." })
       onOpenChange(false)
     } else {
+      if (result.code === "COMPARTMENT_SUSPENDED") {
+        setSlotEditable(false)
+      }
       toast({
         title: "묶음 삭제 실패",
         description: result.error ?? "묶음을 삭제하는 중 오류가 발생했습니다.",
@@ -209,10 +254,11 @@ const handleDeleteBundle = async () => {
   }
 }
 
-const beginEditItem = (unitId: string, currentName: string, currentExpiryDate: string) => {
+const beginEditItem = (unitId: string, currentName: string, currentExpiryDate: string, currentQuantity: number | null | undefined) => {
   const [detailName] = splitDetail(currentName, bundleName)
   setEditingUnitId(unitId)
-  setItemDraft({ name: detailName, expiryDate: currentExpiryDate })
+  const safeQuantity = currentQuantity && currentQuantity > 0 ? currentQuantity : 1
+  setItemDraft({ name: detailName, expiryDate: currentExpiryDate, quantity: safeQuantity })
 }
 
 const cancelEditItem = () => {
@@ -222,7 +268,7 @@ const cancelEditItem = () => {
 
 const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
   if (!itemDraft) return
-  if (!slotActive) {
+  if (!slotEditable) {
     toast({
       title: "수정할 수 없습니다",
       description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
@@ -238,11 +284,21 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
     })
     return
   }
+  const quantity = itemDraft.quantity
+  if (!Number.isFinite(quantity) || quantity < 1) {
+    toast({
+      title: "수량을 확인해 주세요.",
+      description: "수량은 1 이상이어야 합니다.",
+      variant: "destructive",
+    })
+    return
+  }
   try {
     const newName = useBundlePrefix ? `${bundleName} - ${nameTrimmed}` : nameTrimmed
     const result = await updateItem(unitId, {
       name: newName,
       expiryDate: itemDraft.expiryDate,
+      quantity,
     })
     if (result.success) {
       toast({
@@ -252,6 +308,9 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
       setEditingUnitId(null)
       setItemDraft(null)
     } else {
+      if (result.code === "COMPARTMENT_SUSPENDED") {
+        setSlotEditable(false)
+      }
       throw new Error(result.error ?? "물품 수정 중 오류가 발생했습니다.")
     }
   } catch (error) {
@@ -281,16 +340,20 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
             </Button>
             <div className="text-sm font-semibold truncate">{bundleName || "묶음 상세"}</div>
             <div className="inline-flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="묶음 전체 삭제"
-              onClick={() => void handleDeleteBundle()}
-              disabled={!canEditBundle || bundleRemoving}
-              title={canEditBundle ? "묶음 전체 삭제" : "수정 권한이 없거나 칸이 비활성화되었습니다"}
-            >
-                {bundleRemoving ? <Loader2 className="size-5 animate-spin" /> : <Trash2 className="size-5 text-rose-600" />}
-              </Button>
+              {canEditBundle ? (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="묶음 전체 삭제"
+                  onClick={() => void handleDeleteBundle()}
+                  disabled={bundleRemoving}
+                  title="묶음 전체 삭제"
+                >
+                  {bundleRemoving ? <Loader2 className="size-5 animate-spin" /> : <Trash2 className="size-5 text-rose-600" />}
+                </Button>
+              ) : (
+                <span className="w-9" aria-hidden="true" />
+              )}
             </div>
           </div>
         </div>
@@ -363,11 +426,9 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                         <Field label="대표명" value={bundleName || "-"} />
                         {groupCode && <Field label="대표 식별번호" value={groupCode} />}
                         <Field label="총 개수" value={`${sorted.length}`} />
-                        <Field label="소유자" value={canManage ? "내 물품" : "타인"} />
+                        <Field label="소유자" value={ownerLabel} />
                       </div>
-                      <div className="text-xs text-muted-foreground">
-                        {representativeMemo ? `대표 메모: ${representativeMemo}` : "대표 메모가 없습니다."}
-                      </div>
+                      <div className="text-xs text-muted-foreground">{memoDescription}</div>
                     </div>
                   )}
                 </CardContent>
@@ -383,10 +444,11 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                     const isEditing = canEditBundle && editingUnitId === it.unitId
                     const draftName = isEditing && itemDraft ? itemDraft.name : detailName
                     const draftExpiry = isEditing && itemDraft ? itemDraft.expiryDate : it.expiryDate
+                    const draftQuantity = isEditing && itemDraft ? itemDraft.quantity : it.quantity ?? 1
                     const displayLabel =
                       it.displayLabel ??
                       `${it.bundleLabelDisplay ?? formatStickerLabel(it.slotIndex, it.labelNumber)}-${String(it.seqNo).padStart(2, "0")}`
-                    const showItemMemo = it.memo && it.memo !== representativeMemo
+                    const showItemMemo = isOwner && it.memo && it.memo !== representativeMemo
                     return (
                       <div key={it.unitId} className="rounded-md border p-3 space-y-3">
                         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -401,7 +463,11 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                       setItemDraft((prev) =>
                                         prev
                                           ? { ...prev, name: e.target.value }
-                                          : { name: e.target.value, expiryDate: draftExpiry },
+                                          : {
+                                              name: e.target.value,
+                                              expiryDate: draftExpiry,
+                                              quantity: draftQuantity,
+                                            },
                                       )
                                     }
                                   />
@@ -414,12 +480,35 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                     value={draftExpiry}
                                     onChange={(next) =>
                                       setItemDraft((prev) =>
-                                        prev ? { ...prev, expiryDate: next } : { name: draftName, expiryDate: next },
+                                        prev
+                                          ? { ...prev, expiryDate: next }
+                                          : { name: draftName, expiryDate: next, quantity: draftQuantity },
                                       )
                                     }
                                     presets={[]}
                                     warningThresholdDays={3}
                                     showStatusBadge={false}
+                                  />
+                                </div>
+                                <div>
+                                  <Label className="text-xs text-muted-foreground">{"수량"}</Label>
+                                  <Input
+                                    type="number"
+                                    min={1}
+                                    value={draftQuantity}
+                                    onChange={(e) => {
+                                      const nextValue = Number.parseInt(e.target.value, 10)
+                                      const safeValue = Number.isNaN(nextValue) ? 1 : nextValue
+                                      setItemDraft((prev) =>
+                                        prev
+                                          ? { ...prev, quantity: safeValue }
+                                          : {
+                                              name: draftName,
+                                              expiryDate: draftExpiry,
+                                              quantity: safeValue,
+                                            },
+                                      )
+                                    }}
                                   />
                                 </div>
                                 {showItemMemo && (
@@ -472,8 +561,8 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                   variant="ghost"
                                   size="icon"
                                   aria-label="수정"
-                                  onClick={() => beginEditItem(it.unitId, it.name, it.expiryDate)}
-                                  disabled={!slotActive}
+                                  onClick={() => beginEditItem(it.unitId, it.name, it.expiryDate, it.quantity)}
+                                  disabled={!slotEditable}
                                 >
                                   <Pencil className="size-4" />
                                 </Button>
@@ -484,7 +573,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                 className="text-rose-600"
                                 onClick={async () => {
                                   if (deletingId) return
-                                  if (!slotActive) {
+                                  if (!slotEditable) {
                                     toast({
                                       title: "삭제할 수 없습니다",
                                       description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
@@ -502,6 +591,9 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                       description: `${detailName} 항목이 삭제되었습니다.`,
                                     })
                                   } else {
+                                    if (result.code === "COMPARTMENT_SUSPENDED") {
+                                      setSlotEditable(false)
+                                    }
                                     toast({
                                       title: "삭제 실패",
                                       description: result.error ?? "세부 물품 삭제 중 오류가 발생했습니다.",
@@ -509,7 +601,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                     })
                                   }
                                 }}
-                                disabled={deletingId === it.unitId || !slotActive}
+                                disabled={deletingId === it.unitId || !slotEditable}
                                 aria-label="삭제"
                               >
                                 {deletingId === it.unitId ? (

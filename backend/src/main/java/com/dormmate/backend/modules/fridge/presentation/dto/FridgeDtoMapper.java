@@ -46,6 +46,14 @@ public final class FridgeDtoMapper {
     }
 
     public static FridgeBundleSummaryResponse toSummary(FridgeBundle bundle, RoomAssignment assignment) {
+        return toSummary(bundle, assignment, true);
+    }
+
+    public static FridgeBundleSummaryResponse toSummary(
+            FridgeBundle bundle,
+            RoomAssignment assignment,
+            boolean includeMemo
+    ) {
         FridgeCompartment compartment = bundle.getFridgeCompartment();
         int slotIndex = compartment.getSlotIndex();
         String slotLabel = LabelFormatter.toSlotLetter(slotIndex);
@@ -62,7 +70,7 @@ public final class FridgeDtoMapper {
                 labelNumber,
                 labelDisplay,
                 bundle.getBundleName(),
-                bundle.getMemo(),
+                includeMemo ? bundle.getMemo() : null,
                 bundle.getOwner().getId(),
                 bundle.getOwner().getFullName(),
                 assignment != null ? assignment.getRoom().getDisplayName() : null,
@@ -76,6 +84,14 @@ public final class FridgeDtoMapper {
     }
 
     public static FridgeBundleResponse toResponse(FridgeBundle bundle, RoomAssignment assignment) {
+        return toResponse(bundle, assignment, true);
+    }
+
+    public static FridgeBundleResponse toResponse(
+            FridgeBundle bundle,
+            RoomAssignment assignment,
+            boolean includeMemo
+    ) {
         FridgeCompartment compartment = bundle.getFridgeCompartment();
         int slotIndex = compartment.getSlotIndex();
         String slotLabel = LabelFormatter.toSlotLetter(slotIndex);
@@ -96,7 +112,7 @@ public final class FridgeDtoMapper {
                 labelNumber,
                 labelDisplay,
                 bundle.getBundleName(),
-                bundle.getMemo(),
+                includeMemo ? bundle.getMemo() : null,
                 bundle.getOwner().getId(),
                 bundle.getOwner().getFullName(),
                 assignment != null ? assignment.getRoom().getDisplayName() : null,

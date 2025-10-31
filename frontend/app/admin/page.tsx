@@ -9,7 +9,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import AuthGuard from "@/features/auth/components/auth-guard"
-import { getCurrentUser, subscribeAuth, type AuthUser } from "@/lib/auth"
+import { getCurrentUser, logout as doLogout, subscribeAuth, type AuthUser } from "@/lib/auth"
 import { SlotSelector } from "@/features/fridge/components/slot-selector"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -19,6 +19,7 @@ import {
   updateFridgeCompartment,
 } from "@/features/fridge/api"
 import type { ResourceStatus, Slot, UpdateCompartmentConfigPayload } from "@/features/fridge/types"
+import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
 
 const SCHEDULE_STORAGE_KEY = "fridge-inspections-schedule-v1"
 const HISTORY_STORAGE_KEY = "fridge-inspections-history-v1"
@@ -235,7 +236,7 @@ function AdminInner() {
         setSlots((prev) => prev.map((slot) => (slot.slotId === updated.slotId ? updated : slot)))
         toast({
           title: "저장되었습니다",
-          description: `${updated.displayName ?? updated.slotLetter} 설정이 갱신되었습니다.`,
+          description: `${formatSlotDisplayName(updated)} 설정이 갱신되었습니다.`,
         })
       } catch (error) {
         toast({
@@ -252,6 +253,11 @@ function AdminInner() {
     },
     [selectedSlotId, formState.maxBundleCount, formState.status, toast],
   )
+
+  const handleLogout = useCallback(async () => {
+    await doLogout()
+    router.replace("/")
+  }, [router])
   if (!isAdmin) {
     return (
       <main className="min-h-[100svh] bg-white">
@@ -278,7 +284,12 @@ function AdminInner() {
               <p className="text-xs text-muted-foreground">{authUser?.name}</p>
             </div>
           </div>
-          <Badge variant="outline">{ROLE_LABEL.ADMIN}</Badge>
+          <div className="flex items-center gap-2">
+            <Badge variant="outline">{ROLE_LABEL.ADMIN}</Badge>
+            <Button variant="outline" size="sm" onClick={handleLogout}>
+              로그아웃
+            </Button>
+          </div>
         </div>
       </header>
 

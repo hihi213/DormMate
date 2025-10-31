@@ -99,8 +99,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void capacityExceededReturnsUnprocessableEntity() throws Exception {
-        String accessToken = loginAndGetAccessToken("bob", "bob123!");
-        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_B);
+        String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         Integer originalCapacity = jdbcTemplate.queryForObject(
                 "SELECT max_bundle_count FROM fridge_compartment WHERE id = ?",
@@ -183,7 +183,6 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
             restoreLabelSequence(slotId, originalLabelState);
         }
     }
-
     @Test
     void adminCanUpdateCompartmentConfigViaApi() throws Exception {
         String adminToken = loginAndGetAccessToken("admin", "password");
@@ -237,13 +236,13 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     @Test
     void adminCannotLowerCapacityBelowActiveBundles() throws Exception {
         String adminToken = loginAndGetAccessToken("admin", "password");
-        String managerToken = loginAndGetAccessToken("bob", "bob123!");
-        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_B);
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
 
-        createBundle(managerToken, slotId, "용량검증-1");
-        createBundle(managerToken, slotId, "용량검증-2");
+        createBundle(residentToken, slotId, "용량검증-1");
+        createBundle(residentToken, slotId, "용량검증-2");
 
         mockMvc.perform(patch("/admin/fridge/compartments/" + slotId)
                         .header("Authorization", "Bearer " + adminToken)
@@ -312,6 +311,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     void bundleListAndDetailIncludeOwnerAndCounts() throws Exception {
         String aliceToken = loginAndGetAccessToken("alice", "alice123!");
         String managerToken = loginAndGetAccessToken("bob", "bob123!");
+        String adminToken = loginAndGetAccessToken("admin", "password");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -329,7 +329,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                         get("/fridge/bundles")
                                 .param("slotId", slotId.toString())
                                 .param("owner", "all")
-                                .header("Authorization", "Bearer " + managerToken)
+                                .header("Authorization", "Bearer " + adminToken)
                 )
                 .andExpect(status().isOk())
                 .andReturn();
@@ -347,7 +347,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
         MvcResult detailResult = mockMvc.perform(
                         get("/fridge/bundles/" + aliceBundleId)
-                                .header("Authorization", "Bearer " + managerToken)
+                                .header("Authorization", "Bearer " + adminToken)
                 )
                 .andExpect(status().isOk())
                 .andReturn();
@@ -361,49 +361,210 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
-    void residentSeesOnlyAssignedSlots() throws Exception {
-        UUID aliceId = jdbcTemplate.queryForObject(
-                "SELECT id FROM dorm_user WHERE login_id = 'alice'",
-                (rs, rowNum) -> UUID.fromString(rs.getString("id"))
-        );
-        List<UUID> accessibleSlotIds = jdbcTemplate.query(
-                """
-                        SELECT DISTINCT cra.fridge_compartment_id
-                        FROM room_assignment ra
-                        JOIN compartment_room_access cra ON cra.room_id = ra.room_id
-                        WHERE ra.dorm_user_id = ?
-                          AND ra.released_at IS NULL
-                          AND cra.released_at IS NULL
-                        """,
-                (rs, rowNum) -> UUID.fromString(rs.getString("fridge_compartment_id")),
-                aliceId
-        );
+    void floorManagerCanViewBundlesWithoutMemo() throws Exception {
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String managerToken = loginAndGetAccessToken("bob", "bob123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
-        assertThat(accessibleSlotIds).isNotEmpty();
+        clearSlotBundles(slotId);
 
-        String accessToken = loginAndGetAccessToken("alice", "alice123!");
-        MvcResult response = mockMvc.perform(
-                        get("/fridge/slots")
-                                .header("Authorization", "Bearer " + accessToken)
+        String memo = "resident private memo";
+        String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(3).toString();
+        MvcResult createResult = mockMvc.perform(
+                        post("/fridge/bundles")
+                                .header("Authorization", "Bearer " + residentToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "slotId": "%s",
+                                          "bundleName": "inspection target",
+                                          "memo": "%s",
+                                          "items": [
+                                            {
+                                              "name": "라면",
+                                              "expiryDate": "%s",
+                                              "quantity": 1
+                                            }
+                                          ]
+                                        }
+                                        """.formatted(slotId, memo, expiresOn))
+                )
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        JsonNode created = objectMapper.readTree(createResult.getResponse().getContentAsString());
+        UUID bundleId = UUID.fromString(created.path("bundle").path("bundleId").asText());
+        bundlesToCleanup.add(bundleId);
+
+        MvcResult listResult = mockMvc.perform(
+                        get("/fridge/bundles")
+                                .param("slotId", slotId.toString())
+                                .header("Authorization", "Bearer " + managerToken)
                 )
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode slots = objectMapper.readTree(response.getResponse().getContentAsString());
-        assertThat(slots.isArray()).isTrue();
+        JsonNode summaries = objectMapper.readTree(listResult.getResponse().getContentAsString()).path("items");
+        JsonNode managerSummary = findBundleSummaryById(summaries, bundleId);
+        assertThat(managerSummary.has("memo")).isFalse();
 
-        List<UUID> slotIdsFromApi = new ArrayList<>();
-        for (JsonNode slot : slots) {
-            slotIdsFromApi.add(UUID.fromString(slot.path("slotId").asText()));
-        }
+        MvcResult detailResult = mockMvc.perform(
+                        get("/fridge/bundles/" + bundleId)
+                                .header("Authorization", "Bearer " + managerToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
 
-        assertThat(slotIdsFromApi).containsExactlyInAnyOrderElementsOf(Set.copyOf(accessibleSlotIds));
-        assertThat(Set.copyOf(slotIdsFromApi)).isEqualTo(Set.copyOf(accessibleSlotIds));
+        JsonNode detail = objectMapper.readTree(detailResult.getResponse().getContentAsString());
+        assertThat(detail.has("memo")).isFalse();
+        assertThat(detail.path("bundleName").asText()).isNotBlank();
+        assertThat(detail.path("items").isArray()).isTrue();
+    }
+
+    @Test
+    void adminCanViewAllBundlesButMemoIsHidden() throws Exception {
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(5).toString();
+        MvcResult createResult = mockMvc.perform(
+                        post("/fridge/bundles")
+                                .header("Authorization", "Bearer " + residentToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "slotId": "%s",
+                                          "bundleName": "admin visibility target",
+                                          "memo": "should not be visible",
+                                          "items": [
+                                            {
+                                              "name": "계란",
+                                              "expiryDate": "%s",
+                                              "quantity": 3
+                                            }
+                                          ]
+                                        }
+                                        """.formatted(slotId, expiresOn))
+                )
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        JsonNode created = objectMapper.readTree(createResult.getResponse().getContentAsString());
+        UUID bundleId = UUID.fromString(created.path("bundle").path("bundleId").asText());
+        bundlesToCleanup.add(bundleId);
+
+        MvcResult listResult = mockMvc.perform(
+                        get("/fridge/bundles")
+                                .param("slotId", slotId.toString())
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode summaries = objectMapper.readTree(listResult.getResponse().getContentAsString()).path("items");
+        JsonNode adminSummary = findBundleSummaryById(summaries, bundleId);
+        assertThat(adminSummary.has("memo")).isFalse();
+        assertThat(adminSummary.path("itemCount").asInt()).isEqualTo(1);
+
+        MvcResult detailResult = mockMvc.perform(
+                        get("/fridge/bundles/" + bundleId)
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode detail = objectMapper.readTree(detailResult.getResponse().getContentAsString());
+        assertThat(detail.has("memo")).isFalse();
+        assertThat(detail.path("items").isArray()).isTrue();
+        assertThat(detail.path("items").size()).isEqualTo(1);
+    }
+
+    @Test
+    void residentSeesOnlyAssignedSlots() throws Exception {
+        assertAccessibleSlotsMatch("alice", "alice123!");
+    }
+
+    @Test
+    void floorManagerSeesAllSlotsOnAssignedFloor() throws Exception {
+        String loginId = "bob";
+        String password = "bob123!";
+
+        UUID managerId = jdbcTemplate.queryForObject(
+                "SELECT id FROM dorm_user WHERE login_id = ?",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                loginId
+        );
+
+        int managedFloor = jdbcTemplate.queryForObject(
+                """
+                        SELECT r.floor
+                        FROM room_assignment ra
+                        JOIN room r ON r.id = ra.room_id
+                        WHERE ra.dorm_user_id = ?
+                          AND ra.released_at IS NULL
+                        """,
+                Integer.class,
+                managerId
+        );
+
+        List<UUID> expectedSlotIds = jdbcTemplate.query(
+                """
+                        SELECT fc.id
+                        FROM fridge_compartment fc
+                        JOIN fridge_unit fu ON fu.id = fc.fridge_unit_id
+                        WHERE fu.floor_no = ?
+                        """,
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                managedFloor
+        );
+        assertThat(expectedSlotIds).isNotEmpty();
+
+        String accessToken = loginAndGetAccessToken(loginId, password);
+
+        assertSlotsMatchExpected(accessToken, null, expectedSlotIds);
+        assertSlotsMatchExpected(accessToken, managedFloor, expectedSlotIds);
+    }
+
+    @Test
+    void floorManagerCannotAccessOtherFloors() throws Exception {
+        String loginId = "bob";
+        String password = "bob123!";
+        String accessToken = loginAndGetAccessToken(loginId, password);
+
+        UUID managerId = jdbcTemplate.queryForObject(
+                "SELECT id FROM dorm_user WHERE login_id = ?",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                loginId
+        );
+
+        int managedFloor = jdbcTemplate.queryForObject(
+                """
+                        SELECT r.floor
+                        FROM room_assignment ra
+                        JOIN room r ON r.id = ra.room_id
+                        WHERE ra.dorm_user_id = ?
+                          AND ra.released_at IS NULL
+                        """,
+                Integer.class,
+                managerId
+        );
+
+        int otherFloor = managedFloor == 2 ? 3 : 2;
+
+        mockMvc.perform(
+                        get("/fridge/slots")
+                                .param("floor", String.valueOf(otherFloor))
+                                .header("Authorization", "Bearer " + accessToken)
+                )
+                .andExpect(status().isForbidden());
     }
 
     @Test
     void deletingBundleRecyclesLabelForNextCreation() throws Exception {
-        String managerToken = loginAndGetAccessToken("bob", "bob123!");
+        String managerToken = loginAndGetAccessToken("admin", "password");
         UUID slotId = fetchSlotId(4, SLOT_INDEX_A);
 
         LabelSequenceState originalLabelState = jdbcTemplate.query(
@@ -594,6 +755,68 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                     slotId
             );
         }
+    }
+
+    private void assertAccessibleSlotsMatch(String loginId, String password) throws Exception {
+        UUID userId = jdbcTemplate.queryForObject(
+                "SELECT id FROM dorm_user WHERE login_id = ?",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                loginId
+        );
+        List<UUID> accessibleSlotIds = jdbcTemplate.query(
+                """
+                        SELECT DISTINCT cra.fridge_compartment_id
+                        FROM room_assignment ra
+                        JOIN compartment_room_access cra ON cra.room_id = ra.room_id
+                        WHERE ra.dorm_user_id = ?
+                          AND ra.released_at IS NULL
+                          AND cra.released_at IS NULL
+                        """,
+                (rs, rowNum) -> UUID.fromString(rs.getString("fridge_compartment_id")),
+                userId
+        );
+
+        assertThat(accessibleSlotIds).isNotEmpty();
+
+        String accessToken = loginAndGetAccessToken(loginId, password);
+        MvcResult response = mockMvc.perform(
+                        get("/fridge/slots")
+                                .header("Authorization", "Bearer " + accessToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode slots = objectMapper.readTree(response.getResponse().getContentAsString());
+        assertThat(slots.isArray()).isTrue();
+
+        List<UUID> slotIdsFromApi = new ArrayList<>();
+        for (JsonNode slot : slots) {
+            slotIdsFromApi.add(UUID.fromString(slot.path("slotId").asText()));
+        }
+
+        assertThat(slotIdsFromApi).containsExactlyInAnyOrderElementsOf(Set.copyOf(accessibleSlotIds));
+    }
+
+    private void assertSlotsMatchExpected(String accessToken, Integer floor, List<UUID> expectedSlotIds) throws Exception {
+        var requestBuilder = get("/fridge/slots")
+                .header("Authorization", "Bearer " + accessToken);
+        if (floor != null) {
+            requestBuilder.param("floor", String.valueOf(floor));
+        }
+
+        MvcResult response = mockMvc.perform(requestBuilder)
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode slots = objectMapper.readTree(response.getResponse().getContentAsString());
+        assertThat(slots.isArray()).isTrue();
+
+        List<UUID> slotIdsFromApi = new ArrayList<>();
+        for (JsonNode slot : slots) {
+            slotIdsFromApi.add(UUID.fromString(slot.path("slotId").asText()));
+        }
+
+        assertThat(slotIdsFromApi).containsExactlyInAnyOrderElementsOf(Set.copyOf(expectedSlotIds));
     }
 
     private record LabelSequenceState(int nextNumber, String recycledNumbers) {

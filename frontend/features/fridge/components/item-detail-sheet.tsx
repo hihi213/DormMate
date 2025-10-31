@@ -10,11 +10,11 @@ import { CalendarDays, Loader2, Pencil, Trash2, X } from "lucide-react"
 import { Label } from "@/components/ui/label"
 import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import { useToast } from "@/hooks/use-toast"
-import { getCurrentUserId } from "@/lib/auth"
+import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
 import { Input } from "@/components/ui/input"
 import { ExpiryInput } from "@/components/shared/expiry-input"
 import { daysLeft, formatShortDate } from "@/lib/date-utils"
-import { formatCompartmentLabel, formatStickerLabel } from "@/features/fridge/utils/labels"
+import { formatStickerLabel } from "@/features/fridge/utils/labels"
 
 export default function ItemDetailSheet({
   open = false,
@@ -27,7 +27,7 @@ export default function ItemDetailSheet({
   itemId?: string
   initialEdit?: boolean
 }) {
-  const { items, updateItem, deleteItem } = useFridge()
+  const { items, updateItem, deleteItem, getSlotLabel } = useFridge()
   const { toast } = useToast()
   const [edit, setEdit] = useState(initialEdit)
 
@@ -35,7 +35,13 @@ export default function ItemDetailSheet({
 
   const it = useMemo(() => items.find((x) => x.id === itemId) || null, [items, itemId])
   const uid = getCurrentUserId()
+  const currentUser = getCurrentUser()
   const canEdit = !!(it && (it.ownerId ? uid === it.ownerId : it.owner === "me"))
+  const isOwner = canEdit
+  const isAdmin = currentUser?.isAdmin ?? false
+  const ownerInfo =
+    [it?.ownerRoomNumber, it?.ownerDisplayName].filter(Boolean).join(" • ") || "소유자 정보 없음"
+  const ownerLabel = isOwner ? "내 물품" : isAdmin ? ownerInfo : "타인"
 
   const [form, setForm] = useState({ name: "", expiryDate: "" })
   const [saving, setSaving] = useState(false)
@@ -122,7 +128,7 @@ export default function ItemDetailSheet({
                 <CardContent className="py-3">
                     <div className="text-sm">
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <Field label="보관 칸" value={formatCompartmentLabel(it.slotIndex)} />
+                        <Field label="보관 칸" value={getSlotLabel(it.slotId, it.slotIndex)} />
                         <Field label="스티커" value={formatStickerLabel(it.slotIndex, it.labelNumber)} />
                         <Field
                           label="유통기한"
@@ -136,9 +142,21 @@ export default function ItemDetailSheet({
                           </span>
                         }
                       />
-                      <Field label="등록일" value={formatShortDate(it.createdAt)} />
-                      <Field label="소유자" value={it.ownerId ? (uid === it.ownerId ? "내 물품" : "타인") : it.owner} />
-                      {it.memo && <Field label="메모" value={it.memo} className="sm:col-span-2" />}
+                        <Field label="등록일" value={formatShortDate(it.createdAt)} />
+                        <Field label="소유자" value={ownerLabel} />
+                        <Field
+                          label="메모"
+                          value={
+                            isOwner
+                              ? it.memo && it.memo.length > 0
+                                ? it.memo
+                                : "메모가 없습니다."
+                              : isAdmin
+                                ? `${ownerInfo} 물품입니다. 메모는 비공개예요.`
+                                : "다른 사람 물품이라 가려졌어요~"
+                          }
+                          className="sm:col-span-2"
+                        />
                     </div>
                   </div>
                 </CardContent>

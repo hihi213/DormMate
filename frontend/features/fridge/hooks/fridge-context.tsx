@@ -23,6 +23,7 @@ import {
 import { toItems } from "@/features/fridge/utils/data-shaping"
 import {
   formatCompartmentLabel,
+  formatSlotDisplayName,
   formatStickerLabel,
   formatStickerWithSequence,
 } from "@/features/fridge/utils/labels"
@@ -74,6 +75,9 @@ type ErrorWithStatus = Error & { status?: number }
 const isSuspendedError = (error: unknown): error is ErrorWithStatus =>
   error instanceof Error && (error as ErrorWithStatus).status === 423
 
+const isCapacityError = (error: unknown): error is ErrorWithStatus & { code?: string } =>
+  error instanceof Error && (error as ErrorWithStatus).status === 422
+
 export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const currentUserId = getCurrentUserId() || undefined
 
@@ -95,7 +99,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       }
 
       const currentUser = getCurrentUser()
-      const ownerScope = currentUser?.isAdmin || currentUser?.isFloorManager ? "all" : "me"
+      const ownerScope = currentUser?.isAdmin ? "all" : "me"
 
       try {
         const [slotResult, inventoryResult] = await Promise.allSettled([
@@ -178,6 +182,18 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           return {
             success: false,
             error: error.message || "선택한 칸이 점검 중이라 등록할 수 없습니다.",
+            code: "COMPARTMENT_SUSPENDED",
+          }
+        }
+        if (isCapacityError(error)) {
+          const capacityMessage =
+            (error as ErrorWithStatus & { code?: string }).code === "CAPACITY_EXCEEDED"
+              ? "선택한 칸의 허용량을 초과했습니다. 다른 칸을 선택하거나 기존 포장을 정리해 주세요."
+              : error.message || "포장 허용량을 초과했습니다."
+          return {
+            success: false,
+            error: capacityMessage,
+            code: "CAPACITY_EXCEEDED",
           }
         }
         return {
@@ -310,6 +326,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           return {
             success: false,
             error: error.message || "해당 칸이 점검 중이라 물품을 수정할 수 없습니다.",
+            code: "COMPARTMENT_SUSPENDED",
           }
         }
         return {
@@ -367,6 +384,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           return {
             success: false,
             error: error.message || "해당 칸이 점검 중이라 대표명을 수정할 수 없습니다.",
+            code: "COMPARTMENT_SUSPENDED",
           }
         }
         return {
@@ -413,6 +431,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           return {
             success: false,
             error: error.message || "해당 칸이 점검 중이라 물품을 삭제할 수 없습니다.",
+            code: "COMPARTMENT_SUSPENDED",
           }
         }
         return {
@@ -436,6 +455,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           return {
             success: false,
             error: error.message || "해당 칸이 점검 중이라 묶음을 삭제할 수 없습니다.",
+            code: "COMPARTMENT_SUSPENDED",
           }
         }
         return {
@@ -458,7 +478,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
     (slotId: string, fallbackIndex?: number) => {
       const slot = slots.find((candidate) => candidate.slotId === slotId)
       if (slot) {
-        return slot.displayName ?? formatCompartmentLabel(slot.slotIndex)
+        return formatSlotDisplayName(slot)
       }
       if (typeof fallbackIndex === "number") {
         return formatCompartmentLabel(fallbackIndex)

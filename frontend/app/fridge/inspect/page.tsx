@@ -23,17 +23,18 @@ import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
 import SearchBar from "@/features/fridge/components/search-bar"
 import WarnMenu from "@/features/fridge/components/warn-menu"
-import type { Item } from "@/features/fridge/types"
+import type { Item, Slot } from "@/features/fridge/types"
 import type { InspectionAction, InspectionSession } from "@/features/inspections/types"
 import {
   fetchActiveInspection,
   fetchInspection,
+  fetchInspectionSlots,
   recordInspectionActions,
   submitInspection,
 } from "@/features/inspections/api"
 import { getCurrentUser } from "@/lib/auth"
 import { daysLeft, ddayLabel, formatShortDate } from "@/lib/date-utils"
-import { formatCompartmentLabel, formatStickerLabel } from "@/features/fridge/utils/labels"
+import { formatCompartmentLabel, formatSlotDisplayName, formatStickerLabel } from "@/features/fridge/utils/labels"
 
 type Stage = "idle" | "in-progress" | "committed"
 
@@ -100,6 +101,7 @@ function InspectInner() {
   const [cancelOpen, setCancelOpen] = useState(false)
   const [stickerDialogOpen, setStickerDialogOpen] = useState(false)
   const [stickerName, setStickerName] = useState("")
+  const [slots, setSlots] = useState<Slot[]>([])
   const resultsHydratedRef = useRef(false)
   const skipSummarySyncRef = useRef(false)
   const bundleOrderRef = useRef<Record<string, number>>({})
@@ -144,6 +146,24 @@ function InspectInner() {
     void load()
   }, [router, sessionIdParam, toast])
 
+  useEffect(() => {
+    let ignore = false
+    const loadSlots = async () => {
+      try {
+        const data = await fetchInspectionSlots()
+        if (!ignore) {
+          setSlots(data)
+        }
+      } catch (error) {
+        console.error("Failed to load inspection slots", error)
+      }
+    }
+    void loadSlots()
+    return () => {
+      ignore = true
+    }
+  }, [])
+
   const items = useMemo(() => session?.items ?? [], [session])
 
   useEffect(() => {
@@ -161,6 +181,14 @@ function InspectInner() {
   const processedRegisteredItems = results.filter((r) => r.itemId).length
   const remainingItems = Math.max(totalItems - processedRegisteredItems, 0)
   const isInspectionComplete = remainingItems === 0 && totalItems > 0
+
+  const getSlotLabel = useCallback(
+    (slotId: string, slotIndex: number) => {
+      const slot = slots.find((candidate) => candidate.slotId === slotId)
+      return slot ? formatSlotDisplayName(slot) : formatCompartmentLabel(slotIndex)
+    },
+    [slots],
+  )
 
   const processedUnitIds = useMemo(() => {
     const ids = new Set<string>()
@@ -524,7 +552,10 @@ function InspectInner() {
           <div className="flex-1 text-center">
             <div className="inline-flex items-center gap-2">
               <ClipboardCheck className="w-4 h-4 text-emerald-700" />
-              <h1 className="text-base font-semibold leading-none">{`냉장고 검사 · ${formatCompartmentLabel(session.slotIndex)}`}</h1>
+              <h1 className="text-base font-semibold leading-none">{`냉장고 검사 · ${getSlotLabel(
+                session.slotId,
+                session.slotIndex,
+              )}`}</h1>
             </div>
           </div>
           <div className="inline-flex flex-col items-end gap-1">

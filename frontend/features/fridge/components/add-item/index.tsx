@@ -32,7 +32,7 @@ import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useAddItemWorkflow, formatExpiryDisplay } from "./use-add-item-workflow"
 import { getCurrentUserId } from "@/lib/auth"
-import { formatCompartmentLabel } from "@/features/fridge/utils/labels"
+import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
 
 const LIST_SCROLL_BOX_HEIGHT = "clamp(240px, 35vh, 360px)"
 
@@ -51,6 +51,27 @@ export default function AddItemDialog({
   const { toast } = useToast()
   const uid = getCurrentUserId()
 
+  const isSlotSelectable = useCallback(
+    (slot: Slot) => slot.resourceStatus === "ACTIVE" && !slot.locked,
+    [],
+  )
+
+  const describeDisabledSlot = useCallback((slot: Slot) => {
+    if (slot.locked) {
+      return "검사 중이라 선택할 수 없습니다."
+    }
+    switch (slot.resourceStatus) {
+      case "SUSPENDED":
+        return "관리자 점검으로 일시 중지된 칸입니다."
+      case "REPORTED":
+        return "이상 신고가 접수된 칸입니다."
+      case "RETIRED":
+        return "퇴역 처리된 칸입니다."
+      default:
+        return undefined
+    }
+  }, [])
+
   const ownedSlotIds = useMemo(() => {
     if (!uid) return []
     const ids = new Set<string>()
@@ -65,7 +86,7 @@ export default function AddItemDialog({
     })
     const activeIds = Array.from(ids).filter((slotId) => {
       const slot = slots.find((s) => s.slotId === slotId)
-      return slot ? slot.resourceStatus === "ACTIVE" : true
+      return slot ? isSlotSelectable(slot) : true
     })
     activeIds.sort((a, b) => {
       const slotA = slots.find((slot) => slot.slotId === a)
@@ -75,9 +96,13 @@ export default function AddItemDialog({
       return idxA - idxB
     })
     return activeIds
-  }, [bundles, uid, slots])
+  }, [bundles, uid, slots, isSlotSelectable])
 
-  const fallbackSlot = currentSlotId || ownedSlotIds[0] || slots[0]?.slotId || ""
+  const fallbackSlot =
+    currentSlotId ||
+    ownedSlotIds[0] ||
+    slots.find((slot) => isSlotSelectable(slot))?.slotId ||
+    ""
 
   const closeDialog = useCallback(() => onOpenChange(false), [onOpenChange])
 
@@ -169,7 +194,7 @@ export default function AddItemDialog({
   const remainingCapacity = slotCapacity != null ? Math.max(slotCapacity - currentBundleCount, 0) : null
   const isSlotFull = slotCapacity != null && remainingCapacity <= 0
   const selectedSlotLabel = selectedSlot
-    ? selectedSlot.displayName ?? formatCompartmentLabel(selectedSlot.slotIndex)
+    ? formatSlotDisplayName(selectedSlot)
     : metadataSlot
 
   const stepLabel = isMetadataStep ? "2 / 2" : "1 / 2"
@@ -377,6 +402,8 @@ export default function AddItemDialog({
                 remainingCapacity={remainingCapacity}
                 slotLabel={selectedSlotLabel}
                 isSlotFull={isSlotFull}
+                isSlotSelectable={isSlotSelectable}
+                describeDisabledSlot={describeDisabledSlot}
               />
             ) : (
               <FormFields
@@ -413,6 +440,8 @@ function MetadataFields({
   remainingCapacity,
   slotLabel,
   isSlotFull,
+  isSlotSelectable,
+  describeDisabledSlot,
 }: {
   slots: Slot[]
   slotId: string
@@ -426,6 +455,8 @@ function MetadataFields({
   remainingCapacity: number | null
   slotLabel: string
   isSlotFull: boolean
+  isSlotSelectable: (slot: Slot) => boolean
+  describeDisabledSlot: (slot: Slot) => string | undefined
 }) {
   const capacityKnown = slotCapacity != null
   const remainingText = remainingCapacity != null ? remainingCapacity : 0
@@ -434,7 +465,13 @@ function MetadataFields({
     <div className="space-y-4 pb-4">
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-700">보관 칸</p>
-        <SlotSelector value={slotId} onChange={onChangeSlot} slots={slots} />
+        <SlotSelector
+          value={slotId}
+          onChange={onChangeSlot}
+          slots={slots}
+          isSelectable={isSlotSelectable}
+          getDisabledDescription={describeDisabledSlot}
+        />
         {capacityKnown && (
           <div
             className={cn(
