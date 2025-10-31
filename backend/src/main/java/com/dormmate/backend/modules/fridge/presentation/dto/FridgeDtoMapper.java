@@ -21,6 +21,30 @@ public final class FridgeDtoMapper {
     private FridgeDtoMapper() {
     }
 
+    public static FridgeSlotResponse toSlotResponse(FridgeCompartment compartment, boolean includeCapacity) {
+        int slotIndex = compartment.getSlotIndex();
+        String slotLetter = LabelFormatter.toSlotLetter(slotIndex);
+        int floorNo = compartment.getFridgeUnit().getFloorNo();
+        String floorCode = floorNo + "F";
+
+        Integer capacity = includeCapacity ? compartment.getMaxBundleCount() : null;
+        String displayName = includeCapacity ? buildDisplayName(compartment, floorNo) : null;
+
+        return new FridgeSlotResponse(
+                compartment.getId(),
+                slotIndex,
+                slotLetter,
+                floorNo,
+                floorCode,
+                compartment.getCompartmentType().name(),
+                compartment.getStatus().name(),
+                compartment.isLocked(),
+                compartment.getLockedUntil(),
+                capacity,
+                displayName
+        );
+    }
+
     public static FridgeBundleSummaryResponse toSummary(FridgeBundle bundle, RoomAssignment assignment) {
         FridgeCompartment compartment = bundle.getFridgeCompartment();
         int slotIndex = compartment.getSlotIndex();
@@ -136,5 +160,12 @@ public final class FridgeDtoMapper {
             return "expiring";
         }
         return "ok";
+    }
+
+    private static String buildDisplayName(FridgeCompartment compartment, int floorNo) {
+        String typeLabel = compartment.getCompartmentType() == com.dormmate.backend.modules.fridge.domain.CompartmentType.FREEZE
+                ? "냉동"
+                : "냉장";
+        return floorNo + "F " + typeLabel + " " + (compartment.getSlotIndex() + 1) + "칸";
     }
 }

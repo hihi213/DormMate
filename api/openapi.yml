@@ -19,6 +19,8 @@ tags:
     description: 층별장 검사 세션 및 결과 기록
   - name: Events
     description: 폴링 기반 실시간 이벤트 전파
+  - name: FridgeAdmin
+    description: 관리자 냉장고 자원 제어
 components:
   securitySchemes:
     BearerAuth:
@@ -184,6 +186,15 @@ components:
           nullable: true
       required:
         [slotId, slotIndex, slotLetter, floorNo, floorCode, compartmentType, resourceStatus, locked]
+    UpdateCompartmentConfigRequest:
+      type: object
+      properties:
+        maxBundleCount:
+          type: integer
+          minimum: 1
+        status:
+          $ref: '#/components/schemas/ResourceStatus'
+      additionalProperties: false
     ItemFreshness:
       type: string
       enum: [ok, expiring, expired]
@@ -508,6 +519,42 @@ paths:
   /fridge/slots:
     get:
       tags: [Fridge]
+
+  /admin/fridge/compartments/{compartmentId}:
+    patch:
+      tags: [FridgeAdmin]
+      summary: 냉장고 칸 설정 수정
+      operationId: updateFridgeCompartment
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: path
+          name: compartmentId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCompartmentConfigRequest'
+      responses:
+        '200':
+          description: 수정 성공
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FridgeSlot'
+        '403':
+          description: 관리자 권한 필요
+        '404':
+          description: 대상 칸을 찾을 수 없음
+        '409':
+          description: 검사 세션이 진행 중인 칸은 상태를 변경할 수 없음
+        '422':
+          description: 현재 활성 포장 수보다 낮게 용량을 설정할 수 없음
       summary: 냉장고 칸 메타데이터 조회
       security: [{ BearerAuth: [] }]
       parameters:

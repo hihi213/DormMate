@@ -3,7 +3,13 @@
 import type React from "react"
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react"
 
-import type { ActionResult, Bundle, Item, ItemUnit, Slot } from "@/features/fridge/types"
+import type {
+  ActionResult,
+  Bundle,
+  Item,
+  ItemUnit,
+  Slot,
+} from "@/features/fridge/types"
 import { useFridgeLogic } from "@/hooks/use-fridge-logic"
 import {
   fetchFridgeInventory,
@@ -62,6 +68,11 @@ type FridgeContextValue = {
 }
 
 const FridgeContext = createContext<FridgeContextValue | null>(null)
+
+type ErrorWithStatus = Error & { status?: number }
+
+const isSuspendedError = (error: unknown): error is ErrorWithStatus =>
+  error instanceof Error && (error as ErrorWithStatus).status === 423
 
 export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const currentUserId = getCurrentUserId() || undefined
@@ -163,6 +174,12 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           message: `${bundle.bundleName} 묶음이 등록되었습니다.`,
         }
       } catch (error) {
+        if (isSuspendedError(error)) {
+          return {
+            success: false,
+            error: error.message || "선택한 칸이 점검 중이라 등록할 수 없습니다.",
+          }
+        }
         return {
           success: false,
           error: error instanceof Error ? error.message : "포장을 등록하는 중 오류가 발생했습니다.",
@@ -289,6 +306,12 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
 
         return { success: true, message: "물품이 수정되었습니다." }
       } catch (error) {
+        if (isSuspendedError(error)) {
+          return {
+            success: false,
+            error: error.message || "해당 칸이 점검 중이라 물품을 수정할 수 없습니다.",
+          }
+        }
         return {
           success: false,
           error: error instanceof Error ? error.message : "물품 수정 중 오류가 발생했습니다.",
@@ -340,6 +363,12 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           message: `${bundle.bundleName}으로 대표명이 변경되었습니다.`,
         }
       } catch (error) {
+        if (isSuspendedError(error)) {
+          return {
+            success: false,
+            error: error.message || "해당 칸이 점검 중이라 대표명을 수정할 수 없습니다.",
+          }
+        }
         return {
           success: false,
           error:
@@ -380,6 +409,12 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
 
         return { success: true, message: "물품이 삭제되었습니다." }
       } catch (error) {
+        if (isSuspendedError(error)) {
+          return {
+            success: false,
+            error: error.message || "해당 칸이 점검 중이라 물품을 삭제할 수 없습니다.",
+          }
+        }
         return {
           success: false,
           error: error instanceof Error ? error.message : "물품 삭제 중 오류가 발생했습니다.",
@@ -397,6 +432,12 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         setUnits((prev) => prev.filter((unit) => unit.bundleId !== bundleId))
         return { success: true, message: "묶음이 삭제되었습니다." }
       } catch (error) {
+        if (isSuspendedError(error)) {
+          return {
+            success: false,
+            error: error.message || "해당 칸이 점검 중이라 묶음을 삭제할 수 없습니다.",
+          }
+        }
         return {
           success: false,
           error:

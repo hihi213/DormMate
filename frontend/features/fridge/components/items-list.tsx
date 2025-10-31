@@ -64,7 +64,7 @@ function MergedByUrgency({
   onOpenItem?: (id: string, opts?: { edit?: boolean }) => void
   onOpenBundle?: (bundleId: string, opts?: { edit?: boolean }) => void
 }) {
-  const { deleteItem } = useFridge()
+  const { deleteItem, isSlotActive } = useFridge()
   const { toast } = useToast()
   const uid = getCurrentUserId()
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
@@ -95,8 +95,9 @@ function MergedByUrgency({
       {rows.map((row) => {
         if (row.kind === "single") {
           const it = row.item
-          const status = resolveStatus(it.expiryDate)
+          const status = resolveStatus(it.expiryDate, it.freshness)
           const isMine = it.ownerId ? uid === it.ownerId : it.owner === "me"
+          const slotActive = isSlotActive(it.slotId)
 
           return (
             <SwipeableCard
@@ -111,6 +112,14 @@ function MergedByUrgency({
                   onClick={async (e) => {
                     e.stopPropagation()
                     if (!isMine || pendingDeleteId) return
+                    if (!slotActive) {
+                      toast({
+                        title: "삭제할 수 없습니다",
+                        description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
+                        variant: "destructive",
+                      })
+                      return
+                    }
                     if (!confirm("해당 물품을 삭제하시겠어요? (되돌릴 수 없음)")) return
                     setPendingDeleteId(it.unitId)
                     const result = await deleteItem(it.unitId)
@@ -128,7 +137,7 @@ function MergedByUrgency({
                       })
                     }
                   }}
-                  disabled={!isMine || pendingDeleteId === it.unitId}
+                  disabled={!isMine || pendingDeleteId === it.unitId || !slotActive}
                   aria-label="삭제"
                   title="삭제"
                 >
@@ -147,9 +156,10 @@ function MergedByUrgency({
           const grp = row.items
           const first = grp[0]
           const bundleName = first.bundleName
-          const status = resolveStatus(grp[0].expiryDate) // earliest after sort
+          const status = resolveStatus(grp[0].expiryDate, grp[0].freshness) // earliest after sort
           const count = grp.length
           const isMine = first.ownerId ? uid === first.ownerId : false
+          const slotActive = isSlotActive(first.slotId)
 
           return (
             <SwipeableCard
@@ -164,6 +174,14 @@ function MergedByUrgency({
                   onClick={async (e) => {
                     e.stopPropagation()
                     if (!isMine || pendingDeleteId) return
+                    if (!slotActive) {
+                      toast({
+                        title: "삭제할 수 없습니다",
+                        description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
+                        variant: "destructive",
+                      })
+                      return
+                    }
                     if (!confirm("묶음의 모든 세부 물품을 삭제할까요? (되돌릴 수 없음)")) return
                     const deleteKey = `bundle-${first.bundleId}`
                     setPendingDeleteId(deleteKey)
@@ -183,7 +201,7 @@ function MergedByUrgency({
                       })
                     }
                   }}
-                  disabled={!isMine || pendingDeleteId === `bundle-${first.bundleId}`}
+                  disabled={!isMine || pendingDeleteId === `bundle-${first.bundleId}` || !slotActive}
                   aria-label="묶음 삭제"
                   title="묶음 삭제"
                 >

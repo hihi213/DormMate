@@ -2,6 +2,8 @@
 
 DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위한 Spring Boot 기반 백엔드와 Next.js 프론트엔드 프로젝트입니다. 이 저장소는 백엔드 우선 MVP를 목표로 하며, 운영 환경과 개발 환경을 빠르게 재현할 수 있도록 Makefile·Docker Compose·Flyway를 이용한 통합 개발 경험을 제공합니다.
 
+> 최신 MVP 범위와 구현 단계는 `docs/mvp-scenario.md`, `docs/mvp-implementation-plan.md`를 참고하세요. 기능·정책의 전체 정의는 `docs/feature-inventory.md`에 정리되어 있습니다.
+
 ## 주요 스택 & 권장 버전
 
 - **Backend**: Spring Boot 3.3.4, Java 21, Gradle 8.9, Flyway 10.17, PostgreSQL 16

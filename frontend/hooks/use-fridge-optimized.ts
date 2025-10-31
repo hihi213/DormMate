@@ -19,10 +19,10 @@ export function useFilteredItems(filters: FilterOptions) {
           if (item.owner !== "me") return false
           break
         case "expiring":
-          if (resolveStatus(item.expiryDate) !== "expiring") return false
+          if (resolveStatus(item.expiryDate, item.freshness) !== "expiring") return false
           break
         case "expired":
-          if (resolveStatus(item.expiryDate) !== "expired") return false
+          if (resolveStatus(item.expiryDate, item.freshness) !== "expired") return false
           break
         default:
           break
@@ -90,9 +90,9 @@ export function useFridgeStats() {
 
   return useMemo(() => {
     const total = items.length
-    const expired = items.filter((item) => resolveStatus(item.expiryDate) === "expired").length
-    const expiringSoon = items.filter((item) => resolveStatus(item.expiryDate) === "expiring").length
-    const fresh = items.filter((item) => resolveStatus(item.expiryDate) === "ok").length
+    const expired = items.filter((item) => resolveStatus(item.expiryDate, item.freshness) === "expired").length
+    const expiringSoon = items.filter((item) => resolveStatus(item.expiryDate, item.freshness) === "expiring").length
+    const fresh = items.filter((item) => resolveStatus(item.expiryDate, item.freshness) === "ok").length
 
     const bySlot = items.reduce<Record<string, number>>((acc, item) => {
       const key = item.slotId

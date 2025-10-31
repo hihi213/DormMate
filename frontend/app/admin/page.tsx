@@ -1,8 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
-import { ClipboardCheck, ListChecks, ShieldCheck } from "lucide-react"
+import { ClipboardCheck, ListChecks, ShieldCheck, Loader2 } from "lucide-react"
 
 import BottomNav from "@/components/bottom-nav"
 import { Badge } from "@/components/ui/badge"
@@ -10,6 +10,15 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import { getCurrentUser, subscribeAuth, type AuthUser } from "@/lib/auth"
+import { SlotSelector } from "@/features/fridge/components/slot-selector"
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { useToast } from "@/hooks/use-toast"
+import {
+  fetchFridgeSlots,
+  updateFridgeCompartment,
+} from "@/features/fridge/api"
+import type { ResourceStatus, Slot, UpdateCompartmentConfigPayload } from "@/features/fridge/types"
 
 const SCHEDULE_STORAGE_KEY = "fridge-inspections-schedule-v1"
 const HISTORY_STORAGE_KEY = "fridge-inspections-history-v1"
@@ -55,6 +64,15 @@ function AdminInner() {
   const [schedule, setSchedule] = useState<Schedule[]>([])
   const [history, setHistory] = useState<HistoryRecord[]>([])
   const [mounted, setMounted] = useState(false)
+  const { toast } = useToast()
+  const [slots, setSlots] = useState<Slot[]>([])
+  const [slotsLoading, setSlotsLoading] = useState(false)
+  const [selectedSlotId, setSelectedSlotId] = useState<string>("")
+  const [formState, setFormState] = useState<{ maxBundleCount: string; status: ResourceStatus }>({
+    maxBundleCount: "",
+    status: "ACTIVE",
+  })
+  const [savingSlot, setSavingSlot] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -92,6 +110,49 @@ function AdminInner() {
     }
   }, [authUser, mounted, router])
 
+  useEffect(() => {
+    if (!mounted || !isAdmin) return
+    let cancelled = false
+    const loadSlots = async () => {
+      try {
+        setSlotsLoading(true)
+        const data = await fetchFridgeSlots()
+        if (cancelled) return
+        setSlots(data)
+        if (!selectedSlotId && data.length > 0) {
+          setSelectedSlotId(data[0].slotId)
+        }
+      } catch (error) {
+        if (cancelled) return
+        console.error("Failed to load compartments", error)
+        toast({
+          title: "칸 정보를 불러오지 못했습니다.",
+          description: "네트워크 상태를 확인한 뒤 다시 시도해 주세요.",
+          variant: "destructive",
+        })
+      } finally {
+        if (!cancelled) {
+          setSlotsLoading(false)
+        }
+      }
+    }
+
+    void loadSlots()
+    return () => {
+      cancelled = true
+    }
+  }, [mounted, isAdmin, toast, selectedSlotId])
+
+  useEffect(() => {
+    if (!selectedSlotId) return
+    const slot = slots.find((candidate) => candidate.slotId === selectedSlotId)
+    if (!slot) return
+    setFormState({
+      maxBundleCount: slot.capacity != null ? String(slot.capacity) : "",
+      status: slot.resourceStatus,
+    })
+  }, [selectedSlotId, slots])
+
   const upcomingSchedules = useMemo(
     () =>
       schedule
@@ -110,6 +171,86 @@ function AdminInner() {
         .slice()
         .sort((a, b) => entryTime(b).localeCompare(entryTime(a))),
     [schedule],
+  )
+
+  const selectedSlot = useMemo(() => slots.find((slot) => slot.slotId === selectedSlotId) ?? null, [slots, selectedSlotId])
+  const statusOptions: ResourceStatus[] = ["ACTIVE", "SUSPENDED", "REPORTED", "RETIRED"]
+  const statusLabel = useCallback((status: ResourceStatus) => {
+    switch (status) {
+      case "ACTIVE":
+        return "사용 가능"
+      case "SUSPENDED":
+        return "점검 중"
+      case "REPORTED":
+        return "이상 신고"
+      case "RETIRED":
+        return "퇴역"
+      default:
+        return status
+    }
+  }, [])
+
+  const handleSlotChange = useCallback((slotId: string) => {
+    setSelectedSlotId(slotId)
+  }, [])
+
+  const handleCapacityChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const numericOnly = event.target.value.replace(/[^0-9]/g, "")
+    setFormState((prev) => ({ ...prev, maxBundleCount: numericOnly }))
+  }, [])
+
+  const handleStatusChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
+    setFormState((prev) => ({ ...prev, status: event.target.value as ResourceStatus }))
+  }, [])
+
+  const handleCompartmentSubmit = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (!selectedSlotId) {
+        toast({
+          title: "칸을 선택해 주세요.",
+          variant: "destructive",
+        })
+        return
+      }
+
+      const payload: UpdateCompartmentConfigPayload = {}
+      if (formState.maxBundleCount.trim().length > 0) {
+        const parsed = Number(formState.maxBundleCount)
+        if (!Number.isFinite(parsed) || parsed <= 0) {
+          toast({
+            title: "허용량을 확인해 주세요.",
+            description: "허용량은 1 이상의 숫자여야 합니다.",
+            variant: "destructive",
+          })
+          return
+        }
+        payload.maxBundleCount = Math.floor(parsed)
+      }
+      payload.status = formState.status
+
+      try {
+        setSavingSlot(true)
+        const updated = await updateFridgeCompartment(selectedSlotId, payload)
+        setSlots((prev) => prev.map((slot) => (slot.slotId === updated.slotId ? updated : slot)))
+        toast({
+          title: "저장되었습니다",
+          description: `${updated.displayName ?? updated.slotLetter} 설정이 갱신되었습니다.`,
+        })
+      } catch (error) {
+        toast({
+          title: "저장 실패",
+          description:
+            error instanceof Error
+              ? error.message
+              : "칸 설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+          variant: "destructive",
+        })
+      } finally {
+        setSavingSlot(false)
+      }
+    },
+    [selectedSlotId, formState.maxBundleCount, formState.status, toast],
   )
   if (!isAdmin) {
     return (
@@ -142,6 +283,72 @@ function AdminInner() {
       </header>
 
       <div className="mx-auto flex max-w-screen-sm flex-col gap-6 px-4 py-6">
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+              냉장고 자원 관리
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {slotsLoading ? (
+              <p className="text-sm text-muted-foreground">칸 정보를 불러오는 중입니다…</p>
+            ) : slots.length === 0 ? (
+              <p className="text-sm text-muted-foreground">등록된 냉장고 칸이 없습니다.</p>
+            ) : (
+              <form onSubmit={handleCompartmentSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label className="text-xs text-muted-foreground">보관 칸</Label>
+                  <SlotSelector
+                    value={selectedSlotId}
+                    onChange={handleSlotChange}
+                    slots={slots}
+                    placeholder="칸을 선택하세요"
+                    className="w-full"
+                  />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">허용 포장 수</Label>
+                    <Input
+                      value={formState.maxBundleCount}
+                      onChange={handleCapacityChange}
+                      inputMode="numeric"
+                      pattern="[0-9]*"
+                      placeholder={selectedSlot?.capacity != null ? String(selectedSlot.capacity) : "예: 12"}
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-xs text-muted-foreground">상태</Label>
+                    <select
+                      value={formState.status}
+                      onChange={handleStatusChange}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                    >
+                      {statusOptions.map((option) => (
+                        <option key={option} value={option}>
+                          {statusLabel(option)}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                {selectedSlot && (
+                  <p className="text-xs text-muted-foreground">
+                    {`현재 상태: ${statusLabel(selectedSlot.resourceStatus)} · 허용 포장 수: ${
+                      selectedSlot.capacity != null ? selectedSlot.capacity : "제한 없음"
+                    }`}
+                  </p>
+                )}
+                <div className="flex justify-end">
+                  <Button type="submit" disabled={savingSlot || !selectedSlotId}>
+                    {savingSlot && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
+                    저장
+                  </Button>
+                </div>
+              </form>
+            )}
+          </CardContent>
+        </Card>
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-sm font-semibold">

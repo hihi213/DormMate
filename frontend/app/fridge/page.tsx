@@ -14,6 +14,7 @@ import { getCurrentUserId } from "@/lib/auth"
 import AddItemDialog from "@/features/fridge/components/add-item-dialog"
 import { formatKoreanDate } from "./utils-fridge-page"
 import AuthGuard from "@/features/auth/components/auth-guard"
+import { useToast } from "@/hooks/use-toast"
 
 // Lazy load heavier bottom sheets
 const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
@@ -36,6 +37,7 @@ export default function FridgePage() {
 
 function FridgeInner() {
   const { items, slots, bundles } = useFridge()
+  const { toast } = useToast()
   const [query, setQuery] = useState("")
   const [tab, setTab] = useState<"all" | "mine" | "expiring" | "expired">("all")
   const [selectedSlotId, setSelectedSlotId] = useState<string>("")
@@ -177,6 +179,12 @@ function FridgeInner() {
     return { mine, expiring, expired }
   }, [items, selectedSlotId, myOnly, uid])
 
+  const selectedSlot = useMemo(() => slots.find((slot) => slot.slotId === selectedSlotId) ?? null, [slots, selectedSlotId])
+  const selectedSlotSuspended = useMemo(() => {
+    if (!selectedSlot) return false
+    return selectedSlot.resourceStatus !== "ACTIVE" || Boolean(selectedSlot.locked)
+  }, [selectedSlot])
+
   // Stable handlers
   const handleOpenItem = useCallback((id: string, opts?: { edit?: boolean }) => {
     setItemSheet({ open: true, id, edit: !!opts?.edit })
@@ -184,6 +192,21 @@ function FridgeInner() {
   const handleOpenBundle = useCallback((bid: string, opts?: { edit?: boolean }) => {
     setBundleSheet({ open: true, id: bid, edit: !!opts?.edit })
   }, [])
+
+  const handleAddClick = useCallback(() => {
+    const suspended = selectedSlot
+      ? selectedSlot.resourceStatus !== "ACTIVE" || Boolean(selectedSlot.locked)
+      : false
+    if (suspended) {
+      toast({
+        title: "등록할 수 없습니다",
+        description: "선택한 칸이 점검 중이거나 일시 중지되었습니다.",
+        variant: "destructive",
+      })
+      return
+    }
+    setAddOpen(true)
+  }, [selectedSlot, toast])
 
   return (
     <main className="min-h-[100svh] bg-white">
@@ -196,7 +219,13 @@ function FridgeInner() {
             </div>
           </div>
           <div className="inline-flex items-center gap-1">
-            <Button variant="ghost" size="icon" aria-label="물품 등록" onClick={() => setAddOpen(true)}>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="물품 등록"
+              onClick={handleAddClick}
+              aria-disabled={selectedSlotSuspended}
+            >
               <Plus className="w-5 h-5" />
             </Button>
           </div>

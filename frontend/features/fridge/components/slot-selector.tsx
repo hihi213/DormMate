@@ -58,7 +58,7 @@ export function SlotSelector({
           id="slot-popover"
           side="bottom"
           align="start"
-          className="w-[90vw] sm:w-[340px] max-w-[360px] p-0"
+          className="w-[calc(100vw-2rem)] max-w-xs sm:w-64 md:w-72 p-0"
         >
           <div className="max-h-72 overflow-y-auto">
             {showAllOption && (
