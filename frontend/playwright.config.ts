@@ -1,6 +1,18 @@
-import { defineConfig, devices } from '@playwright/test';
+import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
 
 const isCI = !!process.env.CI;
+const devServerCommand =
+  'node ./node_modules/next/dist/bin/next dev --hostname 0.0.0.0 --port 3000';
+const baseURL = process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000';
+
+const webServerConfig: PlaywrightTestConfig['webServer'] = process.env.PLAYWRIGHT_BASE_URL
+  ? undefined
+  : {
+      command: devServerCommand,
+      url: 'http://127.0.0.1:3000',
+      reuseExistingServer: !isCI,
+      timeout: 120 * 1000,
+    };
 
 export default defineConfig({
   testDir: './tests',
@@ -21,9 +33,10 @@ export default defineConfig({
   use: {
     actionTimeout: 0,
     trace: isCI ? 'retain-on-failure' : 'on-first-retry',
-    baseURL: process.env.PLAYWRIGHT_BASE_URL || 'http://localhost:3000',
+    baseURL,
     video: isCI ? 'on-first-retry' : 'retain-on-failure',
   },
+  webServer: webServerConfig,
   projects: [
     {
       name: 'chromium',
