@@ -100,6 +100,15 @@ public class InspectionService {
 
         DormUser currentUser = loadCurrentUser();
         OffsetDateTime now = OffsetDateTime.now(clock);
+        if (!SecurityUtils.hasRole("ADMIN")) {
+            RoomAssignment assignment = roomAssignmentRepository.findActiveAssignment(currentUser.getId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED"));
+            short managedFloor = assignment.getRoom().getFloor();
+            short compartmentFloor = compartment.getFridgeUnit().getFloorNo();
+            if (managedFloor != compartmentFloor) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_SCOPE_VIOLATION");
+            }
+        }
 
         InspectionSession session = new InspectionSession();
         session.setFridgeCompartment(compartment);
