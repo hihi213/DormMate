@@ -4,6 +4,15 @@
 
 SET TIME ZONE 'UTC';
 
+INSERT INTO role (code, name, description, created_at, updated_at)
+VALUES
+    ('RESIDENT', '기숙사 거주자', '기본 거주자 권한', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP),
+    ('FLOOR_MANAGER', '층별장', '층별 냉장고 담당자', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+ON CONFLICT (code) DO UPDATE
+SET name        = EXCLUDED.name,
+    description = EXCLUDED.description,
+    updated_at  = CURRENT_TIMESTAMP;
+
 -- alice 계정 (거주자)
 WITH target_user AS (
     SELECT COALESCE(
