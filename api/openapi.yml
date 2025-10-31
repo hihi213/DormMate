@@ -555,6 +555,9 @@ paths:
           description: 검사 세션이 진행 중인 칸은 상태를 변경할 수 없음
         '422':
           description: 현재 활성 포장 수보다 낮게 용량을 설정할 수 없음
+  /admin/fridge/compartments:
+    get:
+      tags: [FridgeAdmin]
       summary: 냉장고 칸 메타데이터 조회
       security: [{ BearerAuth: [] }]
       parameters:
@@ -901,8 +904,9 @@ paths:
           description: 특정 리소스(event_log.resource_id) 필터
         - in: query
           name: floor
-          schema: { type: string }
-          description: 층 코드 필터 (예: 2F)
+          schema:
+            type: string
+          description: "층 코드 필터 (예: 2F)"
       responses:
         '200':
           description: 이벤트 목록

@@ -1,6 +1,7 @@
 package com.dormmate.backend.modules.fridge;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -23,6 +24,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Set;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
@@ -178,19 +180,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                         slotId
                 );
             }
-            if (originalLabelState != null) {
-                jdbcTemplate.update(
-                        "UPDATE bundle_label_sequence SET next_number = ?, recycled_numbers = ?::jsonb WHERE fridge_compartment_id = ?",
-                        originalLabelState.nextNumber(),
-                        Optional.ofNullable(originalLabelState.recycledNumbers()).orElse("[]"),
-                        slotId
-                );
-            } else {
-                jdbcTemplate.update(
-                        "DELETE FROM bundle_label_sequence WHERE fridge_compartment_id = ?",
-                        slotId
-                );
-            }
+            restoreLabelSequence(slotId, originalLabelState);
         }
     }
 
@@ -371,6 +361,101 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void residentSeesOnlyAssignedSlots() throws Exception {
+        UUID aliceId = jdbcTemplate.queryForObject(
+                "SELECT id FROM dorm_user WHERE login_id = 'alice'",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id"))
+        );
+        List<UUID> accessibleSlotIds = jdbcTemplate.query(
+                """
+                        SELECT DISTINCT cra.fridge_compartment_id
+                        FROM room_assignment ra
+                        JOIN compartment_room_access cra ON cra.room_id = ra.room_id
+                        WHERE ra.dorm_user_id = ?
+                          AND ra.released_at IS NULL
+                          AND cra.released_at IS NULL
+                        """,
+                (rs, rowNum) -> UUID.fromString(rs.getString("fridge_compartment_id")),
+                aliceId
+        );
+
+        assertThat(accessibleSlotIds).isNotEmpty();
+
+        String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        MvcResult response = mockMvc.perform(
+                        get("/fridge/slots")
+                                .header("Authorization", "Bearer " + accessToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode slots = objectMapper.readTree(response.getResponse().getContentAsString());
+        assertThat(slots.isArray()).isTrue();
+
+        List<UUID> slotIdsFromApi = new ArrayList<>();
+        for (JsonNode slot : slots) {
+            slotIdsFromApi.add(UUID.fromString(slot.path("slotId").asText()));
+        }
+
+        assertThat(slotIdsFromApi).containsExactlyInAnyOrderElementsOf(Set.copyOf(accessibleSlotIds));
+        assertThat(Set.copyOf(slotIdsFromApi)).isEqualTo(Set.copyOf(accessibleSlotIds));
+    }
+
+    @Test
+    void deletingBundleRecyclesLabelForNextCreation() throws Exception {
+        String managerToken = loginAndGetAccessToken("bob", "bob123!");
+        UUID slotId = fetchSlotId(4, SLOT_INDEX_A);
+
+        LabelSequenceState originalLabelState = jdbcTemplate.query(
+                """
+                        SELECT next_number, recycled_numbers::text AS recycled_numbers
+                        FROM bundle_label_sequence
+                        WHERE fridge_compartment_id = ?
+                        """,
+                singleLabelState(),
+                slotId
+        );
+
+        clearSlotBundles(slotId);
+
+        try {
+            JsonNode firstBundle = createBundle(managerToken, slotId, "라벨 재사용 검증 1");
+            UUID firstBundleId = UUID.fromString(firstBundle.path("bundle").path("bundleId").asText());
+            int initialLabelNumber = firstBundle.path("bundle").path("labelNumber").asInt();
+
+            mockMvc.perform(
+                            delete("/fridge/bundles/" + firstBundleId)
+                                    .header("Authorization", "Bearer " + managerToken)
+                    )
+                    .andExpect(status().isNoContent());
+
+            JsonNode secondBundle = createBundle(managerToken, slotId, "라벨 재사용 검증 2");
+            int reusedLabelNumber = secondBundle.path("bundle").path("labelNumber").asInt();
+
+            assertThat(reusedLabelNumber).isEqualTo(initialLabelNumber);
+
+            LabelSequenceState afterState = jdbcTemplate.query(
+                    """
+                            SELECT next_number, recycled_numbers::text AS recycled_numbers
+                            FROM bundle_label_sequence
+                            WHERE fridge_compartment_id = ?
+                            """,
+                    singleLabelState(),
+                    slotId
+            );
+            assertThat(afterState).isNotNull();
+            JsonNode recycled = objectMapper.readTree(
+                    Optional.ofNullable(afterState.recycledNumbers()).orElse("[]")
+            );
+            assertThat(recycled.isArray()).isTrue();
+            assertThat(recycled.size()).isZero();
+        } finally {
+            clearSlotBundles(slotId);
+            restoreLabelSequence(slotId, originalLabelState);
+        }
+    }
+
+    @Test
     void residentCanMarkItemAsRemoved() throws Exception {
         String accessToken = loginAndGetAccessToken("alice", "alice123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
@@ -493,6 +578,22 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         int nextNumber = rs.getInt("next_number");
         String recycled = rs.getString("recycled_numbers");
         return new LabelSequenceState(nextNumber, recycled);
+    }
+
+    private void restoreLabelSequence(UUID slotId, LabelSequenceState state) {
+        if (state == null) {
+            jdbcTemplate.update(
+                    "DELETE FROM bundle_label_sequence WHERE fridge_compartment_id = ?",
+                    slotId
+            );
+        } else {
+            jdbcTemplate.update(
+                    "UPDATE bundle_label_sequence SET next_number = ?, recycled_numbers = ?::jsonb WHERE fridge_compartment_id = ?",
+                    state.nextNumber(),
+                    Optional.ofNullable(state.recycledNumbers()).orElse("[]"),
+                    slotId
+            );
+        }
     }
 
     private record LabelSequenceState(int nextNumber, String recycledNumbers) {

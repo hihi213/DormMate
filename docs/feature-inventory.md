@@ -1,5 +1,5 @@
 # DormMate 기능 인벤토리
-*용도: DormMate 서비스의 기능·정책·용어를 모듈별로 정리한 기준 문서로, MVP에 포함되지 않은 확장 요구나 애매한 정책을 검토할 때 참고한다. 구현 일정·우선순위는 `docs/mvp-scenario.md`와 `docs/mvp-implementation-plan.md`를 따른다.*
+*용도: DormMate 서비스의 기능·정책·용어를 모듈별로 정리한 기준 문서로, MVP에 포함되지 않은 확장 요구나 애매한 정책을 검토할 때 참고한다. 구현 일정·우선순위는 `docs/mvp-scenario.md`와 `docs/mvp-plan.md`를 따른다.*
 
 > **문서 사용 가이드**
 > - 각 섹션은 특정 모듈의 기능 정의를 다룬다
