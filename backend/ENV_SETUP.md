@@ -12,7 +12,7 @@ DB_USERNAME=dorm_user
 DB_PASSWORD=dorm_password
 REDIS_HOST=localhost
 REDIS_PORT=6379
-JWT_SECRET=dev-jwt-secret-key-change-in-production-2024
+JWT_SECRET=dev-jwt-secret-key-change-in-production-2025
 AWS_S3_BUCKET=dormmate-dev-storage
 AWS_REGION=ap-northeast-2
 AWS_ACCESS_KEY=dev-access-key
@@ -94,8 +94,8 @@ sudo reboot
 
 ### **개발 환경**
 ```bash
-# 환경변수 로드 후
-./gradlew bootRun --args='--spring.profiles.active=dev'
+# (프로젝트 루트에서) 환경변수 로드 후
+SPRING_PROFILES_ACTIVE=dev ./auto dev backend
 ```
 
 ### **운영 환경**
@@ -109,6 +109,26 @@ sudo reboot
 # 환경변수 파일을 사용하여 Docker 실행
 docker run --env-file .env.prod your-app-image
 ```
+
+## 🚢 **배포 절차 요약**
+1. 앱 빌드  
+   ```bash
+   cd frontend && npm run build
+   cd ../backend && ./gradlew bootJar
+   ```
+2. 이미지 태그 및 배포  
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml build app
+   docker tag dorm_app:latest dormmate/app:<TAG>
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app
+   ```
+3. 롤백  
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app --build --no-cache
+   ```
+
+배포 전에는 `./auto tests core --full-playwright` 결과를 확인하고, `.env.prod`가 최신인지 점검하세요.
 
 ## 🧊 냉장고 라벨 시드 참고
 

@@ -1,0 +1,54 @@
+# backend/.dockerignore - 백엔드 Docker 빌드 시 제외할 파일들
+
+# 빌드 산출물
+build/
+out/
+*.jar
+*.war
+*.ear
+
+# IDE 파일
+.idea/
+.vscode/
+*.iml
+*.ipr
+*.iws
+
+# OS 파일
+.DS_Store
+Thumbs.db
+
+# 로그 파일
+*.log
+logs/
+
+# 임시 파일
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Git
+.git/
+.gitignore
+
+# 환경 설정 파일
+.env
+.env.local
+.env.*.local
+
+# 테스트 결과
+test-results/
+coverage/
+
+# Gradle 캐시 (선택적)
+.gradle/
+gradle-app.setting
+
+# Node.js (만약 프론트엔드가 있다면)
+node_modules/
+npm-debug.log*
+
+# 문서
+README.md
+*.md

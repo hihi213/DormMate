@@ -1,0 +1,24 @@
+package com.dormmate.backend.modules.fridge.presentation.dto;
+
+import java.time.LocalDate;
+import java.time.OffsetDateTime;
+import java.util.UUID;
+
+import com.fasterxml.jackson.annotation.JsonInclude;
+
+@JsonInclude(JsonInclude.Include.NON_NULL)
+public record FridgeItemResponse(
+        UUID itemId,
+        UUID bundleId,
+        String name,
+        LocalDate expiryDate,
+        Integer quantity,
+        String unitCode,
+        String freshness,
+        OffsetDateTime lastInspectedAt,
+        boolean updatedAfterInspection,
+        OffsetDateTime createdAt,
+        OffsetDateTime updatedAt,
+        OffsetDateTime removedAt
+) {
+}

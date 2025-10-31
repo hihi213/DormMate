@@ -12,7 +12,7 @@ secrets/
 .codex/state.json
 
 # Node modules
-client/node_modules/
+frontend/node_modules/
 
 # Build artifacts
 backend/build/
@@ -44,6 +44,7 @@ target/
 
 # OS generated files
 .DS_Store
+frontend/playwright-report/
 .DS_Store?
 ._*
 .Spotlight-V100
@@ -113,7 +114,6 @@ jspm_packages/
 
 # Gatsby files
 .cache/
-public
 
 # Storybook build outputs
 .out
@@ -139,6 +139,7 @@ docker-data/
 
 # Gradle
 .gradle/
+.gradle-cache/
 gradle-app.setting
 !gradle-wrapper.jar
 !gradle-wrapper.properties
@@ -155,7 +156,7 @@ application-local.yml
 
 # 빌드/캐시
 backend/build/
-client/node_modules/
+frontend/node_modules/
 artifacts/
 
 # Frontend artifacts
@@ -166,10 +167,14 @@ artifacts/
 # Mac zips etc
 *.zip
 
+# Local helper scripts (developer-specific)
+with-java
+with-java-env.sh
+
 # --- 새로 추가된 항목들 ---
 
 # Docker 관련
-.dockerignore
+/.dockerignore
 # docker-compose.override.yml는 개발용이므로 커밋에 포함
 # docker-compose.*.yml
 # !docker-compose.yml
@@ -317,6 +322,9 @@ pg_hba.conf.backup
 .envrc
 .direnv/
 
+# 학습/실험 공간
+playground/
+
 # 캐시 및 임시 파일
 .cache/
 .temp/
@@ -341,13 +349,13 @@ log/
 # --- 추가 무시 항목 (프로젝트 맞춤) ---
 
 # Frontend caches
-client/.next/
-client/out/
-client/.vercel/
-client/.turbo/
-client/.vite/
-client/.cache/
-client/.swc/
+frontend/.next/
+frontend/out/
+frontend/.vercel/
+frontend/.turbo/
+frontend/.vite/
+frontend/.cache/
+frontend/.swc/
 
 # Java/Gradle extra
 backend/out/
@@ -363,9 +371,9 @@ backend/mvnw
 backend/mvnw.cmd
 
 # Node.js 특화
-client/.npm/
-client/.yarn/
-client/.pnpm-store/
+frontend/.npm/
+frontend/.yarn/
+frontend/.pnpm-store/
 
 # 로컬 설정 파일
 *.local
@@ -385,10 +393,10 @@ scripts/.env
 scripts/local/
 
 # 클라이언트 빌드/캐시(보강)
-client/dist/
-client/.vite/
-client/.cache/
-client/.turbo/
+frontend/dist/
+frontend/.vite/
+frontend/.cache/
+frontend/.turbo/
 
 # 백엔드 Gradle 캐시(보강)
 backend/.gradle/
@@ -423,4 +431,5 @@ logs/
 # --- 보안/비공개 문서(절대 커밋 금지) ---
 # 개인 계획/기능 정리 문서
 /nogitReadME.md
-/docs
+docs/ai-impl/
+docs/ops/

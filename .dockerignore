@@ -20,15 +20,19 @@ venv/
 secrets/
 api/
 docs/
+playground/
 workflow/
+with-java
+with-java-env.sh
 
 # 빌드 아티팩트
 artifacts/
 db_data/
 db_data_postgres15_backup/
 backend/build/
-client/node_modules/
-client/dist/
+.gradle-cache/
+frontend/node_modules/
+frontend/dist/
 
 # 개발 환경
 .direnv/
@@ -51,13 +55,13 @@ Thumbs.db
 .tmp/
 tmp/
 logs/
-client/.vite/
-client/.cache/
-client/.turbo/
-client/.next/
-client/out/
-client/.vercel/
-client/.swc/
+frontend/.vite/
+frontend/.cache/
+frontend/.turbo/
+frontend/.next/
+frontend/out/
+frontend/.vercel/
+frontend/.swc/
 
 # 테스트 결과
 coverage/
