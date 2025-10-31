@@ -6,6 +6,13 @@ DECLARE
     v_admin_id uuid := '11111111-1111-1111-1111-111111111111';
     v_room_id uuid;
 BEGIN
+    INSERT INTO role (code, name, description, created_at, updated_at)
+    VALUES ('ADMIN', '관리자', '시스템 전역 관리자', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+    ON CONFLICT (code) DO UPDATE
+    SET name = EXCLUDED.name,
+        description = EXCLUDED.description,
+        updated_at = CURRENT_TIMESTAMP;
+
     SELECT id INTO v_room_id
     FROM room
     WHERE floor = 3 AND room_number = '01'
