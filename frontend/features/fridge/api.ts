@@ -1,5 +1,11 @@
 import { safeApiCall } from "@/lib/api-client"
-import type { Bundle, ItemUnit, Slot } from "@/features/fridge/types"
+import type {
+  Bundle,
+  ItemUnit,
+  Slot,
+  ResourceStatus,
+  UpdateCompartmentConfigPayload,
+} from "@/features/fridge/types"
 import {
   BundleListResponseDto,
   FridgeBundleDto,
@@ -9,6 +15,19 @@ import {
   mapItemFromResponse,
   mapSlotFromDto,
 } from "@/features/fridge/utils/data-shaping"
+import type { ApiError } from "@/lib/api-errors"
+
+type RaisedError = Error & { status?: number; code?: string }
+
+function raiseFridgeError(error: ApiError | undefined, fallbackMessage: string): never {
+  const message = error?.message ?? fallbackMessage
+  const richError: RaisedError = new Error(message)
+  if (error) {
+    richError.status = error.status
+    richError.code = error.code
+  }
+  throw richError
+}
 
 export async function fetchFridgeSlots(): Promise<Slot[]> {
   const search = new URLSearchParams({ view: "full", size: "200" })
@@ -17,7 +36,7 @@ export async function fetchFridgeSlots(): Promise<Slot[]> {
   })
 
   if (error || !data) {
-    throw new Error(error?.message ?? "냉장고 칸 정보를 불러오지 못했습니다.")
+    raiseFridgeError(error, "냉장고 칸 정보를 불러오지 못했습니다.")
   }
 
   return data.map(mapSlotFromDto)
@@ -45,7 +64,7 @@ export async function fetchFridgeInventory(
   })
 
   if (error || !data) {
-    throw new Error(error?.message ?? "포장 목록을 불러오지 못했습니다.")
+    raiseFridgeError(error, "포장 목록을 불러오지 못했습니다.")
   }
 
   const summaries = data.items ?? []
@@ -65,11 +84,14 @@ export async function fetchFridgeInventory(
   const units: ItemUnit[] = []
 
   detailResults.forEach((result, index) => {
-    if (result.error || !result.data) {
-      const fallbackId = summaries[index]?.bundleId
-      const message = result.error?.message ?? "포장 상세 정보를 불러오지 못했습니다."
-      throw new Error(fallbackId ? `${message} (bundleId=${fallbackId})` : message)
-    }
+      if (result.error || !result.data) {
+        const fallbackId = summaries[index]?.bundleId
+        const message = result.error?.message ?? "포장 상세 정보를 불러오지 못했습니다."
+        raiseFridgeError(
+          result.error,
+          fallbackId ? `${message} (bundleId=${fallbackId})` : message,
+        )
+      }
     const { bundle, units: mappedUnits } = mapBundleFromDto(result.data, currentUserId)
     bundles.push(bundle)
     units.push(...mappedUnits)
@@ -120,7 +142,7 @@ export async function createBundle(
   })
 
   if (error || !data) {
-    throw new Error(error?.message ?? "포장을 등록하지 못했습니다.")
+    raiseFridgeError(error, "포장을 등록하지 못했습니다.")
   }
 
   return mapBundleFromDto(data.bundle, currentUserId)
@@ -151,7 +173,7 @@ export async function updateBundle(
   })
 
   if (error || !data) {
-    throw new Error(error?.message ?? "포장 정보를 수정하지 못했습니다.")
+    raiseFridgeError(error, "포장 정보를 수정하지 못했습니다.")
   }
 
   return mapBundleFromDto(data, currentUserId)
@@ -186,7 +208,7 @@ export async function updateItem(
   })
 
   if (error || !data) {
-    throw new Error(error?.message ?? "물품 정보를 수정하지 못했습니다.")
+    raiseFridgeError(error, "물품 정보를 수정하지 못했습니다.")
   }
 
   return mapItemFromResponse(data, bundle)
@@ -199,7 +221,7 @@ export async function deleteItem(itemId: string): Promise<void> {
   })
 
   if (error) {
-    throw new Error(error.message ?? "물품을 삭제하지 못했습니다.")
+    raiseFridgeError(error, "물품을 삭제하지 못했습니다.")
   }
 }
 
@@ -210,6 +232,30 @@ export async function deleteBundle(bundleId: string): Promise<void> {
   })
 
   if (error) {
-    throw new Error(error.message ?? "포장을 삭제하지 못했습니다.")
+    raiseFridgeError(error, "포장을 삭제하지 못했습니다.")
   }
+}
+
+export async function updateFridgeCompartment(
+  compartmentId: string,
+  payload: UpdateCompartmentConfigPayload,
+): Promise<Slot> {
+  const body: Record<string, number | ResourceStatus> = {}
+  if (typeof payload.maxBundleCount === "number") {
+    body.maxBundleCount = payload.maxBundleCount
+  }
+  if (payload.status) {
+    body.status = payload.status
+  }
+
+  const { data, error } = await safeApiCall<FridgeSlotDto>(`/admin/fridge/compartments/${compartmentId}`, {
+    method: "PATCH",
+    body,
+  })
+
+  if (error || !data) {
+    raiseFridgeError(error, "칸 설정을 수정하지 못했습니다.")
+  }
+
+  return mapSlotFromDto(data)
 }

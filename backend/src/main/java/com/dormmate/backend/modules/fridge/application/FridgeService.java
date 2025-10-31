@@ -122,7 +122,7 @@ public class FridgeService {
                 if (!isAdmin && !isManager && !accessibleCompartmentIds.contains(compartment.getId())) {
                     continue;
                 }
-                results.add(mapSlot(unit, compartment, fullView));
+                results.add(FridgeDtoMapper.toSlotResponse(compartment, fullView));
             }
         }
 
@@ -390,35 +390,6 @@ public class FridgeService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND"));
     }
 
-    private FridgeSlotResponse mapSlot(FridgeUnit unit, FridgeCompartment compartment, boolean fullView) {
-        int slotIndex = compartment.getSlotIndex();
-        String slotLetter = LabelFormatter.toSlotLetter(slotIndex);
-        int floorNo = unit.getFloorNo();
-        String floorCode = floorNo + "F";
-        String displayName = fullView ? generateDisplayName(unit, compartment) : null;
-
-        return new FridgeSlotResponse(
-                compartment.getId(),
-                slotIndex,
-                slotLetter,
-                floorNo,
-                floorCode,
-                compartment.getCompartmentType().name(),
-                compartment.getStatus().name(),
-                compartment.isLocked(),
-                compartment.getLockedUntil(),
-                fullView ? compartment.getMaxBundleCount() : null,
-                displayName
-        );
-    }
-
-    private String generateDisplayName(FridgeUnit unit, FridgeCompartment compartment) {
-        String typeLabel = compartment.getCompartmentType() == com.dormmate.backend.modules.fridge.domain.CompartmentType.FREEZE
-                ? "냉동"
-                : "냉장";
-        return unit.getFloorNo() + "F " + typeLabel + " " + (compartment.getSlotIndex() + 1) + "칸";
-    }
-
     private boolean matchesSearch(FridgeBundle bundle, String keyword) {
         if (bundle.getBundleName() != null && bundle.getBundleName().toLowerCase().contains(keyword)) {
             return true;
@@ -449,6 +420,13 @@ public class FridgeService {
     }
 
     private void verifyBundleReadAccess(DormUser currentUser, FridgeCompartment compartment, boolean isAdmin, boolean isManager) {
+        if (!compartment.getStatus().isActive()) {
+            if (isAdmin || isManager) {
+                return;
+            }
+            throw new ResponseStatusException(HttpStatus.LOCKED, "COMPARTMENT_SUSPENDED");
+        }
+
         if (isAdmin || isManager) {
             return;
         }

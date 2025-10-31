@@ -195,6 +195,78 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void adminCanUpdateCompartmentConfigViaApi() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        int originalCapacity = jdbcTemplate.queryForObject(
+                "SELECT max_bundle_count FROM fridge_compartment WHERE id = ?",
+                Integer.class,
+                slotId
+        );
+        String originalStatus = jdbcTemplate.queryForObject(
+                "SELECT status FROM fridge_compartment WHERE id = ?",
+                String.class,
+                slotId
+        );
+
+        int updatedCapacity = originalCapacity + 2;
+        try {
+            mockMvc.perform(patch("/admin/fridge/compartments/" + slotId)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "maxBundleCount": %d,
+                                      "status": "SUSPENDED"
+                                    }
+                                    """.formatted(updatedCapacity)))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.capacity").value(updatedCapacity))
+                    .andExpect(jsonPath("$.resourceStatus").value("SUSPENDED"));
+
+            mockMvc.perform(get("/fridge/bundles")
+                            .param("slotId", slotId.toString())
+                            .header("Authorization", "Bearer " + residentToken))
+                    .andExpect(status().isLocked());
+        } finally {
+            mockMvc.perform(patch("/admin/fridge/compartments/" + slotId)
+                            .header("Authorization", "Bearer " + adminToken)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("""
+                                    {
+                                      "maxBundleCount": %d,
+                                      "status": "%s"
+                                    }
+                                    """.formatted(originalCapacity, originalStatus)))
+                    .andExpect(status().isOk());
+        }
+    }
+
+    @Test
+    void adminCannotLowerCapacityBelowActiveBundles() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String managerToken = loginAndGetAccessToken("bob", "bob123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_B);
+
+        clearSlotBundles(slotId);
+
+        createBundle(managerToken, slotId, "용량검증-1");
+        createBundle(managerToken, slotId, "용량검증-2");
+
+        mockMvc.perform(patch("/admin/fridge/compartments/" + slotId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "maxBundleCount": 1
+                                }
+                                """))
+                .andExpect(status().isUnprocessableEntity());
+    }
+
+    @Test
     void slotViewReflectsCapacityAndStatusChanges() throws Exception {
         String managerToken = loginAndGetAccessToken("bob", "bob123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);

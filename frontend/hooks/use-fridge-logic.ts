@@ -8,7 +8,10 @@ const isMineFor = (item: Item, currentUserId?: string) => {
 }
 
 export function useFridgeLogic(items: Item[], slots: Slot[], currentUserId?: string) {
-  const getItemStatus = useCallback((expiryDate: string): ItemStatus => {
+  const getItemStatus = useCallback((expiryDate: string, freshness?: string | null): ItemStatus => {
+    if (freshness === "expired" || freshness === "expiring" || freshness === "ok") {
+      return freshness
+    }
     const days = daysLeft(expiryDate)
     if (days < 0) return "expired"
     if (days <= 3) return "expiring"
@@ -18,7 +21,7 @@ export function useFridgeLogic(items: Item[], slots: Slot[], currentUserId?: str
   const itemsWithStatus = useMemo(() => {
     return items.map((item) => ({
       ...item,
-      status: getItemStatus(item.expiryDate),
+      status: getItemStatus(item.expiryDate, item.freshness),
     }))
   }, [items, getItemStatus])
 

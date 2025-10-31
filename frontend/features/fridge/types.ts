@@ -4,6 +4,11 @@ export type CompartmentType = "CHILL" | "FREEZE"
 
 export type ResourceStatus = "ACTIVE" | "SUSPENDED" | "REPORTED" | "RETIRED"
 
+export type UpdateCompartmentConfigPayload = {
+  maxBundleCount?: number
+  status?: ResourceStatus
+}
+
 export type Slot = {
   slotId: string
   slotIndex: number

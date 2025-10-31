@@ -47,7 +47,7 @@ function LibraryInner() {
       </header>
 
       <div className="mx-auto max-w-screen-sm px-4 py-8 pb-28">
-        <p className="text-sm text-muted-foreground mt-1">{"도서 모듈은 곧 연결됩니다."}</p>
+        <p className="text-sm text-muted-foreground mt-1">{"도서 모듈은 곧 도입 예정입니다."}</p>
       </div>
     </main>
   )

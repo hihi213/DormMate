@@ -2,6 +2,11 @@ import type { Item } from "@/features/fridge/types"
 import { formatBundleLabel } from "@/features/fridge/utils/data-shaping"
 import { daysLeft } from "./date-utils"
 
+type FreshnessValue = "expired" | "expiring" | "ok"
+
+const isFreshnessValue = (value: unknown): value is FreshnessValue =>
+  value === "expired" || value === "expiring" || value === "ok"
+
 export function getBundleName(name: string) {
   const idx = name.indexOf(" - ")
   return idx >= 0 ? name.slice(0, idx) : name
@@ -21,7 +26,10 @@ export function earliestDays(group: Item[]) {
   return min
 }
 
-export function resolveStatus(expiryISO: string): "expired" | "expiring" | "ok" {
+export function resolveStatus(expiryISO: string, freshness?: string | null): FreshnessValue {
+  if (isFreshnessValue(freshness)) {
+    return freshness
+  }
   const d = daysLeft(expiryISO)
   if (d < 0) return "expired"
   if (d <= 3) return "expiring"

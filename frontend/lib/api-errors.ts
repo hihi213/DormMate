@@ -41,6 +41,10 @@ export const defaultErrorDictionary: ApiErrorDictionary = {
     code: "CONFLICT",
     message: "이미 처리된 요청이거나 충돌이 발생했습니다.",
   },
+  423: {
+    code: "COMPARTMENT_SUSPENDED",
+    message: "해당 칸이 점검 중이거나 일시적으로 사용 중지되었습니다.",
+  },
   422: {
     code: "VALIDATION_FAILED",
     message: "입력값이 유효하지 않습니다. 항목을 다시 확인해 주세요.",

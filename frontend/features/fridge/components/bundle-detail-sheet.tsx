@@ -28,7 +28,7 @@ export default function BundleDetailSheet({
   bundleId?: string
   initialEdit?: boolean
 }) {
-  const { items, updateItem, deleteItem, renameBundle, deleteBundle: removeBundle } = useFridge()
+  const { items, updateItem, deleteItem, renameBundle, deleteBundle: removeBundle, isSlotActive } = useFridge()
   const { toast } = useToast()
   const uid = getCurrentUserId()
 
@@ -37,7 +37,9 @@ export default function BundleDetailSheet({
   const bundleName = first?.bundleName ?? "묶음"
   const groupCode = first ? formatStickerLabel(first.slotIndex, first.labelNumber) : ""
   const representativeMemo = first?.bundleMemo || ""
+  const slotActive = first ? isSlotActive(first.slotId) : true
   const canManage = first && first.ownerId ? uid === first.ownerId : false
+  const canEditBundle = canManage && slotActive
 
   const sorted = useMemo(() => group.slice().sort((a, b) => daysLeft(a.expiryDate) - daysLeft(b.expiryDate)), [group])
   const [bundleNameDraft, setBundleNameDraft] = useState(bundleName)
@@ -81,6 +83,14 @@ useEffect(() => {
 }, [open])
 
 const startInfoEdit = () => {
+  if (!slotActive) {
+    toast({
+      title: "수정할 수 없습니다",
+      description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
+      variant: "destructive",
+    })
+    return
+  }
   setBundleNameDraft(bundleName)
   setMemoDraft(representativeMemo)
   setInfoEditing(true)
@@ -94,6 +104,14 @@ const cancelInfoEdit = () => {
 
 const handleSaveBundleInfo = async () => {
   if (!bundleId) return
+  if (!slotActive) {
+    toast({
+      title: "수정할 수 없습니다",
+      description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
+      variant: "destructive",
+    })
+    return
+  }
   const trimmedName = bundleNameDraft.trim()
   const trimmedMemo = memoDraft.trim()
   if (!trimmedName) {
@@ -157,7 +175,15 @@ const handleSaveBundleInfo = async () => {
 }
 
 const handleDeleteBundle = async () => {
-  if (!canManage || !bundleId) return
+  if (!canEditBundle || !bundleId) return
+  if (!slotActive) {
+    toast({
+      title: "삭제할 수 없습니다",
+      description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
+      variant: "destructive",
+    })
+    return
+  }
   if (!confirm("묶음의 모든 물품을 삭제하시겠어요? 이 작업은 되돌릴 수 없습니다.")) return
   try {
     setBundleRemoving(true)
@@ -196,6 +222,14 @@ const cancelEditItem = () => {
 
 const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
   if (!itemDraft) return
+  if (!slotActive) {
+    toast({
+      title: "수정할 수 없습니다",
+      description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
+      variant: "destructive",
+    })
+    return
+  }
   const nameTrimmed = itemDraft.name.trim()
   if (!nameTrimmed) {
     toast({
@@ -247,14 +281,14 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
             </Button>
             <div className="text-sm font-semibold truncate">{bundleName || "묶음 상세"}</div>
             <div className="inline-flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="묶음 전체 삭제"
-                onClick={() => void handleDeleteBundle()}
-                disabled={!canManage || bundleRemoving}
-                title={canManage ? "묶음 전체 삭제" : "소유자만 삭제 가능"}
-              >
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="묶음 전체 삭제"
+              onClick={() => void handleDeleteBundle()}
+              disabled={!canEditBundle || bundleRemoving}
+              title={canEditBundle ? "묶음 전체 삭제" : "수정 권한이 없거나 칸이 비활성화되었습니다"}
+            >
                 {bundleRemoving ? <Loader2 className="size-5 animate-spin" /> : <Trash2 className="size-5 text-rose-600" />}
               </Button>
             </div>
@@ -291,7 +325,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                           </Button>
                         </>
                       ) : (
-                        <Button variant="ghost" size="sm" onClick={startInfoEdit}>
+                        <Button variant="ghost" size="sm" onClick={startInfoEdit} disabled={!canEditBundle}>
                           <Pencil className="mr-2 h-4 w-4" />
                           {"정보 수정"}
                         </Button>
@@ -346,7 +380,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                     const dText = ddayLabel(d)
                     const statusColor = d < 0 ? "text-rose-600" : d <= 1 ? "text-amber-600" : "text-emerald-700"
                     const [detailName, suffix] = splitDetail(it.name, bundleName)
-                    const isEditing = canManage && editingUnitId === it.unitId
+                    const isEditing = canEditBundle && editingUnitId === it.unitId
                     const draftName = isEditing && itemDraft ? itemDraft.name : detailName
                     const draftExpiry = isEditing && itemDraft ? itemDraft.expiryDate : it.expiryDate
                     const displayLabel =
@@ -412,7 +446,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                               </div>
                             )}
                           </div>
-                          {canManage && (
+                          {canEditBundle && (
                             <div className="shrink-0 flex items-center gap-1 self-start">
                               {isEditing ? (
                                 <>
@@ -439,6 +473,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                   size="icon"
                                   aria-label="수정"
                                   onClick={() => beginEditItem(it.unitId, it.name, it.expiryDate)}
+                                  disabled={!slotActive}
                                 >
                                   <Pencil className="size-4" />
                                 </Button>
@@ -448,7 +483,16 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                 size="icon"
                                 className="text-rose-600"
                                 onClick={async () => {
-                                  if (deletingId || !confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) return
+                                  if (deletingId) return
+                                  if (!slotActive) {
+                                    toast({
+                                      title: "삭제할 수 없습니다",
+                                      description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
+                                      variant: "destructive",
+                                    })
+                                    return
+                                  }
+                                  if (!confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) return
                                   setDeletingId(it.unitId)
                                   const result = await deleteItem(it.unitId)
                                   setDeletingId(null)
@@ -465,7 +509,7 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
                                     })
                                   }
                                 }}
-                                disabled={deletingId === it.unitId}
+                                disabled={deletingId === it.unitId || !slotActive}
                                 aria-label="삭제"
                               >
                                 {deletingId === it.unitId ? (
