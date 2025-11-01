@@ -43,6 +43,9 @@ public class UserSession extends AbstractTimestampedEntity {
     @Column(name = "revoked_reason", length = 100)
     private String revokedReason;
 
+    @Column(name = "device_id", length = 100)
+    private String deviceId;
+
     public UUID getId() {
         return id;
     }
@@ -93,6 +96,14 @@ public class UserSession extends AbstractTimestampedEntity {
 
     public void setRevokedReason(String revokedReason) {
         this.revokedReason = revokedReason;
+    }
+
+    public String getDeviceId() {
+        return deviceId;
+    }
+
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
     }
 
     public boolean isActive() {

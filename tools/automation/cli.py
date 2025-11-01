@@ -297,6 +297,56 @@ def cmd_dev_warmup(args: argparse.Namespace) -> None:
 
 def cmd_tests_backend(_: argparse.Namespace) -> None:
     gradle_tests(clean=False)
+    # Flyway 상태 확인
+    run_gradle_task("flywayInfo")
+
+    # Runtime OpenAPI와 설계 명세 비교
+    backend_process = subprocess.Popen([
+        "./gradlew", "bootRun"
+    ], cwd=BACKEND_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+
+    try:
+        for _ in range(30):
+            time.sleep(2)
+            health = subprocess.run(
+                ["curl", "-fsS", "http://localhost:8080/actuator/health"],
+                cwd=PROJECT_ROOT,
+                check=False,
+                capture_output=True,
+            )
+            if health.returncode == 0:
+                break
+        else:
+            print("⚠️  백엔드 서버가 기동되지 않아 OpenAPI 비교를 건너뜁니다.")
+            raise SystemExit(1)
+
+        run_command([
+            "curl", "-fsS", "http://localhost:8080/v3/api-docs"
+        ], cwd=PROJECT_ROOT)
+        runtime_path = PROJECT_ROOT / "runtime-openapi.json"
+        runtime_path.write_bytes(subprocess.check_output([
+            "curl", "-fsS", "http://localhost:8080/v3/api-docs"
+        ], cwd=PROJECT_ROOT))
+
+        spec_path = PROJECT_ROOT / "spec-openapi.json"
+        run_command([
+            "npx", "@redocly/openapi-cli", "bundle", "api/openapi.yml",
+            "--output", str(spec_path), "--ext", "json"
+        ], cwd=PROJECT_ROOT)
+        run_command([
+            "npx", "@redocly/openapi-cli", "diff",
+            str(spec_path), str(runtime_path)
+        ], cwd=PROJECT_ROOT)
+    finally:
+        backend_process.terminate()
+        try:
+            backend_process.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            backend_process.kill()
+        for tmp in (PROJECT_ROOT / "runtime-openapi.json", PROJECT_ROOT / "spec-openapi.json"):
+            if tmp.exists():
+                tmp.unlink()
+
     persist_state(last_tests="auto tests backend")
 
 

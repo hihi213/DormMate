@@ -52,6 +52,7 @@ export type FridgeSlotDto = {
   lockedUntil?: string | null
   capacity?: number | null
   displayName?: string | null
+  occupiedCount?: number | null
 }
 
 export type FridgeBundleSummaryDto = {
@@ -114,6 +115,7 @@ export function mapSlotFromDto(dto: FridgeSlotDto): Slot {
     lockedUntil: dto.lockedUntil ?? null,
     capacity: dto.capacity ?? null,
     displayName: dto.displayName ?? null,
+    occupiedCount: dto.occupiedCount ?? null,
   }
 }
 

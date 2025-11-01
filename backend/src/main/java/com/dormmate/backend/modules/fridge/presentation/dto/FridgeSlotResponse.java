@@ -17,6 +17,7 @@ public record FridgeSlotResponse(
         boolean locked,
         OffsetDateTime lockedUntil,
         Integer capacity,
-        String displayName
+        String displayName,
+        Integer occupiedCount
 ) {
 }

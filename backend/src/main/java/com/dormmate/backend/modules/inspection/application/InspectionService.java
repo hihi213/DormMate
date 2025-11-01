@@ -23,6 +23,7 @@ import com.dormmate.backend.modules.inspection.presentation.dto.StartInspectionR
 import com.dormmate.backend.modules.inspection.presentation.dto.SubmitInspectionRequest;
 import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.auth.domain.RoomAssignment;
+import com.dormmate.backend.modules.fridge.domain.CompartmentRoomAccess;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundle;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundleStatus;
 import com.dormmate.backend.modules.fridge.domain.FridgeCompartment;
@@ -38,6 +39,7 @@ import com.dormmate.backend.modules.inspection.domain.InspectionSession;
 import com.dormmate.backend.modules.inspection.domain.InspectionStatus;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.RoomAssignmentRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.CompartmentRoomAccessRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeCompartmentRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
@@ -60,6 +62,7 @@ public class InspectionService {
     private final FridgeItemRepository fridgeItemRepository;
     private final DormUserRepository dormUserRepository;
     private final RoomAssignmentRepository roomAssignmentRepository;
+    private final CompartmentRoomAccessRepository compartmentRoomAccessRepository;
     private final NotificationService notificationService;
     private final Clock clock;
 
@@ -70,6 +73,7 @@ public class InspectionService {
             FridgeItemRepository fridgeItemRepository,
             DormUserRepository dormUserRepository,
             RoomAssignmentRepository roomAssignmentRepository,
+            CompartmentRoomAccessRepository compartmentRoomAccessRepository,
             NotificationService notificationService,
             Clock clock
     ) {
@@ -79,6 +83,7 @@ public class InspectionService {
         this.fridgeItemRepository = fridgeItemRepository;
         this.dormUserRepository = dormUserRepository;
         this.roomAssignmentRepository = roomAssignmentRepository;
+        this.compartmentRoomAccessRepository = compartmentRoomAccessRepository;
         this.notificationService = notificationService;
         this.clock = clock;
     }
@@ -142,7 +147,18 @@ public class InspectionService {
             return Optional.empty();
         }
         DormUser currentUser = loadCurrentUser();
-        return Optional.of(mapSession(sessions.getFirst(), currentUser));
+        for (InspectionSession session : sessions) {
+            try {
+                return Optional.of(mapSession(session, currentUser));
+            } catch (ResponseStatusException ex) {
+                if (ex.getStatusCode().value() == HttpStatus.FORBIDDEN.value()
+                        && ("FORBIDDEN_SLOT".equals(ex.getReason()) || "FLOOR_SCOPE_VIOLATION".equals(ex.getReason()))) {
+                    continue;
+                }
+                throw ex;
+            }
+        }
+        return Optional.empty();
     }
 
     @Transactional(readOnly = true)
@@ -151,6 +167,44 @@ public class InspectionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND"));
         DormUser currentUser = loadCurrentUser();
         return mapSession(session, currentUser);
+    }
+
+    @Transactional(readOnly = true)
+    public List<InspectionSessionResponse> listSessions(UUID slotId, String status, Integer limit) {
+        DormUser currentUser = loadCurrentUser();
+        final InspectionStatus statusFilter;
+        if (status == null || status.isBlank()) {
+            statusFilter = null;
+        } else {
+            try {
+                statusFilter = InspectionStatus.valueOf(status.trim().toUpperCase());
+            } catch (IllegalArgumentException ex) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_STATUS");
+            }
+        }
+
+        List<InspectionSession> sessions = inspectionSessionRepository.findAll().stream()
+                .filter(session -> slotId == null || session.getFridgeCompartment().getId().equals(slotId))
+                .filter(session -> statusFilter == null || session.getStatus() == statusFilter)
+                .sorted(Comparator.comparing(InspectionSession::getStartedAt).reversed())
+                .toList();
+
+        List<InspectionSessionResponse> responses = new ArrayList<>();
+        for (InspectionSession session : sessions) {
+            try {
+                responses.add(mapSession(session, currentUser));
+            } catch (ResponseStatusException ex) {
+                if (ex.getStatusCode().value() == HttpStatus.FORBIDDEN.value()
+                        && ("FORBIDDEN_SLOT".equals(ex.getReason()) || "FLOOR_SCOPE_VIOLATION".equals(ex.getReason()))) {
+                    continue;
+                }
+                throw ex;
+            }
+            if (limit != null && limit > 0 && responses.size() >= limit) {
+                break;
+            }
+        }
+        return responses;
     }
 
     public void cancelSession(UUID sessionId) {
@@ -286,6 +340,7 @@ public class InspectionService {
     }
 
     private InspectionSessionResponse mapSession(InspectionSession session, DormUser viewer) {
+        ensureViewerCanAccessSession(viewer, session);
         FridgeCompartment compartment = session.getFridgeCompartment();
         List<FridgeBundle> bundles = fridgeBundleRepository
                 .findByFridgeCompartmentAndStatus(compartment, FridgeBundleStatus.ACTIVE);
@@ -334,6 +389,31 @@ public class InspectionService {
                 .map(entry -> new InspectionActionSummaryResponse(entry.getKey().name(), entry.getValue()))
                 .sorted(Comparator.comparing(InspectionActionSummaryResponse::action))
                 .toList();
+    }
+
+    private void ensureViewerCanAccessSession(DormUser viewer, InspectionSession session) {
+        if (SecurityUtils.hasRole("ADMIN")) {
+            return;
+        }
+        RoomAssignment assignment = roomAssignmentRepository.findActiveAssignment(viewer.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED"));
+
+        short sessionFloor = session.getFridgeCompartment().getFridgeUnit().getFloorNo();
+        if (SecurityUtils.hasRole("FLOOR_MANAGER")) {
+            if (assignment.getRoom().getFloor() != sessionFloor) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_SCOPE_VIOLATION");
+            }
+            return;
+        }
+
+        UUID viewerRoomId = assignment.getRoom().getId();
+        boolean accessible = compartmentRoomAccessRepository
+                .findByFridgeCompartmentIdAndReleasedAtIsNullOrderByAssignedAtAsc(session.getFridgeCompartment().getId())
+                .stream()
+                .anyMatch(access -> access.getRoom().getId().equals(viewerRoomId));
+        if (!accessible) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FORBIDDEN_SLOT");
+        }
     }
 
     private Map<UUID, RoomAssignment> loadAssignmentsForBundles(List<FridgeBundle> bundles) {

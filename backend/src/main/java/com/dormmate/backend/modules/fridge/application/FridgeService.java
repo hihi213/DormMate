@@ -147,11 +147,20 @@ public class FridgeService {
     }
 
     @Transactional(readOnly = true)
-    public BundleListResponse getBundles(UUID slotId, String ownerSelector, String statusSelector, String search) {
+    public BundleListResponse getBundles(
+            UUID slotId,
+            String ownerSelector,
+            String statusSelector,
+            String search,
+            int page,
+            int size
+    ) {
         UUID currentUserId = SecurityUtils.getCurrentUserId();
         DormUser currentUser = loadUser(currentUserId);
         boolean isAdmin = SecurityUtils.hasRole("ADMIN");
         boolean isFloorManager = SecurityUtils.hasRole("FLOOR_MANAGER");
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 100);
         boolean includeDeleted = "deleted".equalsIgnoreCase(statusSelector)
                 || "removed".equalsIgnoreCase(statusSelector);
 
@@ -210,10 +219,21 @@ public class FridgeService {
                     .toList();
         }
 
-        Map<UUID, RoomAssignment> ownerAssignments = loadAssignmentsForBundles(candidates);
+        Comparator<FridgeBundle> comparator = Comparator.comparing(FridgeBundle::getCreatedAt).reversed();
+        List<FridgeBundle> sorted = candidates.stream()
+                .sorted(comparator)
+                .toList();
 
-        List<FridgeBundleSummaryResponse> summaries = candidates.stream()
-                .sorted(Comparator.comparing(FridgeBundle::getCreatedAt).reversed())
+        long total = sorted.size();
+
+        List<FridgeBundle> paged = sorted.stream()
+                .skip((long) safePage * safeSize)
+                .limit(safeSize)
+                .toList();
+
+        Map<UUID, RoomAssignment> ownerAssignments = loadAssignmentsForBundles(paged);
+
+        List<FridgeBundleSummaryResponse> summaries = paged.stream()
                 .map(bundle -> FridgeDtoMapper.toSummary(
                         bundle,
                         ownerAssignments.get(bundle.getOwner().getId()),
@@ -221,7 +241,7 @@ public class FridgeService {
                 ))
                 .toList();
 
-        return new BundleListResponse(summaries, summaries.size());
+        return new BundleListResponse(summaries, total);
     }
 
     @Transactional(readOnly = true)
@@ -268,8 +288,6 @@ public class FridgeService {
         }
 
         int labelNumber = allocateLabelNumber(compartment);
-        OffsetDateTime now = OffsetDateTime.now(clock);
-
         FridgeBundle bundle = new FridgeBundle();
         bundle.setOwner(currentUser);
         bundle.setFridgeCompartment(compartment);

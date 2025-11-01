@@ -17,6 +17,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -167,7 +168,9 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                                             }
                                             """.formatted(slotId, expiresOn))
                     )
-                    .andExpect(status().isUnprocessableEntity());
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.code").value("CAPACITY_EXCEEDED"))
+                    .andExpect(jsonPath("$.detail").value("CAPACITY_EXCEEDED"));
         } finally {
             if (firstBundleId != null) {
                 fridgeBundleRepository.findById(firstBundleId)
@@ -230,6 +233,104 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                                     }
                                     """.formatted(originalCapacity, originalStatus)))
                     .andExpect(status().isOk());
+        }
+    }
+
+    @Test
+    void cannotCreateBundleWhenCompartmentLocked() throws Exception {
+        String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        LockState originalLockState = fetchLockState(slotId);
+        OffsetDateTime lockedUntil = OffsetDateTime.now(ZoneOffset.UTC).plusHours(1);
+
+        applyLockState(slotId, true, lockedUntil);
+        try {
+            String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(2).toString();
+            mockMvc.perform(
+                            post("/fridge/bundles")
+                                    .header("Authorization", "Bearer " + accessToken)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("""
+                                            {
+                                              "slotId": "%s",
+                                              "bundleName": "잠금 테스트",
+                                              "items": [
+                                                {
+                                                  "name": "테스트 요구르트",
+                                                  "expiryDate": "%s",
+                                                  "quantity": 1
+                                                }
+                                              ]
+                                            }
+                                            """.formatted(slotId, expiresOn))
+                    )
+                    .andExpect(status().isLocked())
+                    .andExpect(jsonPath("$.code").value("COMPARTMENT_LOCKED"));
+        } finally {
+            applyLockState(slotId, originalLockState.locked(), originalLockState.lockedUntil());
+        }
+    }
+
+    @Test
+    void cannotCreateBundleDuringActiveInspection() throws Exception {
+        String managerToken = loginAndGetAccessToken("bob", "bob123!");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        LockState originalLockState = fetchLockState(slotId);
+        applyLockState(slotId, false, null);
+
+        UUID sessionId = null;
+        try {
+            MvcResult startResult = mockMvc.perform(
+                            post("/fridge/inspections")
+                                    .header("Authorization", "Bearer " + managerToken)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("""
+                                            {
+                                              "slotId": "%s"
+                                            }
+                                            """.formatted(slotId))
+                    )
+                    .andExpect(status().isCreated())
+                    .andReturn();
+
+            JsonNode session = objectMapper.readTree(startResult.getResponse().getContentAsString());
+            sessionId = UUID.fromString(session.path("sessionId").asText());
+
+            applyLockState(slotId, false, null);
+
+            String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(3).toString();
+            mockMvc.perform(
+                            post("/fridge/bundles")
+                                    .header("Authorization", "Bearer " + residentToken)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("""
+                                            {
+                                              "slotId": "%s",
+                                              "bundleName": "점검 중 등록 시도",
+                                              "items": [
+                                                {
+                                                  "name": "테스트 주스",
+                                                  "expiryDate": "%s",
+                                                  "quantity": 1
+                                                }
+                                              ]
+                                            }
+                                            """.formatted(slotId, expiresOn))
+                    )
+                    .andExpect(status().isLocked())
+                    .andExpect(jsonPath("$.code").value("COMPARTMENT_UNDER_INSPECTION"));
+        } finally {
+            if (sessionId != null) {
+                mockMvc.perform(
+                                delete("/fridge/inspections/" + sessionId)
+                                        .header("Authorization", "Bearer " + managerToken)
+                        )
+                        .andExpect(status().isNoContent());
+            }
+            applyLockState(slotId, originalLockState.locked(), originalLockState.lockedUntil());
         }
     }
 
@@ -757,6 +858,32 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         }
     }
 
+    private LockState fetchLockState(UUID slotId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT is_locked, locked_until FROM fridge_compartment WHERE id = ?",
+                (rs, rowNum) -> new LockState(
+                        rs.getBoolean("is_locked"),
+                        rs.getObject("locked_until", OffsetDateTime.class)
+                ),
+                slotId
+        );
+    }
+
+    private void applyLockState(UUID slotId, boolean locked, OffsetDateTime lockedUntil) {
+        jdbcTemplate.update(
+                "UPDATE fridge_compartment SET is_locked = ?, locked_until = ? WHERE id = ?",
+                ps -> {
+                    ps.setBoolean(1, locked);
+                    if (lockedUntil != null) {
+                        ps.setObject(2, lockedUntil);
+                    } else {
+                        ps.setNull(2, Types.TIMESTAMP_WITH_TIMEZONE);
+                    }
+                    ps.setObject(3, slotId);
+                }
+        );
+    }
+
     private void assertAccessibleSlotsMatch(String loginId, String password) throws Exception {
         UUID userId = jdbcTemplate.queryForObject(
                 "SELECT id FROM dorm_user WHERE login_id = ?",
@@ -820,5 +947,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     private record LabelSequenceState(int nextNumber, String recycledNumbers) {
+    }
+
+    private record LockState(boolean locked, OffsetDateTime lockedUntil) {
     }
 }

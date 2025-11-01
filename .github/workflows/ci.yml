@@ -70,8 +70,46 @@ jobs:
       - name: Apply database migrations
         run: ./auto db migrate
 
+      - name: Verify Flyway status
+        run: ./backend/gradlew flywayInfo
+
       - name: Run backend tests
         run: ./auto tests backend
+
+      - name: Start backend for OpenAPI drift check
+        run: |
+          ./backend/gradlew bootRun > backend-openapi.log 2>&1 &
+          echo $! > backend.pid
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8080/actuator/health >/dev/null; then
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "${READY:-0}" -ne 1 ]; then
+            echo "Backend failed to become ready" >&2
+            cat backend-openapi.log || true
+            kill $(cat backend.pid) || true
+            exit 1
+          fi
+
+      - name: Compare runtime OpenAPI with spec
+        run: |
+          curl -fsS http://localhost:8080/v3/api-docs > runtime-openapi.json
+          npx @redocly/openapi-cli bundle api/openapi.yml --output spec-openapi.json --ext json
+          npx @redocly/openapi-cli diff spec-openapi.json runtime-openapi.json
+
+      - name: Stop backend after OpenAPI check
+        if: always()
+        run: |
+          if [ -f backend.pid ]; then
+            PID=$(cat backend.pid)
+            kill "$PID" || true
+            wait "$PID" 2>/dev/null || true
+            rm -f backend.pid
+          fi
+          rm -f backend-openapi.log runtime-openapi.json spec-openapi.json
 
       - name: Run frontend tests (lint)
         run: ./auto tests frontend

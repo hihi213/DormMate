@@ -78,6 +78,7 @@ const ACTION_ICON_COLOR: Record<InspectionAction, { bg: string; text: string }> 
 }
 
 const STORAGE_KEY_PREFIX = "inspection-results-v1-"
+const DRAFT_RETENTION_MS = 2 * 24 * 60 * 60 * 1000
 
 export default function InspectPage() {
   return <InspectInner />
@@ -105,6 +106,8 @@ function InspectInner() {
   const resultsHydratedRef = useRef(false)
   const skipSummarySyncRef = useRef(false)
   const bundleOrderRef = useRef<Record<string, number>>({})
+  const persistErrorNotifiedRef = useRef(false)
+  const prevStorageKeyRef = useRef<string | null>(null)
   const [lastDraftSavedAt, setLastDraftSavedAt] = useState<number | null>(null)
 
   useEffect(() => {
@@ -267,10 +270,69 @@ function InspectInner() {
     if (!storageKey || typeof window === "undefined") return
     try {
       window.localStorage.setItem(storageKey, JSON.stringify(results))
+      persistErrorNotifiedRef.current = false
     } catch (error) {
       console.warn("failed to persist inspection results", error)
+      if (!persistErrorNotifiedRef.current) {
+        toast({
+          title: "임시 저장에 실패했습니다",
+          description: "브라우저 저장소를 정리한 뒤 다시 시도해 주세요.",
+          variant: "destructive",
+        })
+        persistErrorNotifiedRef.current = true
+      }
     }
-  }, [results, storageKey])
+  }, [results, storageKey, toast])
+
+  const purgeStaleDrafts = useCallback(() => {
+    if (typeof window === "undefined") return
+
+    const cutoff = Date.now() - DRAFT_RETENTION_MS
+    const storages: Storage[] = [window.localStorage, window.sessionStorage]
+
+    storages.forEach((store) => {
+      const keys: string[] = []
+      for (let index = 0; index < store.length; index += 1) {
+        const key = store.key(index)
+        if (key && key.startsWith(STORAGE_KEY_PREFIX)) {
+          keys.push(key)
+        }
+      }
+
+      keys.forEach((key) => {
+        try {
+          const raw = store.getItem(key)
+          if (!raw) {
+            store.removeItem(key)
+            return
+          }
+
+          const parsed: any = JSON.parse(raw)
+          const entries: any[] = Array.isArray(parsed)
+            ? parsed
+            : Array.isArray(parsed?.entries)
+              ? parsed.entries
+              : []
+
+          let latest: number | null = null
+          if (Array.isArray(entries)) {
+            entries.forEach((entry) => {
+              const value = typeof entry?.time === "number" ? entry.time : undefined
+              if (typeof value === "number" && (latest === null || value > latest)) {
+                latest = value
+              }
+            })
+          }
+
+          if (latest === null || latest < cutoff) {
+            store.removeItem(key)
+          }
+        } catch (error) {
+          store.removeItem(key)
+        }
+      })
+    })
+  }, [])
 
   const groupedResults = useMemo(() => {
     const map = new Map<string, { bundleName: string; bundleLabel?: string | null; entries: ResultEntry[]; order: number }>()
@@ -300,6 +362,20 @@ function InspectInner() {
 
     return { groups, singles: singleList }
   }, [filteredResults])
+
+  useEffect(() => {
+    purgeStaleDrafts()
+  }, [purgeStaleDrafts])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const previousKey = prevStorageKeyRef.current
+    if (previousKey && previousKey !== storageKey) {
+      window.localStorage.removeItem(previousKey)
+      window.sessionStorage.removeItem(previousKey)
+    }
+    prevStorageKeyRef.current = storageKey ?? null
+  }, [storageKey])
 
   useEffect(() => {
     if (!storageKey) return

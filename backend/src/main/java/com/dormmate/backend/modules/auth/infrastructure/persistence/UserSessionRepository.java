@@ -13,12 +13,25 @@ import org.springframework.data.repository.query.Param;
 
 public interface UserSessionRepository extends JpaRepository<UserSession, UUID> {
 
-    @Query("select us from UserSession us join fetch us.dormUser where us.refreshToken = :refreshToken and us.revokedAt is null")
-    Optional<UserSession> findActiveByRefreshToken(@Param("refreshToken") String refreshToken);
-
     @Modifying
     @Query("update UserSession us set us.revokedAt = :revokedAt, us.revokedReason = :reason where us.refreshToken = :refreshToken")
     int revokeByRefreshToken(@Param("refreshToken") String refreshToken,
                              @Param("revokedAt") OffsetDateTime revokedAt,
                              @Param("reason") String reason);
+
+    Optional<UserSession> findByRefreshToken(String refreshToken);
+
+    @Modifying
+    @Query("""
+            update UserSession us
+               set us.revokedAt = :revokedAt,
+                   us.revokedReason = :reason
+             where us.dormUser.id = :userId
+               and us.revokedAt is null
+               and us.expiresAt <= :now
+            """)
+    int revokeExpiredSessions(@Param("userId") UUID userId,
+                              @Param("now") OffsetDateTime now,
+                              @Param("revokedAt") OffsetDateTime revokedAt,
+                              @Param("reason") String reason);
 }

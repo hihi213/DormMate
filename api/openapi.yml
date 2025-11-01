@@ -184,6 +184,9 @@ components:
         displayName:
           type: string
           nullable: true
+        occupiedCount:
+          type: integer
+          nullable: true
       required:
         [slotId, slotIndex, slotLetter, floorNo, floorCode, compartmentType, resourceStatus, locked]
     UpdateCompartmentConfigRequest:
@@ -519,6 +522,32 @@ paths:
   /fridge/slots:
     get:
       tags: [Fridge]
+      summary: 냉장고 슬롯 목록 조회
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: query
+          name: floor
+          schema:
+            type: integer
+            minimum: 2
+            maximum: 5
+          description: 조회할 층 (지정하지 않으면 전체)
+        - in: query
+          name: view
+          schema:
+            type: string
+            enum: [basic, full]
+          description: full 지정 시 용량·표시 이름·점유 수 등 상세 정보를 포함
+      responses:
+        '200':
+          description: 슬롯 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/FridgeSlot' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
 
   /admin/fridge/compartments/{compartmentId}:
     patch:
@@ -610,9 +639,11 @@ paths:
         - in: query
           name: page
           schema: { type: integer, minimum: 0, default: 0 }
+          description: 페이지 인덱스 (0부터 시작)
         - in: query
           name: size
           schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+          description: 페이지 당 항목 수
       responses:
         '200':
           description: 포장 목록
@@ -756,6 +787,35 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
   /fridge/inspections:
+    get:
+      tags: [Inspections]
+      summary: 검사 세션 목록 조회
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: query
+          name: slotId
+          schema: { type: string, format: uuid }
+          description: 특정 칸의 세션만 조회
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [IN_PROGRESS, SUBMITTED, CANCELLED]
+          description: 세션 상태 필터
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100 }
+          description: 반환할 최대 세션 수
+      responses:
+        '200':
+          description: 검사 세션 목록
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/InspectionSession' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [Inspections]
       summary: 검사 세션 시작
@@ -804,7 +864,7 @@ paths:
       - in: path
         name: sessionId
         required: true
-        schema: { type: integer, format: int64 }
+        schema: { type: string, format: uuid }
     get:
       tags: [Inspections]
       summary: 검사 세션 상세

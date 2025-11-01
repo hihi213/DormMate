@@ -4,6 +4,7 @@ import { summarizeEntries, validateTemplate } from "./validation"
 import type { PendingEntry, TemplateState } from "./types"
 import type { Bundle, ItemUnit } from "@/features/fridge/types"
 import { AUTO_PACK_NAME_LIMIT, NAME_LIMIT, PACK_LABEL_LIMIT, QTY_LIMIT } from "./constants"
+import { formatStickerLabel } from "@/features/fridge/utils/labels"
 
 export const formatExpiryDisplay = (expiry: string) => {
   if (!expiry) return "-"
@@ -41,6 +42,13 @@ type AddBundleFn = (data: {
   error?: string
 }
 
+type CompletionState = {
+  bundleLabel: string
+  bundleName: string
+  slotId: string
+  totalQuantity: number
+}
+
 export const useAddItemWorkflow = ({
   fallbackSlot,
   toast,
@@ -63,6 +71,7 @@ export const useAddItemWorkflow = ({
   const [nameFlash, setNameFlash] = useState(false)
   const [editingEntryId, setEditingEntryId] = useState<string | null>(null)
   const [isSaving, setIsSaving] = useState(false)
+  const [completion, setCompletion] = useState<CompletionState | null>(null)
 
   const autoPackNameRef = useRef("")
   const nameInputRef = useRef<HTMLInputElement | null>(null)
@@ -89,6 +98,7 @@ export const useAddItemWorkflow = ({
       setNameFlash(false)
       setEditingEntryId(null)
       autoPackNameRef.current = ""
+      setCompletion(null)
       return
     }
 
@@ -301,12 +311,22 @@ export const useAddItemWorkflow = ({
         description: `총 ${summary.totalQuantity}개 품목이 등록되었습니다.`,
       })
 
+      const bundle = result.data?.bundle
+      const bundleLabel = bundle
+        ? bundle.labelDisplay || formatStickerLabel(bundle.slotIndex, bundle.labelNumber)
+        : ""
+
       setEntries([])
       setTemplate((prev) => ({ ...createInitialTemplate(metadataSlot), slotId: metadataSlot }))
       setPackName("")
       setPackMemo("")
       setIsMetadataStep(false)
-      onClose()
+      setCompletion({
+        bundleLabel,
+        bundleName: bundle?.bundleName ?? packLabel,
+        slotId: metadataSlot,
+        totalQuantity: summary.totalQuantity,
+      })
     } catch (error) {
       toast({
         title: "등록 실패",
@@ -322,7 +342,6 @@ export const useAddItemWorkflow = ({
     packMemo,
     metadataSlot,
     addBundle,
-    onClose,
     toast,
     summary.totalQuantity,
   ])
@@ -332,8 +351,29 @@ export const useAddItemWorkflow = ({
   }, [])
 
   const handleCancel = useCallback(() => {
+    setCompletion(null)
     onClose()
   }, [onClose])
+
+  const handleFinish = useCallback(() => {
+    setCompletion(null)
+    onClose()
+  }, [onClose])
+
+  const handleRegisterAnother = useCallback(() => {
+    setCompletion(null)
+    const nextSlot = metadataSlot || fallbackSlot
+    setTemplate(createInitialTemplate(nextSlot))
+    setEntries([])
+    setPackName("")
+    setPackMemo("")
+    setIsMetadataStep(false)
+    setMetadataSlot(nextSlot)
+    setEditingEntryId(null)
+    setNameFlash(false)
+    autoPackNameRef.current = ""
+    setTimeout(() => nameInputRef.current?.focus(), 50)
+  }, [metadataSlot, fallbackSlot])
 
   return {
     template,
@@ -361,5 +401,8 @@ export const useAddItemWorkflow = ({
     isSaving,
     handleBackToItems,
     handleCancel,
+    completion,
+    handleFinish,
+    handleRegisterAnother,
   }
 }
