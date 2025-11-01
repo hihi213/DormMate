@@ -2,7 +2,7 @@ import { safeApiCall } from "@/lib/api-client"
 import { mapBundleFromDto, toItems, toSlotLetter } from "@/features/fridge/utils/data-shaping"
 import type { Bundle, ItemUnit, Slot } from "@/features/fridge/types"
 import { mapSlotFromDto } from "@/features/fridge/utils/data-shaping"
-import type { FridgeBundleDto } from "@/features/fridge/utils/data-shaping"
+import type { FridgeBundleDto, FridgeSlotListResponseDto } from "@/features/fridge/utils/data-shaping"
 import type {
   InspectionAction,
   InspectionActionEntry,
@@ -14,6 +14,34 @@ import type {
 type InspectionActionSummaryDto = {
   action: InspectionAction
   count: number
+}
+
+type InspectionActionItemDto = {
+  id: number
+  fridgeItemId?: string | null
+  snapshotName?: string | null
+  snapshotExpiresOn?: string | null
+  quantityAtAction?: number | null
+}
+
+type PenaltyHistoryDto = {
+  id: string
+  points: number
+  reason?: string | null
+  issuedAt: string
+  expiresAt?: string | null
+}
+
+type InspectionActionDetailDto = {
+  actionId: number
+  actionType: InspectionAction
+  bundleId?: string | null
+  targetUserId?: string | null
+  recordedAt: string
+  recordedBy?: string | null
+  note?: string | null
+  items?: InspectionActionItemDto[]
+  penalties?: PenaltyHistoryDto[]
 }
 
 type InspectionSessionDto = {
@@ -29,6 +57,7 @@ type InspectionSessionDto = {
   endedAt?: string | null
   bundles: FridgeBundleDto[]
   summary: InspectionActionSummaryDto[]
+  actions?: InspectionActionDetailDto[]
   notes?: string | null
 }
 
@@ -190,11 +219,15 @@ export async function fetchInspectionHistory(params: InspectionHistoryParams = {
 }
 
 export async function fetchInspectionSlots(): Promise<Slot[]> {
-  const { data, error } = await safeApiCall<any[]>("/fridge/slots?view=full&size=200", { method: "GET" })
+  const { data, error } = await safeApiCall<FridgeSlotListResponseDto>(
+    "/fridge/slots?view=full&page=0&size=200",
+    { method: "GET" },
+  )
   if (error || !data) {
     throw new Error(error?.message ?? "검사 대상 칸 정보를 불러오지 못했습니다.")
   }
-  return data.map(mapSlotFromDto)
+  const items = data.items ?? []
+  return items.map(mapSlotFromDto)
 }
 
 type InspectionScheduleParams = {
@@ -309,6 +342,29 @@ function mapInspectionSessionDto(dto: InspectionSessionDto): InspectionSession {
   })
 
   const items = toItems(bundles, units)
+  const actions = (dto.actions ?? []).map((action) => ({
+    actionId: action.actionId,
+    actionType: action.actionType,
+    bundleId: action.bundleId ?? null,
+    targetUserId: action.targetUserId ?? null,
+    recordedAt: action.recordedAt,
+    recordedBy: action.recordedBy ?? null,
+    note: action.note ?? null,
+    items: (action.items ?? []).map((item) => ({
+      id: item.id,
+      fridgeItemId: item.fridgeItemId ?? null,
+      snapshotName: item.snapshotName ?? null,
+      snapshotExpiresOn: item.snapshotExpiresOn ?? null,
+      quantityAtAction: item.quantityAtAction ?? null,
+    })),
+    penalties: (action.penalties ?? []).map((penalty) => ({
+      id: penalty.id,
+      points: penalty.points,
+      reason: penalty.reason ?? null,
+      issuedAt: penalty.issuedAt,
+      expiresAt: penalty.expiresAt ?? null,
+    })),
+  }))
 
   return {
     sessionId: dto.sessionId,
@@ -325,6 +381,7 @@ function mapInspectionSessionDto(dto: InspectionSessionDto): InspectionSession {
     units,
     items,
     summary: dto.summary ?? [],
+    actions,
     notes: dto.notes ?? null,
   }
 }

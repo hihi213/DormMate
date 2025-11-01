@@ -13,6 +13,7 @@
   3. [data-model.md](data-model.md)에서 연관 테이블·필드·상태값을 리뷰하고, 관련 마이그레이션/도메인 엔티티 파일 위치를 메모한다.
   4. 필요 시 [docs/ai-impl/backend.md](ai-impl/backend.md), [docs/ai-impl/frontend.md](ai-impl/frontend.md)의 구현 지침과 기존 [docs/ops/status-board.md](ops/status-board.md) 로그를 참고해 이전 결정 사항을 상기한다.
   5. 상기 내용을 [docs/ops/status-board.md](ops/status-board.md) WIP 섹션에 근거로 기록한 뒤 구현에 착수한다.
+- UI를 생성·수정할 때는 **모바일 포함 다양한 기기에서 최적화된 레이아웃과 상호작용**을 먼저 점검하고, 사용자 경험을 최우선으로 고려해 반응형 디자인·접근성·터치 인터랙션 등을 테스트한다. (지침: [docs/ai-impl/frontend.md](ai-impl/frontend.md))
 - UI 변경 필요성이 보이면 우선 다른 작업을 마무리한 뒤 사용자에게 변경 제안을 제출한다. (지침: [docs/ai-impl/frontend.md](ai-impl/frontend.md))
 - 확장 대비 코드(다중 검사자, 알림 정책 UI 등)는 삭제하지 말고, 필요 시 주석과 문서로 현재 비활성 상태임을 명시한다. (지침: [docs/ai-impl/backend.md](ai-impl/backend.md), [docs/ai-impl/frontend.md](ai-impl/frontend.md))
 - 정책·데이터 모델이 불명확할 때는 [feature-inventory.md](feature-inventory.md), [data-model.md](data-model.md)를 교차 참고해 문서를 업데이트한다.
@@ -69,6 +70,7 @@
   - [x] `GET /fridge/slots`가 배정 칸만 반환하는지 검증(`FridgeService#getSlots`).
   - [x] 프런트 슬롯 선택 UX가 배정 칸만 표시하도록 API 파라미터/필터를 적용.
   - [x] 운영 계정 시드와 라벨 시퀀스 초기화 상태를 점검하고 필요 시 관리자 도구에서 재적용한다.
+  - [x] `GET /fridge/slots?view=full&page=0&size=20` 응답에서 `occupiedCount`·총 개수 등이 포함되고, 프런트 슬롯 목록이 해당 값으로 페이지네이션/잔여 용량을 계산하는지 확인한다.
 - **Feature 링크**: [Feature Inventory §2 냉장고 – 일반 기숙사생](feature-inventory.md#2-냉장고--일반-기숙사생)
 - **목표**: 거주자가 자신의 칸만 선택해 등록을 시작할 수 있다.
 - **참고**: [data-model.md §4](data-model.md#4-냉장고-도메인), [mvp-scenario.md §3.1](mvp-scenario.md#31-거주자-포장-등록-및-관리)
@@ -79,6 +81,7 @@
   - [x] `POST /fridge/bundles`에서 `max_bundle_count` 초과 시 422(`CAPACITY_EXCEEDED`)가 반환되는지 확인.
   - [x] 포장 등록 폼의 수량·유통기한 검증과 등록 후 목록/검색 즉시 갱신을 구현.
     - [x] 칸 상태 비활성화(HTTP 423 `COMPARTMENT_SUSPENDED`) 응답 시 접근 차단 메시지를 노출.
+  - [x] 포장 등록 후 슬롯/포장 목록이 `occupiedCount` 재계산과 페이지네이션(`page`,`size`) 이동으로 즉시 반영되는지 확인한다.
 - **Feature 링크**: [Feature Inventory §2 냉장고 – 일반 기숙사생](feature-inventory.md#2-냉장고--일반-기숙사생)
 - **목표**: 거주자가 제한된 용량 안에서 포장을 생성하고 즉시 결과를 확인한다.
 - **참고**: [mvp-scenario.md §3.1](mvp-scenario.md#31-거주자-포장-등록-및-관리) 1~4단계 시나리오 최종 구현이 목표
@@ -91,6 +94,7 @@
   - [ ] `FridgeIntegrationTest` 및 `npm test -- fridge-badge`로 임박/만료·라벨 플로우 회귀 테스트.
   - [ ] 라벨 시퀀스 기본 범위(001~999) 및 `max_bundle_count` 관리자 조정 정책을 서버 단에서 검증하고 통합 테스트로 보호.
   - [ ] 냉장고 증설 시 `compartment_room_access` 자동 재배분 로직을 구현하고, 호실 매핑이 기대대로 변경되는지 검증한다.
+  - [ ] 포장 목록 페이징(`page`,`size`)과 `freshness` 필터가 조합될 때도 라벨 재사용·배지 상태가 일관되는지 QA 체크리스트를 확정한다.
 - **Feature 링크**: [Feature Inventory §2 냉장고 – 일반 기숙사생](feature-inventory.md#2-냉장고--일반-기숙사생)
 - **목표**: 임박/만료 상태가 즉시 반영되고 삭제 후 라벨을 재사용할 수 있다.
 - **참고**: [mvp-scenario.md §3.1](mvp-scenario.md#31-거주자-포장-등록-및-관리) 5~6단계 시나리오 최종 구현이 목표
@@ -102,6 +106,7 @@
   - [ ] 폐기/경고 조치가 발생한 포장에 대해 벌점 안내·기록 모듈과 연동하고, 거주자 화면에서 누적 벌점을 노출.
   - [ ] 검사 결과 후 수정·벌점 안내 흐름을 통합/Playwright 테스트로 검증.
   - [ ] 포장/슬롯 목록 UI 문구(임박/만료 배지, 메모 비공개 안내 등)를 최신 정책과 일치하도록 정비하고 스냅샷을 갱신한다.
+  - [ ] `inspection_action_item` 스냅샷과 `penalty_history` 누적 정보를 `correlationId`로 연결해 알림/상세 화면에 노출하고, API 스키마 변경사항을 프런트 타입 정의에 반영한다.
 - **Feature 링크**: [Feature Inventory §2 냉장고 – 일반 기숙사생](feature-inventory.md#2-냉장고--일반-기숙사생), [Feature Inventory §3 냉장고 – 알림 & 일정](feature-inventory.md#3-냉장고--알림--일정)
 - **목표**: 검사 이후 변경된 물품과 벌점 안내가 거주자 화면에서 명확히 드러난다.
 - **참고**: [mvp-scenario.md §3.3](mvp-scenario.md#33-검사-후-사용자-알림)
@@ -182,6 +187,7 @@
   - [ ] `NotificationService#sendInspectionResultNotifications` 단위/통합 테스트 확보.
   - [ ] `FRIDGE_RESULT:{sessionUuid}:{userId}` dedupe 키와 TTL이 정책과 일치하는지 검증.
   - [ ] `notification_preference` OFF 사용자는 알림 대상에서 제외되는지 확인하고, 경고/폐기 통계와 함께 발송되는지 테스트.
+  - [ ] 알림 페이로드에 포함된 `correlationId`·`penaltyHistoryId`·`inspectionActionItemId`가 API 스펙과 일치하는지 검증하고 OpenAPI/프런트 타입을 동기화한다.
 - **Feature 링크**: [Feature Inventory §3 냉장고 – 알림 & 일정](feature-inventory.md#3-냉장고--알림--일정)
 - **목표**: 검사 제출 시 필요한 사용자에게만 중복 없이 알림이 발행된다.
 - **참고**: [mvp-scenario.md §3.3](mvp-scenario.md#33-검사-후-사용자-알림)
@@ -192,6 +198,7 @@
   - [ ] 거주자 알림 목록에서 `FRIDGE_RESULT` 항목을 표시하고 관련 포장 상세 링크를 연결.
   - [ ] 폐기 알림 상세에서 벌점 1점 누적 정보를 노출.
   - [ ] 알림 읽음 처리 및 탭/상단 배지 로직을 테스트(스토리북/스냅샷 혹은 E2E).
+  - [ ] 알림 상세 화면이 `inspection_action_item` 스냅샷, `penalty_history` 기록, `correlationId` 기반 링크를 모두 보여 주는지 QA 체크리스트를 확정한다.
 - **Feature 링크**: [Feature Inventory §3 냉장고 – 알림 & 일정](feature-inventory.md#3-냉장고--알림--일정)
 - **목표**: 거주자가 알림에서 경고/폐기/벌점 정보를 확인하고 관련 포장으로 이동할 수 있다.
 - **참고**: [mvp-scenario.md §3.3](mvp-scenario.md#33-검사-후-사용자-알림) 1~3단계 시나리오 최종 구현이 목표
@@ -202,6 +209,7 @@
   - [ ] 알림 설정 화면에서 냉장고 알림 ON/OFF 토글을 현재 사용 중인 훅/컨텍스트 상태와 연동한다.
   - [ ] 토글 변경 시 백엔드 `notification_preference`와 동기화되는지 검증하고, 백그라운드 알림 허용 옵션을 추가한다.
   - [ ] 알림 설정 저장용 백엔드 API를 구현해 종류별 ON/OFF, 백그라운드 허용 여부를 업데이트하고 단위·통합 테스트로 검증한다.
+  - [ ] 설정 화면에서 최근 발송 알림의 `correlationId`·상세 링크가 올바르게 작동하는지 수동/E2E 테스트 절차를 마련한다.
 - **Feature 링크**: [Feature Inventory §3 냉장고 – 알림 & 일정](feature-inventory.md#3-냉장고--알림--일정)
 - **목표**: 사용자가 알림 수신 여부를 직접 제어할 수 있다.
 - **참고**: [mvp-scenario.md §3.3](mvp-scenario.md#33-검사-후-사용자-알림) 4단계 시나리오 최종 구현이 목표
@@ -223,6 +231,7 @@
   - [ ] 알림 발송 실패 시 `notification_dispatch_log`에 원인과 상태가 기록되도록 서비스/리포지토리를 구현하고, 재시도 정책을 명시한다.
   - [ ] 알림 재시도/무시 정책을 운영 문서([docs/ops/status-board.md](ops/status-board.md))와 코드로 정리하고, 관리자 UI에서 실패 로그를 조회 가능하게 한다.
   - [ ] 하루 발송 상한·TTL 등 `notification_policy` 설정을 API/관리자 화면에서 조정 가능하도록 구현하고 테스트를 추가한다.
+  - [ ] 실패 로그 화면에서 `slotId`·`correlationId`·시간 범위 필터로 특정 검사 알림을 추적할 수 있도록 하고, 동작 여부를 통합 테스트/QA 체크리스트에 포함한다.
 - **Feature 링크**: [Feature Inventory §3 냉장고 – 알림 & 일정](feature-inventory.md#3-냉장고--알림--일정), [Feature Inventory §5 냉장고 – 관리자](feature-inventory.md#5-냉장고--관리자)
 - **목표**: 알림 실패가 추적되고 정책 값이 운영 UI에서 관리 가능하다.
 - **참고**: [mvp-scenario.md §3.3](mvp-scenario.md#33-검사-후-사용자-알림)
@@ -258,6 +267,7 @@
   - [x] 검사 일정/이력 저장을 위한 테이블과 CRUD API를 작성해 로컬 스토리지 의존성을 제거한다(`frontend/app/_components/home/use-home-state.ts` 개선 포함).
   - [ ] 거주자/관리자 UI에서 일정·이력을 API 기반으로 조회하고, 작성/완료 이벤트를 기록한다.
   - [ ] 데이터 마이그레이션/백업 전략과 회귀 테스트(통합 또는 Playwright)를 마련한다.
+- **범위 메모**: MVP에서는 **층별장**이 자신의 책임 구역(배정 칸) 기준으로 검사 일정을 생성·수정·완료 처리한다. 관리자 화면은 조회 전용으로 유지하며, Post-MVP에서 “관리자가 일정 등록/수정 → 해당 층별장에게 알림 발송” 흐름을 확장 도입한다.
 - **Feature 링크**: [Feature Inventory §3 냉장고 – 알림 & 일정](feature-inventory.md#3-냉장고--알림--일정)
 - **목표**: 검사 일정과 이력이 서버에서 단일 소스로 관리되고 모든 사용자에게 일관되게 노출된다.
 - **참고**: [mvp-scenario.md §3.4](mvp-scenario.md#34-임박만료-자동-알림)
@@ -274,6 +284,7 @@
   - [ ] 관리자 대시보드에서 층별 통계가 노출되도록 프런트 UI를 보강.
   - [ ] 냉장고 증설/재배분 시 `compartment_room_access`가 자동 재계산되고 UI에서 재배분 결과를 확인할 수 있도록 백엔드/프런트 검증 루틴을 마련한다.
   - [ ] 냉장고 증설/재배분용 관리자 API와 서비스 로직을 구현해 정책대로 `compartment_room_access`를 갱신하고, 회귀 테스트 및 운영 절차 문서를 추가한다.
+  - [ ] 관리자 검사·포장 목록 API가 `slotId`·`status`·`limit`·`page` 필터를 지원하고, 대시보드에서 해당 필터를 적용해 사례를 조회하는 절차를 QA 체크리스트로 정리한다.
 - **Feature 링크**: [Feature Inventory §5 냉장고 – 관리자](feature-inventory.md#5-냉장고--관리자), [Feature Inventory §2 냉장고 – 일반 기숙사생 · 증설 정책](feature-inventory.md#냉장고-증설재배분)
 - **목표**: 관리자가 칸 용량·상태를 조정하고 통계를 확인할 수 있다.
 - **참고**: [mvp-scenario.md §3.5](mvp-scenario.md#35-관리자-운영-통제)
@@ -294,6 +305,7 @@
   - [ ] 관리자 대시보드 “준비 중” 구역을 정비해 층별장 임명/해제, 벌점 조회, 알림 정책 관리 등 핵심 패널을 실데이터와 연결한다.
   - [ ] 포장/검사/벌점 데이터를 API 기반으로 조회·필터링하고, CSV/로그 다운로드 등 운영 편의 기능을 제공한다.
   - [ ] 관리자 도구 UX 흐름을 Playwright 또는 수동 시나리오로 검증하고 상태 보드에 기록한다.
+  - [ ] 검사 이력 테이블에서 `slotId`·`status`·기간·`limit` 필터를 조합해 데모 요구사항을 재현하고, 관련 API 파라미터·응답 예시를 문서화한다.
 - **Feature 링크**: [Feature Inventory §5 냉장고 – 관리자](feature-inventory.md#5-냉장고--관리자)
 - **목표**: 운영자가 GUI만으로 핵심 정책·데이터를 점검하고 조정할 수 있다.
 - **참고**: [mvp-scenario.md §3.5](mvp-scenario.md#35-관리자-운영-통제)
@@ -318,6 +330,7 @@
   - [ ] `./gradlew test`, `/actuator/health`, `/fridge/slots`, `/fridge/inspections/active` 스모크 호출.
   - [ ] 거주자→층별장→관리자 e2e 또는 수동 시나리오 실행 후 결과를 [docs/ops/status-board.md](ops/status-board.md)에 기록.
   - [ ] 프런트 환경에서 새 API/필드(`freshness`, `maxBundleCount` 등) 사용 여부 점검 및 Mock/스토리북 정리.
+  - [ ] 검사 결과 알림(`correlationId`, `inspection_action_item`)·페이지네이션·필터 조합 사례가 회귀 테스트에 포함됐음을 보고서에 요약한다.
 - **목표**: 전체 데모 흐름이 회귀 테스트로 확인되고 핵심 API가 정상임을 증명한다.
 - **참고**: [mvp-scenario.md §4](mvp-scenario.md#4-마무리-및-배포-안정성-강조)
 
@@ -327,6 +340,7 @@
   - [ ] 테스트 로그·스크린샷을 수집하고 PASS/FAIL을 status-board에 명시.
   - [ ] 확장 대비 코드 주석/현황을 README/Docs에 기록, 잔여 이슈는 트래커(GitHub/노션)로 이관.
   - [ ] Flyway `V11__drop_notification_policy_table.sql` 적용 여부 확인, 필요 시 `flywayRepair`.
+  - [ ] RG-701~704 실행 내역(스모크, 알림/검사 회귀, 프런트 E2E)을 마무리 보고서와 데모 슬라이드에 한 줄 요약으로 남긴다.
 - **목표**: 데모 보고와 배포 안정성 근거가 정리되어 후속 일정에 활용 가능하다.
 - **참고**: [mvp-scenario.md §4](mvp-scenario.md#4-마무리-및-배포-안정성-강조)
 

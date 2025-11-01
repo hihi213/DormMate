@@ -368,6 +368,64 @@ components:
         action: { $ref: '#/components/schemas/InspectionAction' }
         count: { type: integer }
       required: [action, count]
+    InspectionActionItem:
+      type: object
+      properties:
+        id: { type: integer, format: int64 }
+        fridgeItemId:
+          type: string
+          format: uuid
+          nullable: true
+        snapshotName:
+          type: string
+          nullable: true
+        snapshotExpiresOn:
+          type: string
+          format: date
+          nullable: true
+        quantityAtAction:
+          type: integer
+          nullable: true
+    PenaltyHistory:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        points: { type: integer }
+        reason:
+          type: string
+          nullable: true
+        issuedAt: { type: string, format: date-time }
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+    InspectionActionDetail:
+      type: object
+      properties:
+        actionId: { type: integer, format: int64 }
+        actionType: { $ref: '#/components/schemas/InspectionAction' }
+        bundleId:
+          type: string
+          format: uuid
+          nullable: true
+        targetUserId:
+          type: string
+          format: uuid
+          nullable: true
+        recordedAt: { type: string, format: date-time }
+        recordedBy:
+          type: string
+          format: uuid
+          nullable: true
+        note:
+          type: string
+          nullable: true
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/InspectionActionItem' }
+        penalties:
+          type: array
+          items: { $ref: '#/components/schemas/PenaltyHistory' }
     InspectionSession:
       type: object
       properties:
@@ -392,6 +450,9 @@ components:
         summary:
           type: array
           items: { $ref: '#/components/schemas/InspectionActionSummary' }
+        actions:
+          type: array
+          items: { $ref: '#/components/schemas/InspectionActionDetail' }
         notes:
           type: string
           nullable: true

@@ -7,6 +7,7 @@ import java.util.List;
 import com.dormmate.backend.global.jpa.AbstractTimestampedEntity;
 import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundle;
+import com.dormmate.backend.modules.penalty.domain.PenaltyHistory;
 
 import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
@@ -62,6 +63,9 @@ public class InspectionAction extends AbstractTimestampedEntity {
 
     @OneToMany(mappedBy = "inspectionAction", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     private List<InspectionActionItem> items = new ArrayList<>();
+
+    @OneToMany(mappedBy = "inspectionAction", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
+    private List<PenaltyHistory> penalties = new ArrayList<>();
 
     public Long getId() {
         return id;
@@ -133,5 +137,9 @@ public class InspectionAction extends AbstractTimestampedEntity {
 
     public List<InspectionActionItem> getItems() {
         return items;
+    }
+
+    public List<PenaltyHistory> getPenalties() {
+        return penalties;
     }
 }

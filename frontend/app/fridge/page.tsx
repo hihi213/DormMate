@@ -10,12 +10,13 @@ import type { Item } from "@/features/fridge/types"
 import Filters from "@/features/fridge/components/filters"
 import ItemsList from "@/features/fridge/components/items-list"
 import BottomNav from "@/components/bottom-nav"
-import { getCurrentUserId } from "@/lib/auth"
+import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
 import AddItemDialog from "@/features/fridge/components/add-item-dialog"
 import { formatKoreanDate } from "./utils-fridge-page"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import { useToast } from "@/hooks/use-toast"
 import { fetchNextInspectionSchedule } from "@/features/inspections/api"
+import { AdminFridgeTools } from "@/features/fridge/components/admin-tools"
 
 // Lazy load heavier bottom sheets
 const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
@@ -35,13 +36,26 @@ export default function FridgePage() {
 function FridgeInner() {
   const { items, slots, bundles, initialLoadError } = useFridge()
   const { toast } = useToast()
+  const currentUser = getCurrentUser()
+  const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
   const [query, setQuery] = useState("")
   const [tab, setTab] = useState<"all" | "mine" | "expiring" | "expired">("all")
   const [selectedSlotId, setSelectedSlotId] = useState<string>("")
   const [addOpen, setAddOpen] = useState(false)
   const [myOnly, setMyOnly] = useState(true)
   const [nextScheduleText, setNextScheduleText] = useState<string>("")
+  const [viewMode, setViewMode] = useState<"admin" | "inventory">(() => (isAdmin ? "admin" : "inventory"))
   const uid = getCurrentUserId()
+
+  useEffect(() => {
+    if (!isAdmin && viewMode === "admin") {
+      setViewMode("inventory")
+    }
+  }, [isAdmin, viewMode])
+
+  if (isAdmin && viewMode === "admin") {
+    return <AdminFridgeTools onRequestResidentView={() => setViewMode("inventory")} />
+  }
 
   // Bottom Sheets state
   const [itemSheet, setItemSheet] = useState<{ open: boolean; id: string; edit?: boolean }>({
@@ -223,6 +237,16 @@ function FridgeInner() {
             </div>
           </div>
           <div className="inline-flex items-center gap-1">
+            {isAdmin && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setViewMode("admin")}
+                aria-label="관리자 도구"
+              >
+                관리자 도구
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"

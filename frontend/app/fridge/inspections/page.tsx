@@ -64,7 +64,7 @@ function InspectionsInner() {
   const [error, setError] = useState<string | null>(null)
 
   const currentUser = getCurrentUser()
-  const canManage = currentUser?.roles.includes("FLOOR_MANAGER") || currentUser?.roles.includes("ADMIN")
+  const isFloorManager = currentUser?.roles.includes("FLOOR_MANAGER") ?? false
 
   useEffect(() => {
     let canceled = false
@@ -74,7 +74,7 @@ function InspectionsInner() {
       setError(null)
       try {
         const slotList = await fetchInspectionSlots()
-        const schedulePromise = canManage
+        const schedulePromise = isFloorManager
           ? fetchInspectionSchedules({ status: "SCHEDULED" })
           : Promise.resolve<InspectionSchedule[]>([])
         const [session, historyList, scheduleList] = await Promise.all([
@@ -83,13 +83,13 @@ function InspectionsInner() {
           schedulePromise,
         ])
         if (canceled) return
-        const normalizedSlots = canManage
+        const normalizedSlots = isFloorManager
           ? slotList.filter((slot) => slot.resourceStatus === "ACTIVE")
           : slotList
         setSlots(normalizedSlots)
         setActiveSession(session)
         setHistory(historyList)
-        if (canManage) {
+        if (isFloorManager) {
           setSchedules(scheduleList)
         } else {
           setSchedules([])
@@ -119,7 +119,7 @@ function InspectionsInner() {
     return () => {
       canceled = true
     }
-  }, [canManage, toast])
+  }, [isFloorManager, toast])
 
   const availableSlots = useMemo(() => {
     if (!slots.length) return []
@@ -157,7 +157,7 @@ function InspectionsInner() {
   )
 
   const handleStartInspection = async () => {
-    if (!selectedSlot || starting) return
+    if (!isFloorManager || !selectedSlot || starting) return
     try {
       setStarting(true)
       const session = await startInspection({
@@ -165,7 +165,7 @@ function InspectionsInner() {
         scheduleId: selectedScheduleId || undefined,
       })
       setSelectedScheduleId("")
-      if (canManage) {
+      if (isFloorManager) {
         try {
           const refreshedSchedules = await fetchInspectionSchedules({ status: "SCHEDULED" })
           setSchedules(refreshedSchedules)
@@ -192,12 +192,12 @@ function InspectionsInner() {
   }
 
   const handleContinue = () => {
-    if (!activeSession) return
+    if (!isFloorManager || !activeSession) return
     router.push(`/fridge/inspect?sessionId=${activeSession.sessionId}`)
   }
 
   const handleCancel = async () => {
-    if (!activeSession || canceling) return
+    if (!isFloorManager || !activeSession || canceling) return
     if (!confirm("진행 중인 검사를 취소할까요? 기록되지 않은 내용은 모두 사라집니다.")) return
 
     try {
@@ -221,7 +221,7 @@ function InspectionsInner() {
     }
   }
 
-  if (!canManage) {
+  if (!isFloorManager) {
     return (
       <main className="min-h-[100svh] bg-white">
         <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
@@ -332,7 +332,7 @@ function InspectionsInner() {
             <CardContent className="flex items-start gap-3 py-4 text-sm text-muted-foreground">
               <ShieldCheck className="mt-0.5 size-4 text-emerald-600" />
               <p>
-                {"검사 시작과 조치 기록은 층별장 또는 관리자만 수행할 수 있습니다. 이상이 있다고 판단되면 층별장에게 문의해 주세요."}
+                {"검사 시작과 조치 기록은 층별장만 수행할 수 있습니다. 이상이 있다고 판단되면 담당 층별장에게 문의해 주세요."}
               </p>
             </CardContent>
           </Card>

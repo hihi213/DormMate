@@ -10,7 +10,7 @@ import {
   BundleListResponseDto,
   FridgeBundleDto,
   FridgeItemResponseDto,
-  FridgeSlotDto,
+  FridgeSlotListResponseDto,
   mapBundleFromDto,
   mapItemFromResponse,
   mapSlotFromDto,
@@ -30,8 +30,8 @@ function raiseFridgeError(error: ApiError | undefined, fallbackMessage: string):
 }
 
 export async function fetchFridgeSlots(): Promise<Slot[]> {
-  const search = new URLSearchParams({ view: "full", size: "200" })
-  const { data, error } = await safeApiCall<FridgeSlotDto[]>(`/fridge/slots?${search.toString()}`, {
+  const search = new URLSearchParams({ view: "full", page: "0", size: "200" })
+  const { data, error } = await safeApiCall<FridgeSlotListResponseDto>(`/fridge/slots?${search.toString()}`, {
     method: "GET",
   })
 
@@ -39,7 +39,9 @@ export async function fetchFridgeSlots(): Promise<Slot[]> {
     raiseFridgeError(error, "냉장고 칸 정보를 불러오지 못했습니다.")
   }
 
-  return data.map(mapSlotFromDto)
+  const items = data.items ?? []
+
+  return items.map(mapSlotFromDto)
 }
 
 type InventoryFetchOptions = {

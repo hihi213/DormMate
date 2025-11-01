@@ -15,7 +15,9 @@ import java.util.stream.Collectors;
 
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeBundleResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeDtoMapper;
+import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionDetailResponse;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionEntryRequest;
+import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionItemResponse;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionRequest;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionSummaryResponse;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionSessionResponse;
@@ -48,6 +50,8 @@ import com.dormmate.backend.modules.inspection.domain.InspectionScheduleStatus;
 import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionScheduleRepository;
 import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionSessionRepository;
 import com.dormmate.backend.modules.notification.application.NotificationService;
+import com.dormmate.backend.modules.penalty.domain.PenaltyHistory;
+import com.dormmate.backend.modules.inspection.presentation.dto.PenaltyHistoryResponse;
 import com.dormmate.backend.global.security.SecurityUtils;
 
 import org.springframework.http.HttpStatus;
@@ -58,6 +62,8 @@ import org.springframework.web.server.ResponseStatusException;
 @Service
 @Transactional
 public class InspectionService {
+
+    private static final String PENALTY_SOURCE = "FRIDGE_INSPECTION";
 
     private final InspectionSessionRepository inspectionSessionRepository;
     private final FridgeCompartmentRepository fridgeCompartmentRepository;
@@ -308,6 +314,8 @@ public class InspectionService {
                 item.setDeletedAt(now);
                 fridgeItemRepository.save(item);
             }
+
+            maybeAttachPenalty(action, actionType, currentUser, now);
         }
 
         inspectionSessionRepository.save(session);
@@ -355,7 +363,7 @@ public class InspectionService {
     }
 
     private void ensureManagerRole() {
-        if (SecurityUtils.hasRole("ADMIN") || SecurityUtils.hasRole("FLOOR_MANAGER")) {
+        if (SecurityUtils.hasRole("FLOOR_MANAGER")) {
             return;
         }
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_MANAGER_ONLY");
@@ -401,6 +409,41 @@ public class InspectionService {
 
         List<InspectionActionSummaryResponse> summaries = buildSummary(session);
 
+        List<InspectionActionDetailResponse> actionDetails = session.getActions().stream()
+                .sorted(Comparator.comparing(InspectionAction::getRecordedAt))
+                .map(action -> {
+                    List<InspectionActionItemResponse> itemResponses = action.getItems().stream()
+                            .map(item -> new InspectionActionItemResponse(
+                                    item.getId(),
+                                    item.getFridgeItem() != null ? item.getFridgeItem().getId() : null,
+                                    item.getSnapshotName(),
+                                    item.getSnapshotExpiresOn(),
+                                    item.getQuantityAtAction()
+                            ))
+                            .toList();
+                    List<PenaltyHistoryResponse> penaltyResponses = action.getPenalties().stream()
+                            .map(penalty -> new PenaltyHistoryResponse(
+                                    penalty.getId(),
+                                    penalty.getPoints(),
+                                    penalty.getReason(),
+                                    penalty.getIssuedAt(),
+                                    penalty.getExpiresAt()
+                            ))
+                            .toList();
+                    return new InspectionActionDetailResponse(
+                            action.getId(),
+                            action.getActionType().name(),
+                            action.getFridgeBundle() != null ? action.getFridgeBundle().getId() : null,
+                            action.getTargetUser() != null ? action.getTargetUser().getId() : null,
+                            action.getRecordedAt(),
+                            action.getRecordedBy() != null ? action.getRecordedBy().getId() : null,
+                            action.getFreeNote(),
+                            itemResponses,
+                            penaltyResponses
+                    );
+                })
+                .toList();
+
         int slotIndex = compartment.getSlotIndex();
         String slotLetter = LabelFormatter.toSlotLetter(slotIndex);
         int floorNo = compartment.getFridgeUnit().getFloorNo();
@@ -419,6 +462,7 @@ public class InspectionService {
                 session.getEndedAt(),
                 bundleResponses,
                 summaries,
+                actionDetails,
                 session.getNotes()
         );
     }
@@ -432,6 +476,29 @@ public class InspectionService {
                 .map(entry -> new InspectionActionSummaryResponse(entry.getKey().name(), entry.getValue()))
                 .sorted(Comparator.comparing(InspectionActionSummaryResponse::action))
                 .toList();
+    }
+
+    private void maybeAttachPenalty(InspectionAction action, InspectionActionType type, DormUser issuer, OffsetDateTime issuedAt) {
+        DormUser target = action.getTargetUser();
+        if (target == null) {
+            return;
+        }
+        int points = switch (type) {
+            case DISPOSE_EXPIRED, UNREGISTERED_DISPOSE -> 1;
+            default -> 0;
+        };
+        if (points <= 0) {
+            return;
+        }
+        PenaltyHistory penalty = new PenaltyHistory();
+        penalty.setUser(target);
+        penalty.setIssuer(issuer);
+        penalty.setSource(PENALTY_SOURCE);
+        penalty.setPoints(points);
+        penalty.setReason(type.name());
+        penalty.setIssuedAt(issuedAt);
+        penalty.setInspectionAction(action);
+        action.getPenalties().add(penalty);
     }
 
     private void ensureViewerCanAccessSession(DormUser viewer, InspectionSession session) {

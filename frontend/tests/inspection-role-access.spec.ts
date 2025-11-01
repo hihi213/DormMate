@@ -1,0 +1,45 @@
+import { test, expect, type Page } from '@playwright/test';
+
+async function loginAs(page: Page, loginId: string, password: string, redirectTo: string) {
+  await page.goto(`/auth?mode=login&redirect=${encodeURIComponent(redirectTo)}`);
+  await page.getByLabel('아이디').fill(loginId);
+  await page.getByLabel('비밀번호').fill(password);
+  await page.getByRole('button', { name: '로그인' }).click();
+  await page.waitForURL((url) => url.pathname === redirectTo);
+}
+
+test.describe('검사 권한 UI 가드', () => {
+  test('관리자는 일정 등록 UI 없이 목록만 확인한다', async ({ page }) => {
+    await loginAs(page, 'admin', 'password', '/admin');
+
+    await expect(page.getByRole('heading', { name: '예정된 검사' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '검사 일정 등록' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '일정 추가' })).toHaveCount(0);
+  });
+
+  test('층별장도 일정 등록 UI 없이 목록만 확인한다', async ({ page }) => {
+    await loginAs(page, 'bob', 'bob123!', '/admin');
+
+    await expect(page.getByRole('heading', { name: '예정된 검사' })).toBeVisible();
+    await expect(page.getByRole('heading', { name: '검사 일정 등록' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: '일정 추가' })).toHaveCount(0);
+  });
+
+  test('관리자는 검사 화면에서 조작 버튼 없이 안내만 본다', async ({ page }) => {
+    await loginAs(page, 'admin', 'password', '/fridge/inspections');
+
+    await expect(
+      page.getByText('검사 시작과 조치 기록은 층별장만 수행할 수 있습니다', { exact: false }),
+    ).toBeVisible();
+    await expect(page.getByRole('button', { name: '검사 시작' })).toHaveCount(0);
+  });
+
+  test('층별장은 검사 화면에서 검사 시작 버튼을 사용할 수 있다', async ({ page }) => {
+    await loginAs(page, 'bob', 'bob123!', '/fridge/inspections');
+
+    await expect(page.getByRole('button', { name: '검사 시작' })).toBeVisible();
+    await expect(
+      page.getByText('검사 시작과 조치 기록은 층별장만 수행할 수 있습니다', { exact: false }),
+    ).toHaveCount(0);
+  });
+});

@@ -83,13 +83,15 @@
 - **세부 작업**
   1. `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest` 재실행으로 서버 슬롯 필터 회귀를 확인한다.
   2. `SlotSelector`에서 선택 슬롯 메모이제이션을 재사용하도록 정리하고 `aria-disabled`를 추가해 잠금/비활성 칸이 접근성 측면에서도 명확히 표시되도록 개선한다.
-  3. `AddItemDialog`와 슬롯 필터 UI가 갱신된 `SlotSelector` 시그니처를 그대로 활용하는지 수동 점검하고, 필요 시 가드 로직을 보완한다.
+ 3. `AddItemDialog`와 슬롯 필터 UI가 갱신된 `SlotSelector` 시그니처를 그대로 활용하는지 수동 점검하고, 필요 시 가드 로직을 보완한다.
  4. 시드 데이터 및 `bundle_label_sequence` 상태를 샘플 조회해 데모 기준 칸/배정 데이터가 의도대로인지 스팟 체크한다.
+ 5. `GET /fridge/slots?view=full&page=0&size=20` 호출 시 `occupiedCount`·`totalElements`가 기대대로 내려오는지 확인하고, 등록/삭제 후 값이 즉시 반영되는지 확인한다.
 - 2025-11-02: 관리자 전용 전시 물품 시드 스크립트(`backend/src/main/resources/db/demo/fridge_exhibition_items.sql`)를 추가했다. `/admin/seed/fridge-demo` API가 이 스크립트를 호출해 `전시 데모:` 접두사의 물품 7건을 교체하도록 변경했으며, 운영 데이터에는 절대 실행하지 않도록 문서와 UI에 경고를 남겼다.
 - **테스트 계획**
   - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest`
   - `npm run lint` (Next.js lint로 TS/ESLint 경고 확인)
   - 수동: 거주자 계정으로 슬롯 선택 모달 확인(잠금/비활성 칸 비활성 표시) + 관리자 화면에서 전체 칸 조회 유지.
+  - `curl -s -H "Authorization: Bearer <token>" "http://localhost:8080/fridge/slots?view=full&page=0&size=20"` — `occupiedCount`·`totalElements` 필드 스팟 확인, 등록/삭제 후 재호출.
 - **리스크/의존성**: `SlotSelector`는 관리자·검사자 화면에서도 재사용되므로 기본 prop 미전달 시 동작이 바뀌지 않아야 한다. React 훅 의존성 배열 변경 시 Next lint가 경고를 낼 수 있어 리팩터링 시 주의가 필요하다.
 - **진행 로그**
   - 2025-10-31: `SlotSelector` 중복 선언을 제거하고 `useMemo`, `aria-disabled`로 잠금/비활성 상태 노출 방식을 일관되게 보강.
@@ -115,13 +117,13 @@
 - **세부 작업**
   1. 423 응답(`COMPARTMENT_SUSPENDED`, `COMPARTMENT_LOCKED`, `COMPARTMENT_UNDER_INSPECTION`)을 받는 모든 포장 등록/수정 흐름에서 사용자 친화 메시지를 강제하도록 `FridgeProvider`와 관련 훅을 보완한다.
   2. 허용량 초과·칸 잠금 상황별 안내 문구를 상태 보드에 정의한 정책과 맞춰 재검토하고, 중복 코드가 있으면 util 함수로 정리한다.
-  3. `FridgeIntegrationTest` 전체를 재실행해 422 응답 계약이 회귀하지 않는지 확인하고, 필요하면 API 문서(`FridgeController` OpenAPI 주석)와 동기화한다.
-  4. 수동 검증: 포장 등록 → 허용량 초과 → 잠금/정지 칸 선택 시 메시지 확인, 등록 후 목록/검색 즉시 갱신 여부 확인.
+ 3. `FridgeIntegrationTest` 전체를 재실행해 422 응답 계약이 회귀하지 않는지 확인하고, 필요하면 API 문서(`FridgeController` OpenAPI 주석)와 동기화한다.
+  4. 수동 검증: 포장 등록 → 허용량 초과 → 잠금/정지 칸 선택 시 메시지 확인, 등록 후 목록/검색/페이지네이션(`page`,`size`) 즉시 갱신 여부와 `occupiedCount` 변화 확인.
 - **테스트 계획**
   - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.maxBundleCountExceededReturns422`
   - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest`
   - `npm run lint`
-  - 수동: 거주자 계정으로 허용량 초과 및 잠금/중지 칸 안내 메시지 확인.
+  - 수동: 거주자 계정으로 허용량 초과 및 잠금/중지 칸 안내 메시지 확인, 등록 직후 `GET /fridge/slots?view=full&page=0&size=20` 호출로 `occupiedCount` 업데이트 확인.
 - **진행 로그**
   - 2025-11-01: `ProblemResponse`에 `code` 필드와 기본 메시지를 추가하고, 허용량 초과 통합 테스트에 응답 본문(`code`/`detail`) 검증을 보강.
   - 2025-11-01: `FridgeProvider#addBundle`에서 허용량 초과 시 슬롯 메타 기반 안내 문구를 노출하도록 개선.
@@ -162,23 +164,46 @@
     - (PASS, 2025-10-31 — SlotSelector 리팩터링 후 TS/ESLint 경고 없음)
 
 
+### FR-204 검사 후 수정 추적·벌점 안내 — In Progress (2025-11-01, Codex)
+- **근거 문서**: `mvp-plan.md:FR-204`, `mvp-scenario.md §3.3`
+- **변경 사항**
+  - `penalty_history` 테이블과 도메인을 추가하고, 검사 조치 중 폐기(`DISPOSE_EXPIRED`, `UNREGISTERED_DISPOSE`)에 대해 자동으로 벌점(1점)을 기록하도록 구현.
+  - `InspectionSessionResponse`가 `actions` 배열을 포함하도록 확장돼 각 조치의 메모, 스냅샷(`inspection_action_item`), 벌점 내역을 내려준다.
+  - 프런트 타입/매퍼(`frontend/features/inspections/api.ts`)를 갱신해 새 필드(`actions / items / penalties`)를 파싱하고, 알림·상세 화면 연동 준비.
+- **테스트**
+  - `./gradlew test` — (PASS, 2025-11-01) 검사·알림 통합 테스트 업데이트 후 전체 백엔드 테스트 통과.
+  - `npm run lint` — (PASS, 2025-11-01) 신규 타입 반영 후 프런트 ESLint 클린.
+- **TODO**: UI에서 조치 상세/벌점 모달 표현을 확정하고, Playwright 시나리오에 검사 후 배지/벌점 확인 절차를 추가한다.
+
+### NO-401 검사 결과 알림 발행 — In Progress (2025-11-01, Codex)
+- **근거 문서**: `mvp-plan.md:NO-401~403`
+- **변경 사항**
+  - 알림 생성 시 `correlationId`를 검사 세션 ID로 저장하고, 메타데이터에 `sessionId`, `actionIds`, `actionItemIds`, `penaltyHistoryIds` 배열을 포함하도록 `NotificationService` 보강.
+  - 중복 방지·알림 비활성화 시나리오 통합 테스트를 갱신해 신규 필드를 검증.
+- **테스트**
+  - `./gradlew test --tests com.dormmate.backend.modules.notification.NotificationServiceIntegrationTest`
+    - (PASS, 2025-11-01 — correlationId/metadata 포함 여부 확인)
+
+
 ### SC-401 검사 일정·이력 서버 관리 — WIP (2025-11-02, Codex)
 - **근거 문서**: `mvp-plan.md:SC-401`, `feature-inventory.md §3`, `frontend/app/_components/home/use-home-state.ts`
 - **현행 파악**
   - 일정/이력은 더 이상 브라우저 로컬스토리지에 저장하지 않고, 신규 테이블 `inspection_schedule`과 기존 `inspection_session`을 통해 서버에서 단일 소스로 관리된다.
-  - `/fridge/inspection-schedules`·`/fridge/inspection-schedules/next` API가 관리자/거주자 모두에게 읽기 권한을 제공하며, 작성·수정·삭제는 관리자/층별장 역할로 제한된다.
-  - 홈·냉장고·관리자 화면이 모두 새 API를 통해 다음 일정과 최근 검사 이력을 조회하도록 개편됐고, 데모 초기화 시 로컬스토리지 키를 비울 필요가 없어진다.
+-  `/fridge/inspection-schedules`·`/fridge/inspection-schedules/next` API가 관리자/거주자 모두에게 읽기 권한을 제공하며, 작성·수정·삭제는 층별장 역할에 한정한다. **MVP에서는 층별장 UI에서 책임 구역 칸 단위 일정 생성·수정·완료 플로우를 제공**하고, 관리자는 조회 전용으로 유지한다.
+-  홈·냉장고·관리자 화면이 모두 새 API를 통해 다음 일정과 최근 검사 이력을 조회하도록 개편됐고, 데모 초기화 시 로컬스토리지 키를 비울 필요가 없어진다.
 - **세부 작업**
-  1. 관리자 UI에 일정 작성/완료 처리 플로우를 연결해 `inspection_schedule`에 대한 CRUD를 화면에서 수행하도록 한다.
-  2. 일정-세션 연결(`inspection_session_id`)을 자동화하거나 검증 루틴을 추가해 제출 시점에 일정이 자동으로 완료 처리되도록 한다.
-  3. 데모/운영 데이터 마이그레이션 가이드를 작성하고, 일정 이력 백업/복구 절차를 검토한다.
+  1. 층별장 일정 생성/수정 UI를 마무리하고, 일정 생성 시 거주자 알림 흐름과 감사 로그를 연동한다.
+  2. 일정-세션 연결(`inspection_session_id`) 검증과 중복 예약 방지 규칙을 강화해 다중 층별장이 동시에 예약해도 충돌하지 않도록 한다.
+  3. (Post-MVP) 관리자 일정 등록/수정 플로우를 확장하고, 일정 생성 시 담당 층별장에게 알림을 발송하도록 구현한다.
+  4. 데모/운영 데이터 마이그레이션 가이드를 작성하고, 일정 이력 백업/복구 절차를 검토한다.
 - **진행 로그**
   - 2025-11-02: Flyway `V13__inspection_schedule_schema.sql`로 `inspection_schedule` 테이블과 인덱스를 생성.
   - 2025-11-02: `InspectionScheduleService`·`InspectionScheduleController`를 추가해 `/fridge/inspection-schedules` CRUD 및 `/next` 조회 엔드포인트를 제공.
   - 2025-11-02: 프런트 `use-home-state`, 냉장고 페이지, 관리자 대시보드가 `fetchNextInspectionSchedule`/`fetchInspectionSchedules`/`fetchInspectionHistory` API로 전환되어 로컬스토리지 의존성을 제거.
-  - 2025-11-02: 관리자 대시보드에서 일정 생성·완료·삭제를 UI로 수행하고, 검사 시작 화면에서 일정 선택 후 세션을 생성하면 `inspection_session_id`가 연결되도록 연계했다.
+  - 2025-11-02: 층별장 일정 생성·완료·삭제 UI를 연결해 검사 시작 화면에서 일정 선택 후 세션을 생성하면 `inspection_session_id`가 연동되도록 구성했다.
   - 2025-11-02: `InspectionService.submitSession`이 연결된 일정을 자동으로 `COMPLETED` 처리하도록 보강, 통합 테스트(`scheduleLinkedInspectionCompletesAutomatically`) 추가.
   - 2025-11-02: 검사 취소 시 연결된 일정이 다시 사용 가능하도록 `inspection_session_id`를 해제하고 상태를 `SCHEDULED`로 되돌리는 로직과 통합 테스트(`cancelInspectionReleasesSchedule`)를 추가.
+  - 2025-11-02: 관리자 화면은 조회 전용으로 유지하고, Post-MVP에서 관리자 일정 등록·알림 플로우를 확장하기 위한 메모를 `mvp-scenario.md`에 기록했다.
 - **테스트**
   - `./gradlew test --tests com.dormmate.backend.modules.inspection.InspectionScheduleIntegrationTest`
     - (PASS, 2025-11-02 — 일정 생성/조회/완료/삭제 플로우 검증)

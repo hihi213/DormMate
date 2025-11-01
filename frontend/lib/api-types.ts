@@ -1128,6 +1128,42 @@ export interface components {
             action: components["schemas"]["InspectionAction"];
             count: number;
         };
+        InspectionActionItem: {
+            /** Format: int64 */
+            id: number;
+            /** Format: uuid */
+            fridgeItemId?: string | null;
+            snapshotName?: string | null;
+            /** Format: date */
+            snapshotExpiresOn?: string | null;
+            quantityAtAction?: number | null;
+        };
+        PenaltyHistory: {
+            /** Format: uuid */
+            id: string;
+            points: number;
+            reason?: string | null;
+            /** Format: date-time */
+            issuedAt: string;
+            /** Format: date-time */
+            expiresAt?: string | null;
+        };
+        InspectionActionDetail: {
+            /** Format: int64 */
+            actionId: number;
+            actionType: components["schemas"]["InspectionAction"];
+            /** Format: uuid */
+            bundleId?: string | null;
+            /** Format: uuid */
+            targetUserId?: string | null;
+            /** Format: date-time */
+            recordedAt: string;
+            /** Format: uuid */
+            recordedBy?: string | null;
+            note?: string | null;
+            items: components["schemas"]["InspectionActionItem"][];
+            penalties: components["schemas"]["PenaltyHistory"][];
+        };
         InspectionSession: {
             /** Format: uuid */
             sessionId: string;
@@ -1146,6 +1182,7 @@ export interface components {
             endedAt?: string | null;
             bundles: components["schemas"]["FridgeBundle"][];
             summary: components["schemas"]["InspectionActionSummary"][];
+            actions: components["schemas"]["InspectionActionDetail"][];
             notes?: string | null;
         };
         InspectionActionEntry: {

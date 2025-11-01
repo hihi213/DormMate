@@ -60,6 +60,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     private String managerToken;
     private String residentToken;
+    private String adminToken;
     private List<UUID> bundlesToCleanup;
     private UUID slot2FAId;
     private UUID residentId;
@@ -70,6 +71,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         bundlesToCleanup = new ArrayList<>();
         managerToken = login("bob", "bob123!");
         residentToken = login("alice", "alice123!");
+        adminToken = login("admin", "password");
         slot2FAId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
         residentId = fetchUserId("alice");
         residentRoomId = ensureResidentAssignment(residentId);
@@ -83,6 +85,55 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         jdbcTemplate.update("UPDATE fridge_item SET status = 'ACTIVE', deleted_at = NULL");
         jdbcTemplate.update("UPDATE fridge_bundle SET status = 'ACTIVE', deleted_at = NULL");
         jdbcTemplate.update("UPDATE fridge_compartment SET is_locked = FALSE, locked_until = NULL");
+    }
+
+    @Test
+    void adminReceivesForbiddenForInspectionLifecycle() throws Exception {
+        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
+        UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
+
+        mockMvc.perform(post("/fridge/inspections")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "slotId": "%s"
+                                }
+                                """.formatted(slot2FAId)))
+                .andExpect(status().isForbidden());
+
+        JsonNode session = startInspection(managerToken, slot2FAId);
+        UUID sessionId = UUID.fromString(session.path("sessionId").asText());
+
+        mockMvc.perform(post("/fridge/inspections/%s/actions".formatted(sessionId))
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "actions": [
+                                    {
+                                      "action": "DISPOSE_EXPIRED",
+                                      "bundleId": "%s",
+                                      "itemId": "%s"
+                                    }
+                                  ]
+                                }
+                                """.formatted(bundleId, itemId)))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(post("/fridge/inspections/%s/submit".formatted(sessionId))
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(delete("/fridge/inspections/%s".formatted(sessionId))
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isForbidden());
+
+        // Clean up session for subsequent assertions
+        mockMvc.perform(delete("/fridge/inspections/%s".formatted(sessionId))
+                        .header("Authorization", "Bearer " + managerToken))
+                .andExpect(status().isNoContent());
     }
 
     @AfterEach

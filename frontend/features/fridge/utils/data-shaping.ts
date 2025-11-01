@@ -101,6 +101,14 @@ export type BundleListResponseDto = {
   totalCount: number
 }
 
+export type FridgeSlotListResponseDto = {
+  items: FridgeSlotDto[]
+  totalCount: number
+  page?: number
+  size?: number
+  totalPages?: number
+}
+
 export function mapSlotFromDto(dto: FridgeSlotDto): Slot {
   const slotLetter = dto.slotLetter && dto.slotLetter.length > 0 ? dto.slotLetter : toSlotLetter(dto.slotIndex)
   return {

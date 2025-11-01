@@ -3,10 +3,13 @@ package com.dormmate.backend.modules.notification.application;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.notification.domain.Notification;
@@ -18,6 +21,8 @@ import com.dormmate.backend.modules.notification.infrastructure.persistence.Noti
 import com.dormmate.backend.modules.inspection.domain.InspectionAction;
 import com.dormmate.backend.modules.inspection.domain.InspectionActionType;
 import com.dormmate.backend.modules.inspection.domain.InspectionSession;
+import com.dormmate.backend.modules.inspection.domain.InspectionActionItem;
+import com.dormmate.backend.modules.penalty.domain.PenaltyHistory;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,6 +72,9 @@ public class NotificationService {
         }
 
         OffsetDateTime now = OffsetDateTime.now(clock);
+        Map<UUID, List<InspectionAction>> actionsByUser = session.getActions().stream()
+                .filter(action -> action.getTargetUser() != null)
+                .collect(Collectors.groupingBy(action -> action.getTargetUser().getId(), LinkedHashMap::new, Collectors.toList()));
         summaries.forEach((user, summary) -> {
             if (summary.isEmpty()) {
                 return;
@@ -93,7 +101,30 @@ public class NotificationService {
             notification.setState(NotificationState.UNREAD);
             notification.setDedupeKey(dedupeKey);
             notification.setTtlAt(now.plusHours(DEFAULT_TTL_HOURS));
-            notification.setMetadata(Map.of("sessionId", session.getId()));
+            notification.setCorrelationId(session.getId());
+
+            List<InspectionAction> actionsForUser = actionsByUser.getOrDefault(user.getId(), List.of());
+            List<Long> actionIds = actionsForUser.stream()
+                    .map(InspectionAction::getId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            List<Long> actionItemIds = actionsForUser.stream()
+                    .flatMap(action -> action.getItems().stream())
+                    .map(InspectionActionItem::getId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            List<UUID> penaltyIds = actionsForUser.stream()
+                    .flatMap(action -> action.getPenalties().stream())
+                    .map(PenaltyHistory::getId)
+                    .filter(Objects::nonNull)
+                    .toList();
+
+            Map<String, Object> metadata = new java.util.LinkedHashMap<>();
+            metadata.put("sessionId", session.getId());
+            metadata.put("actionIds", actionIds);
+            metadata.put("actionItemIds", actionItemIds);
+            metadata.put("penaltyHistoryIds", penaltyIds);
+            notification.setMetadata(metadata);
 
             notificationRepository.save(notification);
         });
