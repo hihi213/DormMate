@@ -96,7 +96,15 @@ jobs:
 
       - name: Compare runtime OpenAPI with spec
         run: |
-          curl -fsS http://localhost:8080/v3/api-docs > runtime-openapi.json
+          LOGIN_PAYLOAD='{"loginId":"admin","password":"password","deviceId":"ci-runner"}'
+          curl -fsS -H "Content-Type: application/json" -d "$LOGIN_PAYLOAD" http://localhost:8080/auth/login > login-response.json
+          ACCESS_TOKEN=$(jq -r '.tokens.accessToken' login-response.json)
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+            echo "Failed to obtain access token" >&2
+            cat login-response.json
+            exit 1
+          fi
+          curl -fsS -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/v3/api-docs > runtime-openapi.json
           npx @redocly/openapi-cli bundle api/openapi.yml --output spec-openapi.json --ext json
           npx @redocly/openapi-cli diff spec-openapi.json runtime-openapi.json
 

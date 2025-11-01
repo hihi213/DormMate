@@ -8,6 +8,8 @@ import HomeHeader from "./_components/home/home-header"
 import LoginPromptCard from "./_components/home/login-prompt-card"
 import ProfileDialog from "./_components/home/profile-dialog"
 import { useHomeState } from "./_components/home/use-home-state"
+import { useRouter } from "next/navigation"
+import { useEffect } from "react"
 
 function LoadingHome() {
   return (
@@ -20,18 +22,24 @@ function LoadingHome() {
 }
 
 export default function Page() {
+  const router = useRouter()
   useServiceWorkerRegistration()
   const {
     mounted,
     user,
     isLoggedIn,
+    isAdmin,
     infoOpen,
     setInfoOpen,
     nextInspection,
     logout,
-    resetDemoForUser,
-    startDemoWithDefaultUser,
   } = useHomeState()
+
+  useEffect(() => {
+    if (mounted && isAdmin) {
+      router.replace("/admin")
+    }
+  }, [mounted, isAdmin, router])
 
   return (
     <main className="min-h-[100svh] bg-white text-gray-900">
@@ -39,10 +47,9 @@ export default function Page() {
         mounted={mounted}
         isLoggedIn={isLoggedIn}
         user={user}
+        isAdmin={isAdmin}
         onOpenInfo={() => setInfoOpen(true)}
         onLogout={logout}
-        onResetDemo={resetDemoForUser}
-        onStartDemo={startDemoWithDefaultUser}
       />
 
       <div className="mx-auto max-w-screen-sm px-4 pb-28 pt-3 space-y-6">

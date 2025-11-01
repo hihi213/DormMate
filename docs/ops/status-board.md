@@ -66,10 +66,13 @@
   - `user_session` 테이블에 `device_id` 컬럼과 활성 인덱스 추가(`V12__add_user_session_device_id.sql`), 엔터티/리포지토리 갱신.
   - `AuthService`에서 디바이스 ID 정규화·저장, 만료 세션 일괄 `EXPIRED` 처리, 기기 불일치 시 세션을 `DEVICE_MISMATCH`로 즉시 폐기하도록 개편.
   - `ResponseStatusException` 발생 시 세션 폐기가 롤백되지 않도록 트랜잭션 전략(noRollbackFor) 조정 및 신규 동작 검증용 통합 테스트 추가.
+  - 프런트 로그인/가드 UI에서 데모 계정 자동 로그인 요소를 제거하고 백엔드 `/auth/login` 흐름만 노출하도록 정비(`frontend/features/auth/components/login-panel.tsx`, `frontend/features/auth/components/auth-guard.tsx` 등).
 - **테스트**
   - `./gradlew test --tests com.dormmate.backend.modules.auth.AuthServiceTest`
     - (PASS, 2025-11-01 — 디바이스 저장·만료 세션 폐기·기기 불일치 차단 시나리오 검증)
 - **후속 과제**: 가입/승인(AU-101~103) 구현 시 비밀번호 변경·탈퇴와 연동해 전체 세션 폐기 기능을 확장해야 한다.
+
+- **추가 로그**: CI OpenAPI 드리프트 체크 단계가 관리자 로그인 후 토큰으로 `/v3/api-docs`를 호출하도록 갱신됐다(`.github/workflows/ci.yml`).
 
 ### FR-201 슬롯 접근 제어 — WIP (2025-10-31, Codex)
 - **근거 문서**: `mvp-scenario.md §3.1`, `feature-inventory.md §2`, `mvp-plan.md:FR-201`

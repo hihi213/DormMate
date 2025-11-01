@@ -1,4 +1,4 @@
-import { ensureValidAccessToken, forceRefreshAccessToken } from "@/lib/auth"
+import { ensureValidAccessToken, forceRefreshAccessToken, redirectToLogin } from "@/lib/auth"
 import { ApiError, ApiErrorDictionary, resolveApiError } from "./api-errors"
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
@@ -109,6 +109,9 @@ export async function apiClient<T>(path: string, options: ApiRequestOptions = {}
 
   if (!response.ok) {
     const error = await resolveApiError(response, errorMessages)
+    if (response.status === 401 && !skipAuth) {
+      redirectToLogin(undefined, "sessionExpired")
+    }
     return { ok: false, error, response }
   }
 

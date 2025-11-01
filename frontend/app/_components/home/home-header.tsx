@@ -19,20 +19,18 @@ type Props = {
   mounted: boolean
   isLoggedIn: boolean
   user: AuthUser | null
+  isAdmin: boolean
   onOpenInfo: () => void
   onLogout: () => void
-  onResetDemo: () => void
-  onStartDemo: () => void
 }
 
 export default function HomeHeader({
   mounted,
   isLoggedIn,
   user,
+  isAdmin,
   onOpenInfo,
   onLogout,
-  onResetDemo,
-  onStartDemo,
 }: Props) {
   const router = useRouter()
 
@@ -68,8 +66,11 @@ export default function HomeHeader({
                 <>
                   <DropdownMenuLabel className="truncate">{`${user?.name ?? ""} · ${user?.room ?? ""}`}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
+                  {isAdmin && (
+                    <DropdownMenuItem onClick={() => router.push("/admin")}>{"관리자 센터"}</DropdownMenuItem>
+                  )}
+                  {isAdmin && <DropdownMenuSeparator />}
                   <DropdownMenuItem onClick={onOpenInfo}>{"내정보"}</DropdownMenuItem>
-                  <DropdownMenuItem onClick={onResetDemo}>{"데모 데이터 초기화"}</DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={onLogout}>{"로그아웃"}</DropdownMenuItem>
                 </>
@@ -78,7 +79,6 @@ export default function HomeHeader({
                   <DropdownMenuLabel>{"로그인이 필요합니다"}</DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={navigateToLogin}>{"로그인"}</DropdownMenuItem>
-                  <DropdownMenuItem onClick={onStartDemo}>{"데모 시작(alice 계정)"}</DropdownMenuItem>
                 </>
               )}
             </DropdownMenuContent>
