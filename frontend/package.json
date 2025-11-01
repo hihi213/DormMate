@@ -70,6 +70,7 @@
   },
   "devDependencies": {
     "@playwright/test": "^1.56.1",
+    "@redocly/openapi-cli": "^0.12.16",
     "@types/node": "^20.14.10",
     "@types/react": "18.2.46",
     "@types/react-dom": "18.2.18",

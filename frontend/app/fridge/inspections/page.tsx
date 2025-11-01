@@ -15,12 +15,13 @@ import { getCurrentUser } from "@/lib/auth"
 import { formatShortDate } from "@/lib/date-utils"
 import { formatCompartmentLabel, formatSlotDisplayName } from "@/features/fridge/utils/labels"
 import type { Slot } from "@/features/fridge/types"
-import type { InspectionAction, InspectionSession } from "@/features/inspections/types"
+import type { InspectionAction, InspectionSchedule, InspectionSession } from "@/features/inspections/types"
 import {
   cancelInspection,
   fetchActiveInspection,
   fetchInspectionHistory,
   fetchInspectionSlots,
+  fetchInspectionSchedules,
   startInspection,
 } from "@/features/inspections/api"
 
@@ -54,10 +55,12 @@ function InspectionsInner() {
   const [slots, setSlots] = useState<Slot[]>([])
   const [activeSession, setActiveSession] = useState<InspectionSession | null>(null)
   const [history, setHistory] = useState<InspectionSession[]>([])
+  const [schedules, setSchedules] = useState<InspectionSchedule[]>([])
   const [loading, setLoading] = useState(true)
   const [starting, setStarting] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [selectedSlotId, setSelectedSlotId] = useState<string>("")
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string>("")
   const [error, setError] = useState<string | null>(null)
 
   const currentUser = getCurrentUser()
@@ -71,9 +74,13 @@ function InspectionsInner() {
       setError(null)
       try {
         const slotList = await fetchInspectionSlots()
-        const [session, historyList] = await Promise.all([
+        const schedulePromise = canManage
+          ? fetchInspectionSchedules({ status: "SCHEDULED" })
+          : Promise.resolve<InspectionSchedule[]>([])
+        const [session, historyList, scheduleList] = await Promise.all([
           fetchActiveInspection(),
           fetchInspectionHistory({ limit: 10 }),
+          schedulePromise,
         ])
         if (canceled) return
         const normalizedSlots = canManage
@@ -82,6 +89,11 @@ function InspectionsInner() {
         setSlots(normalizedSlots)
         setActiveSession(session)
         setHistory(historyList)
+        if (canManage) {
+          setSchedules(scheduleList)
+        } else {
+          setSchedules([])
+        }
       } catch (err) {
         if (canceled) return
         const message = err instanceof Error ? err.message : "검사 정보를 불러오지 못했습니다."
@@ -94,6 +106,7 @@ function InspectionsInner() {
         setSlots([])
         setActiveSession(null)
         setHistory([])
+        setSchedules([])
       } finally {
         if (!canceled) {
           setLoading(false)
@@ -115,6 +128,17 @@ function InspectionsInner() {
   }, [slots, activeSession])
 
   const selectedSlot = availableSlots.find((slot) => slot.slotId === selectedSlotId)
+
+  const availableSchedules = useMemo(
+    () => schedules.filter((schedule) => !schedule.inspectionSessionId),
+    [schedules],
+  )
+
+  useEffect(() => {
+    if (selectedScheduleId && !availableSchedules.some((schedule) => schedule.scheduleId === selectedScheduleId)) {
+      setSelectedScheduleId("")
+    }
+  }, [availableSchedules, selectedScheduleId])
 
   const getSlotLabel = useCallback(
     (slotId?: string, slotIndex?: number) => {
@@ -138,7 +162,17 @@ function InspectionsInner() {
       setStarting(true)
       const session = await startInspection({
         slotId: selectedSlot.slotId,
+        scheduleId: selectedScheduleId || undefined,
       })
+      setSelectedScheduleId("")
+      if (canManage) {
+        try {
+          const refreshedSchedules = await fetchInspectionSchedules({ status: "SCHEDULED" })
+          setSchedules(refreshedSchedules)
+        } catch (refreshError) {
+          console.error("Failed to refresh schedules", refreshError)
+        }
+      }
       setActiveSession(session)
       toast({
         title: "검사를 시작했습니다.",
@@ -397,6 +431,31 @@ function InspectionsInner() {
               slots={availableSlots}
               placeholder={availableSlots.length ? "검사할 보관 칸 선택" : "검사 가능한 보관 칸이 없습니다"}
             />
+            <div className="space-y-2">
+              <p className="text-xs font-medium text-muted-foreground">연결할 일정 (선택)</p>
+              <select
+                value={selectedScheduleId}
+                onChange={(event) => setSelectedScheduleId(event.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              >
+                <option value="">일정 선택 안 함</option>
+                {availableSchedules.map((schedule) => (
+                  <option key={schedule.scheduleId} value={schedule.scheduleId}>
+                    {`${new Date(schedule.scheduledAt).toLocaleString("ko-KR", {
+                      month: "numeric",
+                      day: "numeric",
+                      hour: "2-digit",
+                      minute: "2-digit",
+                    })}${schedule.title ? ` · ${schedule.title}` : ""}`}
+                  </option>
+                ))}
+              </select>
+              {availableSchedules.length === 0 && schedules.length > 0 && (
+                <p className="text-[11px] text-muted-foreground">
+                  이미 진행 중인 일정은 검사 완료 시 자동으로 정리됩니다.
+                </p>
+              )}
+            </div>
             <Button
               onClick={handleStartInspection}
               disabled={!selectedSlot || starting}

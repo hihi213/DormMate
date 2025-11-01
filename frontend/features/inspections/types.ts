@@ -44,3 +44,17 @@ export type InspectionSubmitPayload = {
 }
 
 export type AvailableSlot = Slot
+
+export type InspectionScheduleStatus = "SCHEDULED" | "COMPLETED" | "CANCELLED"
+
+export type InspectionSchedule = {
+  scheduleId: string
+  scheduledAt: string
+  title?: string | null
+  notes?: string | null
+  status: InspectionScheduleStatus
+  completedAt?: string | null
+  inspectionSessionId?: string | null
+  createdAt: string
+  updatedAt: string
+}

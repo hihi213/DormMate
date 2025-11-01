@@ -15,14 +15,11 @@ import AddItemDialog from "@/features/fridge/components/add-item-dialog"
 import { formatKoreanDate } from "./utils-fridge-page"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import { useToast } from "@/hooks/use-toast"
+import { fetchNextInspectionSchedule } from "@/features/inspections/api"
 
 // Lazy load heavier bottom sheets
 const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
 const BundleDetailSheet = dynamic(() => import("@/features/fridge/components/bundle-detail-sheet"), { ssr: false })
-
-const SCHED_KEY = "fridge-inspections-schedule-v1"
-
-type Schedule = { id: string; dateISO: string; title?: string; notes?: string }
 
 export default function FridgePage() {
   return (
@@ -97,18 +94,25 @@ function FridgeInner() {
   }, [ownedSlotIds, slots.length])
 
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(SCHED_KEY) || "null") as Schedule[] | null
-      if (Array.isArray(saved)) {
-        const now = new Date()
-        const upcoming = saved
-          .map((s) => ({ ...s, d: new Date(s.dateISO) }))
-          .filter((s) => s.d.getTime() >= now.getTime())
-          .sort((a, b) => a.d.getTime() - b.d.getTime())[0]
-        setNextScheduleText(upcoming ? formatKoreanDate(upcoming.d) : "예정 없음")
-      } else setNextScheduleText("예정 없음")
-    } catch {
-      setNextScheduleText("예정 없음")
+    let cancelled = false
+    const loadNextSchedule = async () => {
+      try {
+        const schedule = await fetchNextInspectionSchedule()
+        if (cancelled) return
+        if (!schedule) {
+          setNextScheduleText("예정 없음")
+          return
+        }
+        setNextScheduleText(formatKoreanDate(new Date(schedule.scheduledAt)))
+      } catch {
+        if (!cancelled) {
+          setNextScheduleText("예정 없음")
+        }
+      }
+    }
+    void loadNextSchedule()
+    return () => {
+      cancelled = true
     }
   }, [])
 

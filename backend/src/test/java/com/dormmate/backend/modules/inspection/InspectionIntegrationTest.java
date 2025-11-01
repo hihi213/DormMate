@@ -3,6 +3,7 @@ package com.dormmate.backend.modules.inspection;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -11,12 +12,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.dormmate.backend.modules.fridge.domain.FridgeItemStatus;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
+import com.dormmate.backend.modules.inspection.domain.InspectionScheduleStatus;
 import com.dormmate.backend.modules.inspection.domain.InspectionStatus;
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
@@ -72,6 +75,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         residentRoomId = ensureResidentAssignment(residentId);
         ensureCompartmentAccess(residentRoomId, slot2FAId);
 
+        jdbcTemplate.update("DELETE FROM inspection_schedule");
         jdbcTemplate.update("DELETE FROM inspection_action_item");
         jdbcTemplate.update("DELETE FROM inspection_action");
         jdbcTemplate.update("DELETE FROM inspection_participant");
@@ -86,6 +90,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         jdbcTemplate.update("DELETE FROM inspection_action_item");
         jdbcTemplate.update("DELETE FROM inspection_action");
         jdbcTemplate.update("DELETE FROM inspection_participant");
+        jdbcTemplate.update("DELETE FROM inspection_schedule");
         jdbcTemplate.update("DELETE FROM inspection_session");
         bundlesToCleanup.forEach(id -> fridgeBundleRepository.findById(id)
                 .ifPresent(fridgeBundleRepository::delete));
@@ -216,15 +221,119 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isConflict());
     }
 
-    private JsonNode startInspection(String token, UUID slotId) throws Exception {
-        MvcResult result = mockMvc.perform(post("/fridge/inspections")
-                        .header("Authorization", "Bearer " + token)
+    @Test
+    void scheduleLinkedInspectionCompletesAutomatically() throws Exception {
+        OffsetDateTime scheduledAt = OffsetDateTime.now(ZoneOffset.UTC).plusDays(1).withNano(0);
+        MvcResult scheduleResult = mockMvc.perform(post("/fridge/inspection-schedules")
+                        .header("Authorization", "Bearer " + managerToken)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "slotId": "%s"
+                                  "scheduledAt": "%s",
+                                  "title": "층별 정기 점검"
                                 }
-                                """.formatted(slotId)))
+                                """.formatted(scheduledAt)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode createdSchedule = objectMapper.readTree(scheduleResult.getResponse().getContentAsString());
+        UUID scheduleId = UUID.fromString(createdSchedule.path("scheduleId").asText());
+
+        JsonNode session = startInspection(managerToken, slot2FAId, scheduleId);
+        UUID sessionId = UUID.fromString(session.path("sessionId").asText());
+
+        UUID linkedSessionId = jdbcTemplate.queryForObject(
+                "SELECT inspection_session_id FROM inspection_schedule WHERE id = ?",
+                (rs, rowNum) -> rs.getString("inspection_session_id") != null ? UUID.fromString(rs.getString("inspection_session_id")) : null,
+                scheduleId
+        );
+        assertThat(linkedSessionId).isEqualTo(sessionId);
+
+        submitInspection(managerToken, sessionId);
+
+        String status = jdbcTemplate.queryForObject(
+                "SELECT status FROM inspection_schedule WHERE id = ?",
+                String.class,
+                scheduleId
+        );
+        OffsetDateTime completedAt = jdbcTemplate.queryForObject(
+                "SELECT completed_at FROM inspection_schedule WHERE id = ?",
+                OffsetDateTime.class,
+                scheduleId
+        );
+
+        assertThat(status).isEqualTo(InspectionScheduleStatus.COMPLETED.name());
+        assertThat(completedAt).isNotNull();
+    }
+
+    @Test
+    void cancelInspectionReleasesSchedule() throws Exception {
+        OffsetDateTime scheduledAt = OffsetDateTime.now(ZoneOffset.UTC).plusDays(2).withNano(0);
+        MvcResult scheduleResult = mockMvc.perform(post("/fridge/inspection-schedules")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scheduledAt": "%s",
+                                  "title": "취소 테스트 일정"
+                                }
+                                """.formatted(scheduledAt)))
+                .andExpect(status().isCreated())
+                .andReturn();
+        JsonNode createdSchedule = objectMapper.readTree(scheduleResult.getResponse().getContentAsString());
+        UUID scheduleId = UUID.fromString(createdSchedule.path("scheduleId").asText());
+
+        JsonNode session = startInspection(managerToken, slot2FAId, scheduleId);
+        UUID sessionId = UUID.fromString(session.path("sessionId").asText());
+
+        mockMvc.perform(delete("/fridge/inspections/%s".formatted(sessionId))
+                        .header("Authorization", "Bearer " + managerToken))
+                .andExpect(status().isNoContent());
+
+        String status = jdbcTemplate.queryForObject(
+                "SELECT status FROM inspection_schedule WHERE id = ?",
+                String.class,
+                scheduleId
+        );
+        OffsetDateTime completedAt = jdbcTemplate.queryForObject(
+                "SELECT completed_at FROM inspection_schedule WHERE id = ?",
+                OffsetDateTime.class,
+                scheduleId
+        );
+        String linkedSession = jdbcTemplate.queryForObject(
+                "SELECT inspection_session_id FROM inspection_schedule WHERE id = ?",
+                String.class,
+                scheduleId
+        );
+
+        assertThat(status).isEqualTo(InspectionScheduleStatus.SCHEDULED.name());
+        assertThat(completedAt).isNull();
+        assertThat(linkedSession).isNull();
+    }
+
+    private JsonNode startInspection(String token, UUID slotId) throws Exception {
+        return startInspection(token, slotId, null);
+    }
+
+    private JsonNode startInspection(String token, UUID slotId, UUID scheduleId) throws Exception {
+        String payload;
+        if (scheduleId != null) {
+            payload = """
+                    {
+                      "slotId": "%s",
+                      "scheduleId": "%s"
+                    }
+                    """.formatted(slotId, scheduleId);
+        } else {
+            payload = """
+                    {
+                      "slotId": "%s"
+                    }
+                    """.formatted(slotId);
+        }
+        MvcResult result = mockMvc.perform(post("/fridge/inspections")
+                        .header("Authorization", "Bearer " + token)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.sessionId").isNotEmpty())
                 .andReturn();

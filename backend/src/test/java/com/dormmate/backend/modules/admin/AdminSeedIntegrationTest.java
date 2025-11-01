@@ -33,11 +33,7 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminCanTriggerFridgeDemoSeed() throws Exception {
-        jdbcTemplate.update(
-                "UPDATE fridge_bundle SET memo = ? WHERE bundle_name = ?",
-                "MODIFIED",
-                "앨리스 기본 식료품"
-        );
+        jdbcTemplate.update("DELETE FROM fridge_item WHERE item_name LIKE '전시 데모:%'");
 
         String adminToken = loginAndGetAccessToken("admin", "password");
 
@@ -46,19 +42,41 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("FRIDGE_DEMO_DATA_REFRESHED"));
 
-        String memo = jdbcTemplate.queryForObject(
-                """
-                        SELECT memo
-                        FROM fridge_bundle
-                        WHERE bundle_name = ?
-                          AND status = 'ACTIVE'
-                        ORDER BY updated_at DESC
-                        LIMIT 1
-                        """,
-                String.class,
-                "앨리스 기본 식료품"
+        Integer itemCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM fridge_item WHERE item_name LIKE '전시 데모:%'",
+                Integer.class
         );
-        assertThat(memo).isEqualTo("임박/만료 시나리오용 샘플 포장");
+        assertThat(itemCount)
+                .withFailMessage("expected 7 demo items but found %s", itemCount)
+                .isNotNull()
+                .isEqualTo(7);
+
+        Integer aliceItems = jdbcTemplate.queryForObject(
+                """
+                        SELECT COUNT(*)
+                        FROM fridge_item fi
+                        JOIN fridge_bundle fb ON fb.id = fi.fridge_bundle_id
+                        JOIN dorm_user du ON du.id = fb.owner_user_id
+                        WHERE du.login_id = 'alice'
+                          AND fi.item_name LIKE '전시 데모:%'
+                        """,
+                Integer.class
+        );
+        assertThat(aliceItems).isNotNull().isGreaterThanOrEqualTo(1);
+
+        mockMvc.perform(post("/admin/seed/fridge-demo")
+                        .header("Authorization", "Bearer " + adminToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value("FRIDGE_DEMO_DATA_REFRESHED"));
+
+        Integer itemCountAfterSecondCall = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM fridge_item WHERE item_name LIKE '전시 데모:%'",
+                Integer.class
+        );
+        assertThat(itemCountAfterSecondCall)
+                .withFailMessage("expected 7 demo items after second call but found %s", itemCountAfterSecondCall)
+                .isNotNull()
+                .isEqualTo(7);
     }
 
     @Test

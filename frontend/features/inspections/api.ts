@@ -6,6 +6,7 @@ import type { FridgeBundleDto } from "@/features/fridge/utils/data-shaping"
 import type {
   InspectionAction,
   InspectionActionEntry,
+  InspectionSchedule,
   InspectionSession,
   InspectionSubmitPayload,
 } from "@/features/inspections/types"
@@ -31,8 +32,21 @@ type InspectionSessionDto = {
   notes?: string | null
 }
 
+type InspectionScheduleDto = {
+  scheduleId: string
+  scheduledAt: string
+  title?: string | null
+  notes?: string | null
+  status: InspectionSchedule["status"]
+  completedAt?: string | null
+  inspectionSessionId?: string | null
+  createdAt: string
+  updatedAt: string
+}
+
 type StartInspectionRequest = {
   slotId: string
+  scheduleId?: string | null
 }
 
 type ActionRequestDto = {
@@ -45,9 +59,13 @@ type ActionRequestDto = {
 }
 
 export async function startInspection(payload: StartInspectionRequest): Promise<InspectionSession> {
+  const body = {
+    slotId: payload.slotId,
+    scheduleId: payload.scheduleId ?? undefined,
+  }
   const { data, error } = await safeApiCall<InspectionSessionDto>("/fridge/inspections", {
     method: "POST",
-    body: payload,
+    body,
   })
 
   if (error || !data) {
@@ -179,6 +197,107 @@ export async function fetchInspectionSlots(): Promise<Slot[]> {
   return data.map(mapSlotFromDto)
 }
 
+type InspectionScheduleParams = {
+  status?: InspectionSchedule["status"]
+  limit?: number
+}
+
+export async function fetchInspectionSchedules(
+  params: InspectionScheduleParams = {},
+): Promise<InspectionSchedule[]> {
+  const search = new URLSearchParams()
+  if (params.status) search.set("status", params.status)
+  if (typeof params.limit === "number") search.set("limit", String(params.limit))
+  const path = search.toString() ? `/fridge/inspection-schedules?${search.toString()}` : "/fridge/inspection-schedules"
+
+  const { data, error } = await safeApiCall<InspectionScheduleDto[]>(path, { method: "GET" })
+  if (error) {
+    if (error.status === 204 || error.status === 404) return []
+    throw new Error(error.message ?? "검사 일정을 불러오지 못했습니다.")
+  }
+  if (!data) return []
+  return data.map(mapScheduleDto)
+}
+
+export async function fetchNextInspectionSchedule(): Promise<InspectionSchedule | null> {
+  const { data, error } = await safeApiCall<InspectionScheduleDto>("/fridge/inspection-schedules/next", {
+    method: "GET",
+  })
+  if (error) {
+    if (error.status === 204 || error.status === 404) return null
+    throw new Error(error.message ?? "다음 검사 일정을 불러오지 못했습니다.")
+  }
+  if (!data) return null
+  return mapScheduleDto(data)
+}
+
+type CreateInspectionSchedulePayload = {
+  scheduledAt: string
+  title?: string | null
+  notes?: string | null
+}
+
+export async function createInspectionSchedule(
+  payload: CreateInspectionSchedulePayload,
+): Promise<InspectionSchedule> {
+  const body = {
+    scheduledAt: payload.scheduledAt,
+    title: payload.title ?? undefined,
+    notes: payload.notes ?? undefined,
+  }
+  const { data, error } = await safeApiCall<InspectionScheduleDto>("/fridge/inspection-schedules", {
+    method: "POST",
+    body,
+  })
+  if (error || !data) {
+    throw new Error(error?.message ?? "검사 일정을 생성하지 못했습니다.")
+  }
+  return mapScheduleDto(data)
+}
+
+type UpdateInspectionSchedulePayload = {
+  scheduledAt?: string
+  title?: string | null
+  notes?: string | null
+  status?: InspectionSchedule["status"]
+  completedAt?: string | null
+  inspectionSessionId?: string | null
+  detachInspectionSession?: boolean
+}
+
+export async function updateInspectionSchedule(
+  scheduleId: string,
+  payload: UpdateInspectionSchedulePayload,
+): Promise<InspectionSchedule> {
+  const body: Record<string, unknown> = {}
+  if (payload.scheduledAt) body.scheduledAt = payload.scheduledAt
+  if (payload.title !== undefined) body.title = payload.title ?? null
+  if (payload.notes !== undefined) body.notes = payload.notes ?? null
+  if (payload.status) body.status = payload.status
+  if (payload.completedAt !== undefined) body.completedAt = payload.completedAt
+  if (payload.inspectionSessionId !== undefined) body.inspectionSessionId = payload.inspectionSessionId
+  if (payload.detachInspectionSession) body.detachInspectionSession = true
+
+  const { data, error } = await safeApiCall<InspectionScheduleDto>(`/fridge/inspection-schedules/${scheduleId}`, {
+    method: "PATCH",
+    body,
+  })
+  if (error || !data) {
+    throw new Error(error?.message ?? "검사 일정을 수정하지 못했습니다.")
+  }
+  return mapScheduleDto(data)
+}
+
+export async function deleteInspectionSchedule(scheduleId: string): Promise<void> {
+  const { error } = await safeApiCall(`/fridge/inspection-schedules/${scheduleId}`, {
+    method: "DELETE",
+    parseResponseAs: "none",
+  })
+  if (error) {
+    throw new Error(error.message ?? "검사 일정을 삭제하지 못했습니다.")
+  }
+}
+
 function mapInspectionSessionDto(dto: InspectionSessionDto): InspectionSession {
   const bundles: Bundle[] = []
   const units: ItemUnit[] = []
@@ -207,5 +326,19 @@ function mapInspectionSessionDto(dto: InspectionSessionDto): InspectionSession {
     items,
     summary: dto.summary ?? [],
     notes: dto.notes ?? null,
+  }
+}
+
+function mapScheduleDto(dto: InspectionScheduleDto): InspectionSchedule {
+  return {
+    scheduleId: dto.scheduleId,
+    scheduledAt: dto.scheduledAt,
+    title: dto.title ?? null,
+    notes: dto.notes ?? null,
+    status: dto.status,
+    completedAt: dto.completedAt ?? null,
+    inspectionSessionId: dto.inspectionSessionId ?? null,
+    createdAt: dto.createdAt,
+    updatedAt: dto.updatedAt,
   }
 }

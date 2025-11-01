@@ -82,7 +82,7 @@
   2. `SlotSelector`에서 선택 슬롯 메모이제이션을 재사용하도록 정리하고 `aria-disabled`를 추가해 잠금/비활성 칸이 접근성 측면에서도 명확히 표시되도록 개선한다.
   3. `AddItemDialog`와 슬롯 필터 UI가 갱신된 `SlotSelector` 시그니처를 그대로 활용하는지 수동 점검하고, 필요 시 가드 로직을 보완한다.
  4. 시드 데이터 및 `bundle_label_sequence` 상태를 샘플 조회해 데모 기준 칸/배정 데이터가 의도대로인지 스팟 체크한다.
-- 2025-11-02: 관리자 전용 데모 리셋 스크립트(`backend/src/main/resources/db/demo/fridge_demo_refresh.sql`)를 추가했다. `/admin/seed/fridge-demo` API가 이 스크립트를 호출해 냉장고/검사 테이블을 **모두 TRUNCATE** 한 뒤 표준 데이터를 재삽입하므로, 데모 환경에서만 사용하고 운영 데이터에는 절대 실행하지 않도록 주석과 시나리오 문서에 경고를 남겼다.
+- 2025-11-02: 관리자 전용 전시 물품 시드 스크립트(`backend/src/main/resources/db/demo/fridge_exhibition_items.sql`)를 추가했다. `/admin/seed/fridge-demo` API가 이 스크립트를 호출해 `전시 데모:` 접두사의 물품 7건을 교체하도록 변경했으며, 운영 데이터에는 절대 실행하지 않도록 문서와 UI에 경고를 남겼다.
 - **테스트 계획**
   - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest`
   - `npm run lint` (Next.js lint로 TS/ESLint 경고 확인)
@@ -151,3 +151,33 @@
   - 2025-11-02: `InspectionService`에 거주자 접근 검증 로직과 `/fridge/inspections` GET 목록 API를 추가해 본인 칸만 열람하도록 제한.
   - 2025-11-02: `InspectionIntegrationTest`에 거주자 열람·차단 시나리오를 추가하고 샘플 데이터(배정/칸 매핑)를 보강.
   - 2025-11-02: `/fridge/inspections` 프런트 페이지를 거주자용 읽기 전용 뷰로 확장하고, 검사 이력/진행 현황 UI를 분기 구현.
+
+- **테스트**
+  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest`
+    - (PASS, 2025-10-31 — 역할별 슬롯 필터 및 메모 마스킹 회귀 통과)
+  - `npm run lint`
+    - (PASS, 2025-10-31 — SlotSelector 리팩터링 후 TS/ESLint 경고 없음)
+
+
+### SC-401 검사 일정·이력 서버 관리 — WIP (2025-11-02, Codex)
+- **근거 문서**: `mvp-plan.md:SC-401`, `feature-inventory.md §3`, `frontend/app/_components/home/use-home-state.ts`
+- **현행 파악**
+  - 일정/이력은 더 이상 브라우저 로컬스토리지에 저장하지 않고, 신규 테이블 `inspection_schedule`과 기존 `inspection_session`을 통해 서버에서 단일 소스로 관리된다.
+  - `/fridge/inspection-schedules`·`/fridge/inspection-schedules/next` API가 관리자/거주자 모두에게 읽기 권한을 제공하며, 작성·수정·삭제는 관리자/층별장 역할로 제한된다.
+  - 홈·냉장고·관리자 화면이 모두 새 API를 통해 다음 일정과 최근 검사 이력을 조회하도록 개편됐고, 데모 초기화 시 로컬스토리지 키를 비울 필요가 없어진다.
+- **세부 작업**
+  1. 관리자 UI에 일정 작성/완료 처리 플로우를 연결해 `inspection_schedule`에 대한 CRUD를 화면에서 수행하도록 한다.
+  2. 일정-세션 연결(`inspection_session_id`)을 자동화하거나 검증 루틴을 추가해 제출 시점에 일정이 자동으로 완료 처리되도록 한다.
+  3. 데모/운영 데이터 마이그레이션 가이드를 작성하고, 일정 이력 백업/복구 절차를 검토한다.
+- **진행 로그**
+  - 2025-11-02: Flyway `V13__inspection_schedule_schema.sql`로 `inspection_schedule` 테이블과 인덱스를 생성.
+  - 2025-11-02: `InspectionScheduleService`·`InspectionScheduleController`를 추가해 `/fridge/inspection-schedules` CRUD 및 `/next` 조회 엔드포인트를 제공.
+  - 2025-11-02: 프런트 `use-home-state`, 냉장고 페이지, 관리자 대시보드가 `fetchNextInspectionSchedule`/`fetchInspectionSchedules`/`fetchInspectionHistory` API로 전환되어 로컬스토리지 의존성을 제거.
+  - 2025-11-02: 관리자 대시보드에서 일정 생성·완료·삭제를 UI로 수행하고, 검사 시작 화면에서 일정 선택 후 세션을 생성하면 `inspection_session_id`가 연결되도록 연계했다.
+  - 2025-11-02: `InspectionService.submitSession`이 연결된 일정을 자동으로 `COMPLETED` 처리하도록 보강, 통합 테스트(`scheduleLinkedInspectionCompletesAutomatically`) 추가.
+  - 2025-11-02: 검사 취소 시 연결된 일정이 다시 사용 가능하도록 `inspection_session_id`를 해제하고 상태를 `SCHEDULED`로 되돌리는 로직과 통합 테스트(`cancelInspectionReleasesSchedule`)를 추가.
+- **테스트**
+  - `./gradlew test --tests com.dormmate.backend.modules.inspection.InspectionScheduleIntegrationTest`
+    - (PASS, 2025-11-02 — 일정 생성/조회/완료/삭제 플로우 검증)
+  - `npm run lint`
+    - (PASS, 2025-11-02 — 일정 API 연동 후 프런트 경고 없음)

@@ -20,7 +20,7 @@ public class DemoSeedService {
 
     private static final Logger log = LoggerFactory.getLogger(DemoSeedService.class);
 
-    private static final String FRIDGE_DEMO_SEED_SCRIPT = "db/demo/fridge_demo_refresh.sql";
+    private static final String FRIDGE_DEMO_SEED_SCRIPT = "db/demo/fridge_exhibition_items.sql";
 
     private final DataSource dataSource;
 
@@ -35,8 +35,13 @@ public class DemoSeedService {
             ScriptUtils.executeSqlScript(connection, new EncodedResource(resource, StandardCharsets.UTF_8));
             log.info("Fridge demo seed script executed successfully");
         } catch (ScriptException ex) {
+            Throwable root = ex;
+            while (root.getCause() != null) {
+                root = root.getCause();
+            }
+            log.error("Failed to execute demo seed script root cause: {}", root.getMessage());
             log.error("Failed to execute demo seed script", ex);
-            throw new IllegalStateException("Failed to execute fridge demo seed script: " + ex.getMessage(), ex);
+            throw new IllegalStateException("Failed to execute fridge demo seed script: " + root.getMessage(), ex);
         } finally {
             DataSourceUtils.releaseConnection(connection, dataSource);
         }
