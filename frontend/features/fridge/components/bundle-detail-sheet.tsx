@@ -28,7 +28,15 @@ export default function BundleDetailSheet({
   bundleId?: string
   initialEdit?: boolean
 }) {
-  const { items, bundles, updateItem, deleteItem, renameBundle, deleteBundle: removeBundle, isSlotActive } = useFridge()
+  const {
+    items,
+    bundles,
+    updateItem,
+    deleteItem,
+    updateBundleMeta,
+    deleteBundle: removeBundle,
+    isSlotActive,
+  } = useFridge()
   const { toast } = useToast()
   const uid = getCurrentUserId()
   const currentUser = getCurrentUser()
@@ -172,32 +180,21 @@ const handleSaveBundleInfo = async () => {
   try {
     setInfoSaving(true)
 
+    const payload: { bundleName?: string; memo?: string | null } = {}
     if (nameChanged) {
-      const renameResult = await renameBundle(bundleId, trimmedName)
-      if (!renameResult.success) {
-        if (renameResult.code === "COMPARTMENT_SUSPENDED") {
-          setSlotEditable(false)
-        }
-        throw new Error(renameResult.error ?? "대표명을 수정하는 중 문제가 발생했습니다.")
-      }
+      payload.bundleName = trimmedName
+    }
+    if (memoChanged) {
+      payload.memo = trimmedMemo ? trimmedMemo : null
     }
 
-    if (memoChanged && sorted.length > 0) {
-      const results = await Promise.all(
-        sorted.map((it) => updateItem(it.unitId, { memo: trimmedMemo ? trimmedMemo : undefined })),
-      )
-      let suspended = false
-      const allOk = results.every((res) => {
-        if (!res.success && res.code === "COMPARTMENT_SUSPENDED") {
-          suspended = true
-        }
-        return res.success
-      })
-      if (!allOk) {
-        if (suspended) {
+    if (Object.keys(payload).length > 0) {
+      const updateResult = await updateBundleMeta(bundleId, payload)
+      if (!updateResult.success) {
+        if (updateResult.code === "COMPARTMENT_SUSPENDED") {
           setSlotEditable(false)
         }
-        throw new Error(suspended ? "해당 칸이 점검 중이라 메모를 저장할 수 없습니다." : "일부 물품 메모 저장에 실패했습니다.")
+        throw new Error(updateResult.error ?? "포장 정보를 수정하는 중 문제가 발생했습니다.")
       }
     }
 

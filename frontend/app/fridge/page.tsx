@@ -33,7 +33,7 @@ export default function FridgePage() {
 }
 
 function FridgeInner() {
-  const { items, slots, bundles } = useFridge()
+  const { items, slots, bundles, initialLoadError } = useFridge()
   const { toast } = useToast()
   const [query, setQuery] = useState("")
   const [tab, setTab] = useState<"all" | "mine" | "expiring" | "expired">("all")
@@ -236,8 +236,13 @@ function FridgeInner() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-screen-sm px-4 pb-28 pt-4">
-        <div className="mb-3">
+      <div className="mx-auto max-w-screen-sm px-4 pb-28 pt-4 space-y-4">
+        {initialLoadError && (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="py-3 text-sm text-amber-800">{initialLoadError}</CardContent>
+          </Card>
+        )}
+        <div>
           <div className="rounded-md border bg-slate-50 px-3 py-2.5 text-sm text-slate-700 flex items-center gap-2">
             <span className="font-medium">{"다음 점검일"}</span>
             <span className="text-slate-900 font-medium">{nextScheduleText}</span>
@@ -268,7 +273,7 @@ function FridgeInner() {
           </CardContent>
         </Card>
 
-        <section aria-labelledby="list-section" className="mt-4">
+        <section aria-labelledby="list-section">
           <h2 id="list-section" className="sr-only">
             {"목록"}
           </h2>

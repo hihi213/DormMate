@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { User } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { DEMO_ACCOUNTS, getCurrentUser, subscribeAuth } from "@/lib/auth"
+import { getCurrentUser, subscribeAuth } from "@/lib/auth"
 
 interface AuthGuardProps {
   children: React.ReactNode
@@ -57,10 +57,7 @@ export default function AuthGuard({ children, fallback }: AuthGuardProps) {
                 >
                   로그인하러 가기
                 </Button>
-                <p className="text-sm text-gray-500">
-                  테스트 계정:{" "}
-                  {DEMO_ACCOUNTS.map((account) => `${account.id}/${account.password} (${account.roleLabel})`).join(", ")}
-                </p>
+                <p className="text-sm text-gray-500">운영 계정 정보가 없다면 관리자에게 문의해 주세요.</p>
               </div>
             </CardContent>
           </Card>

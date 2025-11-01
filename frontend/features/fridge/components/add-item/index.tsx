@@ -262,6 +262,19 @@ export default function AddItemDialog({
           <div className="flex-1 text-center text-sm font-semibold text-gray-900">{headerTitle}</div>
           <div className="flex items-center justify-end gap-2">
             {stepLabel && <span className="text-xs font-medium text-emerald-700">{stepLabel}</span>}
+            {!isCompletionStep && (
+              <Button
+                onClick={handlePrimaryAction}
+                disabled={isPrimaryDisabled}
+                className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-emerald-700 to-teal-600 px-3 py-1.5 text-sm font-semibold text-white shadow-sm transition hover:from-emerald-600 hover:to-teal-500 disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-500"
+                data-loading={isSaving && isMetadataStep && !isCompletionStep}
+              >
+                {isMetadataStep && !isCompletionStep && isSaving && (
+                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                )}
+                {primaryActionLabel}
+              </Button>
+            )}
           </div>
         </header>
 
@@ -437,19 +450,6 @@ export default function AddItemDialog({
               </div>
             </div>
 
-            <div className="flex justify-end gap-2 border-t border-slate-200 bg-white px-3 py-3">
-              <Button
-                onClick={handlePrimaryAction}
-                disabled={isPrimaryDisabled}
-                className="inline-flex items-center gap-2 rounded-md bg-gradient-to-r from-emerald-700 to-teal-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:from-emerald-600 hover:to-teal-500 disabled:from-gray-200 disabled:to-gray-200 disabled:text-gray-500"
-                data-loading={isSaving && isMetadataStep && !isCompletionStep}
-              >
-                {isMetadataStep && !isCompletionStep && isSaving && (
-                  <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-                )}
-                {primaryActionLabel}
-              </Button>
-            </div>
           </>
         )}
 

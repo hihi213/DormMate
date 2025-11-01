@@ -33,19 +33,28 @@
 ### EN-102 데이터 베이스라인
 - **Status ID**: EN-102
 - **체크리스트**
-  - [x] Flyway 베이스라인과 데모 시드(`V6__seed_fridge_sample_data.sql`) 자동화를 검증하고 롤백 절차를 문서화.
+  - [x] Flyway 베이스라인과 전시용 데모 시드(`db/demo/fridge_exhibition_items.sql`) 자동화를 검증하고 롤백 절차를 문서화.
   - [x] 데모 환경 `.env`·Docker Compose 구성 정리 및 비상 전환 플랜(mvp-scenario.md §4) 기록.
 - **목표**: 데모/로컬 환경에서 동일한 데이터로 기동·롤백을 수행할 수 있다.
 - **참고**: [mvp-scenario.md §2](mvp-scenario.md#2-사전-준비), [feature-inventory.md §2](feature-inventory.md#2-냉장고--일반-기숙사생)
 
+### EN-103 인증/세션 연동 — DONE (2025-11-02, Codex)
+- **Status ID**: EN-103
+- **체크리스트**
+  - [x] `frontend/lib/api-client.ts`에서 401 응답 시 자동 refresh·재시도 후 실패하면 로그인 화면으로 리다이렉트하도록 정리.
+  - [x] 프런트에서 `deviceId`를 1회 생성해 로그인/refresh 요청마다 전송, 백엔드 `user_session.device_id` 정책과 동기화.
+  - [x] 냉장고 초기 데이터 로딩이 401/403 응답을 사용자 메시지로 안내하고, 세션 만료 시 로그인 카드에서 사유를 노출.
+- **목표**: 실사용 환경과 동일한 인증·세션 동작을 MVP에서도 보장한다.
+- **참고**: [docs/ops/status-board.md](ops/status-board.md#auth-201-로그인세션-안정화)
+
 
 ### AU-103 재설정·감사 로그
 - **Status ID**: AU-103
+- **상태**: Post-MVP 이월 과제
 - **체크리스트**
-  - [ ] 비밀번호 재설정/초기화 API와 프런트 UX를 구현하고, 재설정 이후 기존 세션이 폐기되는지 확인.
-  - [ ] 로그인/로그아웃/승인/역할 변경 등 주요 인증 이벤트에 대한 감사 로그를 저장하고 관리자 조회 API를 제공.
-  - [ ] 감사 로그 보존 정책과 접근 제어를 문서화하고 테스트.
-  - [ ] *(Post-MVP 연계)* 탈퇴/비활성화 기능 구현 시 `user_session` 전체를 즉시 종료하도록 설계 노트를 남긴다.
+  - [ ] 비밀번호 재설정/초기화 흐름과 감사 로그 기능은 MVP 이후 일정에서 구현한다는 점을 상태 보드에 명시한다.
+  - [ ] 후속 작업 시 `user_session` 전량 폐기, 감사 로그 보존 정책, 관리자 조회 API 요구사항을 재정리한다.
+  - [ ] 관련 테스트/문서 TODO를 `docs/ops/status-board.md` Backlog에 남겨 추후 착수 시 참조한다.
 - **Feature 링크**: [Feature Inventory §1 계정 및 권한](feature-inventory.md#1-계정-및-권한)
 - **목표**: 실무 운영에 필요한 계정 복구·감사 추적 기능을 제공한다.
 - **참고**: [feature-inventory.md §1](feature-inventory.md#1-계정-및-권한), [feature-inventory.md §6](feature-inventory.md#6-phase-2-모듈-개요-참고)
@@ -59,7 +68,7 @@
 - **체크리스트**
   - [x] `GET /fridge/slots`가 배정 칸만 반환하는지 검증(`FridgeService#getSlots`).
   - [x] 프런트 슬롯 선택 UX가 배정 칸만 표시하도록 API 파라미터/필터를 적용.
-  - [x] 데모 계정·칸 매핑과 라벨 시퀀스 초기화 상태 점검.
+  - [x] 운영 계정 시드와 라벨 시퀀스 초기화 상태를 점검하고 필요 시 관리자 도구에서 재적용한다.
 - **Feature 링크**: [Feature Inventory §2 냉장고 – 일반 기숙사생](feature-inventory.md#2-냉장고--일반-기숙사생)
 - **목표**: 거주자가 자신의 칸만 선택해 등록을 시작할 수 있다.
 - **참고**: [data-model.md §4](data-model.md#4-냉장고-도메인), [mvp-scenario.md §3.1](mvp-scenario.md#31-거주자-포장-등록-및-관리)
@@ -100,9 +109,9 @@
 ### FR-205 데이터 시드
 - **Status ID**: FR-205
 - **체크리스트**
-  - [ ] 포장/검사 데모 데이터를 API 기반 초기화 스크립트나 관리자 도구로 대체해 운영 환경에서 Flyway 시드 의존을 제거.
-  - [ ] 필요 시 초기 데이터를 `./scripts/seed` 등 명령형 시드로 제공하고 체크섬/환경 차이를 문서화.
-  - [ ] 데이터 초기화·리셋 절차를 README와 [docs/ops/status-board.md](ops/status-board.md)에 기록하고 검증.
+  - [x] `/admin/seed/fridge-demo` 관리자 API가 전시용 물품 시드를 교체하는 방식으로 동작하도록 정비하고, Flyway 정적 시드 의존을 제거한다.
+  - [x] 전시·데모 데이터 초기화 절차를 `docs/mvp-scenario.md`와 [docs/ops/README.md](ops/README.md)에 문서화하고 경고 문구를 반복 노출한다.
+  - [ ] 운영/테스트 환경별로 필요한 추가 초기 데이터가 있다면 관리자 도구 또는 별도 API로 확장할 계획을 정리하고, 상태 보드에 TODO로 남긴다.
 - **Feature 링크**: [Feature Inventory §2 냉장고 – 일반 기숙사생](feature-inventory.md#2-냉장고--일반-기숙사생), [Feature Inventory §4 냉장고 – 층별장(검사자)](feature-inventory.md#4-냉장고--층별장검사자)
 - **목표**: 운영 환경에서 직접 DB를 수정하지 않고 초기 데이터를 준비/갱신할 수 있다.
 - **참고**: [mvp-scenario.md §2](mvp-scenario.md#2-사전-준비)
@@ -190,7 +199,7 @@
 ### NO-403 알림 설정 UI
 - **Status ID**: NO-403
 - **체크리스트**
-  - [ ] 알림 설정 화면에서 냉장고 알림 ON/OFF 토글과 클라이언트 상태(Zustand/Redux 등) 연동.
+  - [ ] 알림 설정 화면에서 냉장고 알림 ON/OFF 토글을 현재 사용 중인 훅/컨텍스트 상태와 연동한다.
   - [ ] 토글 변경 시 백엔드 `notification_preference`와 동기화되는지 검증하고, 백그라운드 알림 허용 옵션을 추가한다.
   - [ ] 알림 설정 저장용 백엔드 API를 구현해 종류별 ON/OFF, 백그라운드 허용 여부를 업데이트하고 단위·통합 테스트로 검증한다.
 - **Feature 링크**: [Feature Inventory §3 냉장고 – 알림 & 일정](feature-inventory.md#3-냉장고--알림--일정)

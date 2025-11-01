@@ -13,7 +13,7 @@ const CLEAR_ONLY_KEYS = [
 
 const LEGACY_FRIDGE_CACHE_KEYS = ["fridge-slots", "fridge-bundles", "fridge-units"]
 
-export async function resetAndSeedAll(forceUserId?: string) {
+export async function resetAndSeedAll() {
   if (typeof window === "undefined") {
     return
   }
@@ -29,7 +29,4 @@ export async function resetAndSeedAll(forceUserId?: string) {
   const keysToClear = [SCHEDULE_KEY, HISTORY_KEY, ...LEGACY_FRIDGE_CACHE_KEYS, ...CLEAR_ONLY_KEYS]
   keysToClear.forEach((key) => window.localStorage.removeItem(key))
 
-  if (forceUserId) {
-    window.localStorage.setItem("auth-user", forceUserId)
-  }
 }

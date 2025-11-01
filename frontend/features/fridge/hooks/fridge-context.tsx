@@ -45,6 +45,7 @@ type FridgeContextValue = {
   bundles: Bundle[]
   units: ItemUnit[]
   items: Item[]
+  initialLoadError: string | null
   isInspector: boolean
   lastInspectionAt: number
   logic: ReturnType<typeof useFridgeLogic>
@@ -60,7 +61,10 @@ type FridgeContextValue = {
   }) => Promise<ActionResult<Item>>
   updateItem: (unitId: string, patch: UpdateItemPatch) => Promise<ActionResult>
   deleteItem: (unitId: string) => Promise<ActionResult>
-  renameBundle: (bundleId: string, bundleName: string) => Promise<ActionResult<Bundle>>
+  updateBundleMeta: (
+    bundleId: string,
+    payload: { bundleName?: string; memo?: string | null },
+  ) => Promise<ActionResult<Bundle>>
   deleteBundle: (bundleId: string) => Promise<ActionResult>
   setLastInspectionNow: () => void
   setInspector: (on: boolean) => void
@@ -126,15 +130,19 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const [units, setUnits] = useState<ItemUnit[]>([])
   const [lastInspectionAt, setLastInspectionAt] = useState<number>(0)
   const [isInspector, setIsInspector] = useState(false)
+  const [initialLoadError, setInitialLoadError] = useState<string | null>(null)
 
   useEffect(() => {
     let canceled = false
 
     const load = async () => {
+      setInitialLoadError(null)
+
       if (!currentUserId) {
         setSlots([])
         setBundleState([])
         setUnits([])
+        setInitialLoadError(null)
         return
       }
 
@@ -149,11 +157,31 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
 
         if (canceled) return
 
+        const deriveMessage = (reason: unknown): string => {
+          const status =
+            typeof reason === "object" && reason !== null && "status" in reason
+              ? Number((reason as { status?: number }).status)
+              : undefined
+          if (status === 403) {
+            return "냉장고 데이터를 볼 권한이 없습니다. 관리자에게 문의해 주세요."
+          }
+          if (status === 401) {
+            return "세션이 만료되었습니다. 다시 로그인해 주세요."
+          }
+          if (reason instanceof Error && reason.message) {
+            return reason.message
+          }
+          return "냉장고 데이터를 불러오지 못했습니다."
+        }
+
+        let loadError: string | null = null
+
         if (slotResult.status === "fulfilled") {
           setSlots(slotResult.value)
         } else {
           console.error("Failed to load fridge slots", slotResult.reason)
           setSlots([])
+          loadError = deriveMessage(slotResult.reason)
         }
 
         if (inventoryResult.status === "fulfilled") {
@@ -163,13 +191,17 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           console.error("Failed to load fridge inventory", inventoryResult.reason)
           setBundleState([])
           setUnits([])
+          loadError = loadError ?? deriveMessage(inventoryResult.reason)
         }
+
+        setInitialLoadError(loadError)
       } catch (error) {
         if (canceled) return
         console.error("Unexpected fridge data load error", error)
         setSlots([])
         setBundleState([])
         setUnits([])
+        setInitialLoadError("냉장고 데이터를 불러오지 못했습니다.")
       }
     }
 
@@ -413,21 +445,29 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
     [units, bundles, slots],
   )
 
-  const renameBundle = useCallback<FridgeContextValue["renameBundle"]>(
-    async (bundleId, nextName) => {
-      const trimmed = nextName.trim()
-      if (!trimmed) {
-        return { success: false, error: "대표명을 입력해 주세요." }
+  const updateBundleMeta = useCallback<FridgeContextValue["updateBundleMeta"]>(
+    async (bundleId, payload) => {
+      const patch: { bundleName?: string; memo?: string | null } = {}
+      if (payload.bundleName) {
+        const trimmed = payload.bundleName.trim()
+        if (!trimmed) {
+          return { success: false, error: "대표명을 입력해 주세요." }
+        }
+        patch.bundleName = trimmed
+      }
+      if (payload.memo !== undefined) {
+        patch.memo = payload.memo
+      }
+
+      if (Object.keys(patch).length === 0) {
+        const existing = bundles.find((bundle) => bundle.bundleId === bundleId)
+        return { success: true, data: existing ?? undefined }
       }
 
       const targetBundle = bundles.find((bundle) => bundle.bundleId === bundleId) ?? null
 
       try {
-        const { bundle, units: updatedUnits } = await updateBundleApi(
-          bundleId,
-          { bundleName: trimmed },
-          currentUserId,
-        )
+        const { bundle, units: updatedUnits } = await updateBundleApi(bundleId, patch, currentUserId)
 
         setBundleState((prev) => prev.map((existing) => (existing.bundleId === bundleId ? bundle : existing)))
 
@@ -451,20 +491,34 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           return next
         })
 
+        const pieces: string[] = []
+        if (patch.bundleName) {
+          pieces.push(`${bundle.bundleName}으로 대표명이 변경되었습니다.`)
+        }
+        if (patch.memo !== undefined) {
+          pieces.push("대표 메모가 갱신되었습니다.")
+        }
+
         return {
           success: true,
           data: bundle,
-          message: `${bundle.bundleName}으로 대표명이 변경되었습니다.`,
+          message: pieces.join(" "),
         }
       } catch (error) {
         if (isSuspendedError(error)) {
           const apiError = error as SlotRestrictionError
           const slotMeta =
             targetBundle ? slots.find((slot) => slot.slotId === targetBundle.slotId) ?? null : null
+          const actionClause =
+            patch.bundleName && patch.memo !== undefined
+              ? "대표명과 메모를 수정할 수 없습니다."
+              : patch.memo !== undefined
+                ? "대표 메모를 수정할 수 없습니다."
+                : "대표명을 수정할 수 없습니다."
           const message = resolveSlotUnavailableMessage({
             error: apiError,
             slot: slotMeta,
-            actionClause: "대표명을 수정할 수 없습니다.",
+            actionClause,
           })
           return {
             success: false,
@@ -477,7 +531,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           error:
             error instanceof Error
               ? error.message
-              : "포장 대표명을 수정하는 중 오류가 발생했습니다.",
+              : "포장 정보를 수정하는 중 오류가 발생했습니다.",
         }
       }
     },
@@ -620,6 +674,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       bundles,
       units,
       items,
+      initialLoadError,
       isInspector,
       lastInspectionAt,
       logic,
@@ -627,7 +682,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       addSingleItem,
       updateItem,
       deleteItem,
-      renameBundle,
+      updateBundleMeta,
       deleteBundle,
       setLastInspectionNow,
       setInspector: setIsInspector,
@@ -639,6 +694,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       bundles,
       units,
       items,
+      initialLoadError,
       isInspector,
       lastInspectionAt,
       logic,
@@ -646,7 +702,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       addSingleItem,
       updateItem,
       deleteItem,
-      renameBundle,
+      updateBundleMeta,
       deleteBundle,
       setLastInspectionNow,
       getSlotLabel,
