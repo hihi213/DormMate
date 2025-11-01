@@ -789,8 +789,9 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         return response.path("tokens").path("accessToken").asText();
     }
 
-    private JsonNode findSlot(JsonNode slots, int floorNo, int slotIndex) {
-        for (JsonNode slot : slots) {
+    private JsonNode findSlot(JsonNode root, int floorNo, int slotIndex) {
+        JsonNode items = root.isArray() ? root : root.path("items");
+        for (JsonNode slot : items) {
             if (slot.path("floorNo").asInt() == floorNo && slot.path("slotIndex").asInt() == slotIndex) {
                 return slot;
             }
@@ -913,9 +914,11 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode slots = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode body = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode slots = body.path("items");
         assertThat(slots.isArray()).isTrue();
 
+        assertThat(body.path("totalCount").asInt()).isGreaterThan(0);
         List<UUID> slotIdsFromApi = new ArrayList<>();
         for (JsonNode slot : slots) {
             slotIdsFromApi.add(UUID.fromString(slot.path("slotId").asText()));
@@ -935,7 +938,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode slots = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode body = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode slots = body.path("items");
         assertThat(slots.isArray()).isTrue();
 
         List<UUID> slotIdsFromApi = new ArrayList<>();

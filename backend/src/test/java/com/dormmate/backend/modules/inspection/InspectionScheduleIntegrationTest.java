@@ -42,12 +42,14 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
 
     private String managerToken;
     private String residentToken;
+    private String adminToken;
 
     @BeforeEach
     void setUp() throws Exception {
         jdbcTemplate.update("DELETE FROM inspection_schedule");
         managerToken = login("bob", "bob123!");
         residentToken = login("alice", "alice123!");
+        adminToken = login("admin", "password");
     }
 
     @AfterEach
@@ -124,6 +126,51 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
                                   "scheduledAt": "%s"
                                 }
                                 """.formatted(scheduledAt)))
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminCannotManageSchedules() throws Exception {
+        OffsetDateTime scheduledAt = OffsetDateTime.now(ZoneOffset.UTC).plusDays(2).withNano(0);
+
+        mockMvc.perform(post("/fridge/inspection-schedules")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scheduledAt": "%s",
+                                  "title": "관리자 시도"
+                                }
+                                """.formatted(scheduledAt)))
+                .andExpect(status().isForbidden());
+
+        MvcResult createdResult = mockMvc.perform(post("/fridge/inspection-schedules")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scheduledAt": "%s",
+                                  "title": "층별장 일정"
+                                }
+                                """.formatted(scheduledAt)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        JsonNode created = objectMapper.readTree(createdResult.getResponse().getContentAsString());
+        UUID scheduleId = UUID.fromString(created.path("scheduleId").asText());
+
+        mockMvc.perform(patch("/fridge/inspection-schedules/" + scheduleId)
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "status": "COMPLETED"
+                                }
+                                """))
+                .andExpect(status().isForbidden());
+
+        mockMvc.perform(delete("/fridge/inspection-schedules/" + scheduleId)
+                        .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isForbidden());
     }
 

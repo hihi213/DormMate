@@ -85,7 +85,11 @@ class NotificationServiceIntegrationTest extends AbstractPostgresIntegrationTest
 
         Notification saved = notifications.getFirst();
         assertThat(saved.getUser().getId()).isEqualTo(targetUser.getId());
+        assertThat(saved.getCorrelationId()).isEqualTo(sessionId);
         assertThat(saved.getMetadata()).containsEntry("sessionId", sessionId);
+        assertThat(saved.getMetadata()).containsEntry("actionIds", java.util.List.of());
+        assertThat(saved.getMetadata()).containsEntry("actionItemIds", java.util.List.of());
+        assertThat(saved.getMetadata()).containsEntry("penaltyHistoryIds", java.util.List.of());
         assertThat(saved.getTtlAt()).isAfter(OffsetDateTime.now(ZoneOffset.UTC));
 
         // 중복 방지 확인

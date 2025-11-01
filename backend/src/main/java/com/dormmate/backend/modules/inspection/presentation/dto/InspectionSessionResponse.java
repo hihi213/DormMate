@@ -21,6 +21,7 @@ public record InspectionSessionResponse(
         OffsetDateTime endedAt,
         List<FridgeBundleResponse> bundles,
         List<InspectionActionSummaryResponse> summary,
+        List<InspectionActionDetailResponse> actions,
         String notes
 ) {
 }

@@ -22,6 +22,7 @@ import com.dormmate.backend.modules.fridge.presentation.dto.FridgeBundleResponse
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeBundleSummaryResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeDtoMapper;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeItemResponse;
+import com.dormmate.backend.modules.fridge.presentation.dto.FridgeSlotListResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeSlotResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.UpdateBundleRequest;
 import com.dormmate.backend.modules.fridge.presentation.dto.AddItemRequest;
@@ -96,13 +97,15 @@ public class FridgeService {
     }
 
     @Transactional(readOnly = true)
-    public List<FridgeSlotResponse> getSlots(Integer floorParam, String view) {
+    public FridgeSlotListResponse getSlots(Integer floorParam, String view, Integer pageParam, Integer sizeParam) {
         boolean fullView = "full".equalsIgnoreCase(view);
         UUID currentUserId = SecurityUtils.getCurrentUserId();
         boolean isAdmin = SecurityUtils.hasRole("ADMIN");
         boolean isFloorManager = SecurityUtils.hasRole("FLOOR_MANAGER");
 
         Short floorFilter = floorParam != null ? floorParam.shortValue() : null;
+        int safePage = pageParam != null && pageParam >= 0 ? pageParam : 0;
+        int safeSize = sizeParam != null && sizeParam > 0 ? Math.min(sizeParam, 200) : 20;
 
         Set<UUID> accessibleCompartmentIds = null;
         if (!isAdmin) {
@@ -143,7 +146,12 @@ public class FridgeService {
         results.sort(Comparator
                 .comparingInt(FridgeSlotResponse::floorNo)
                 .thenComparingInt(FridgeSlotResponse::slotIndex));
-        return results;
+        int total = results.size();
+        int fromIndex = Math.min(safePage * safeSize, total);
+        int toIndex = Math.min(fromIndex + safeSize, total);
+        List<FridgeSlotResponse> paged = results.subList(fromIndex, toIndex);
+        int totalPages = safeSize == 0 ? 0 : (int) Math.ceil(total / (double) safeSize);
+        return new FridgeSlotListResponse(paged, total, safePage, safeSize, totalPages);
     }
 
     @Transactional(readOnly = true)

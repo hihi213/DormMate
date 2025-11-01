@@ -92,7 +92,11 @@ class NotificationServiceTest {
         assertThat(saved.getUser().getId()).isEqualTo(targetUser.getId());
         assertThat(saved.getTitle()).contains("검사 결과");
         assertThat(saved.getBody()).contains("경고 1건").contains("폐기 1건");
+        assertThat(saved.getCorrelationId()).isEqualTo(sessionId);
         assertThat(saved.getMetadata()).containsEntry("sessionId", sessionId);
+        assertThat(saved.getMetadata()).containsEntry("actionIds", java.util.List.of());
+        assertThat(saved.getMetadata()).containsEntry("actionItemIds", java.util.List.of());
+        assertThat(saved.getMetadata()).containsEntry("penaltyHistoryIds", java.util.List.of());
         assertThat(saved.getTtlAt()).isAfter(OffsetDateTime.now(clock));
     }
 

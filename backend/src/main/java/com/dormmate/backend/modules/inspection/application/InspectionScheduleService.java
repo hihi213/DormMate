@@ -170,7 +170,7 @@ public class InspectionScheduleService {
     }
 
     private void ensureManagerRole() {
-        if (SecurityUtils.hasRole("ADMIN") || SecurityUtils.hasRole("FLOOR_MANAGER")) {
+        if (SecurityUtils.hasRole("FLOOR_MANAGER")) {
             return;
         }
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_MANAGER_ONLY");

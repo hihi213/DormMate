@@ -14,6 +14,34 @@ export type InspectionActionSummary = {
   count: number
 }
 
+export type InspectionActionItemDetail = {
+  id: number
+  fridgeItemId?: string | null
+  snapshotName?: string | null
+  snapshotExpiresOn?: string | null
+  quantityAtAction?: number | null
+}
+
+export type InspectionPenalty = {
+  id: string
+  points: number
+  reason?: string | null
+  issuedAt: string
+  expiresAt?: string | null
+}
+
+export type InspectionActionDetail = {
+  actionId: number
+  actionType: InspectionAction
+  bundleId?: string | null
+  targetUserId?: string | null
+  recordedAt: string
+  recordedBy?: string | null
+  note?: string | null
+  items: InspectionActionItemDetail[]
+  penalties: InspectionPenalty[]
+}
+
 export type InspectionSession = {
   sessionId: string
   slotId: string
@@ -29,6 +57,7 @@ export type InspectionSession = {
   units: ItemUnit[]
   items: Item[]
   summary: InspectionActionSummary[]
+  actions: InspectionActionDetail[]
   notes?: string | null
 }
 
