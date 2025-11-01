@@ -69,6 +69,9 @@ export async function fetchActiveInspection(floor?: number): Promise<InspectionS
     if (result.error.status === 204) return null
     if (result.error.status === 404) return null
     if (result.error.status === 401) return null
+    if (result.error.status === 403 && (result.error.code === "FORBIDDEN_SLOT" || result.error.code === "FLOOR_SCOPE_VIOLATION")) {
+      return null
+    }
     throw new Error(result.error.message ?? "검사 세션을 조회하지 못했습니다.")
   }
 
@@ -140,6 +143,32 @@ export async function submitInspection(sessionId: string, payload: InspectionSub
     throw new Error(error?.message ?? "검사 제출에 실패했습니다.")
   }
   return mapInspectionSessionDto(data)
+}
+
+type InspectionHistoryParams = {
+  slotId?: string
+  status?: InspectionSession["status"]
+  limit?: number
+}
+
+export async function fetchInspectionHistory(params: InspectionHistoryParams = {}): Promise<InspectionSession[]> {
+  const search = new URLSearchParams()
+  if (params.slotId) search.set("slotId", params.slotId)
+  if (params.status) search.set("status", params.status)
+  if (typeof params.limit === "number") search.set("limit", String(params.limit))
+  const path = search.toString() ? `/fridge/inspections?${search.toString()}` : "/fridge/inspections"
+
+  const { data, error } = await safeApiCall<InspectionSessionDto[]>(path, { method: "GET" })
+  if (error) {
+    if (error.status === 204 || error.status === 404) return []
+    if (error.status === 403 && (error.code === "FORBIDDEN_SLOT" || error.code === "FLOOR_SCOPE_VIOLATION")) {
+      return []
+    }
+    throw new Error(error.message ?? "검사 기록을 불러오지 못했습니다.")
+  }
+
+  if (!data) return []
+  return data.map(mapInspectionSessionDto)
 }
 
 export async function fetchInspectionSlots(): Promise<Slot[]> {

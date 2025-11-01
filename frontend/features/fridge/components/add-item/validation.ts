@@ -3,12 +3,13 @@ import { toYMD } from "@/lib/date-utils"
 import type { TemplateState, PendingEntry } from "./types"
 import { NAME_LIMIT, QTY_LIMIT } from "./constants"
 
-const todayISO = toYMD(new Date())
-
 const expirySchema = z
   .string()
   .min(1, "유통기한을 선택해 주세요.")
-  .refine((value) => value >= todayISO, "오늘 이후 날짜를 선택해 주세요.")
+  .refine((value) => {
+    const todayISO = toYMD(new Date())
+    return value >= todayISO
+  }, "오늘 이후 날짜를 선택해 주세요.")
 
 const templateSchema = z.object({
   slotId: z.string().min(1, "보관 칸을 선택해 주세요."),

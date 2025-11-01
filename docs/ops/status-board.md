@@ -12,6 +12,11 @@
 
 ---
 
+### (Backlog) IN-306 실시간 검사 합류·복구 — Stretch
+- **비고**: MVP 범위 밖 확장 과제. SSE 합류·재연결 설계 노트는 [docs/mvp-plan.md](../mvp-plan.md#in-306-실시간-검사-합류복구)와 [docs/feature-inventory.md](../feature-inventory.md#실시간-협업-및-복구)에 정리되어 있으며, 차기 일정에서 착수한다.
+- **선결 조건**: IN-301~IN-305 안정화 및 회귀 테스트 통과, SSE 이벤트 스키마/세션 락 설계 확정.
+- **테스트 계획(예정)**: `./gradlew test --tests *InspectionSse*`, `npx playwright test --grep @inspection-sse`, 네트워크 오류 강제 재연결 수동 시나리오.
+
 ### EN-101 환경 베이스라인 — DONE (2024-11-24, Codex)
 - **범위**: backend `build.gradle` 핵심 의존성·플러그인 버전 고정 검증, 공통 명령(`./auto tests backend`, `./auto dev warmup`) 실행 경로/캐시 점검, 통합 테스트 기본 픽스처 유효성 확인.
 - **세부 작업**
@@ -53,7 +58,18 @@
     - (PASS, 2024-11-24 — 추가 마이그레이션 없음, idempotent 확인)
   - `./auto tests backend`
     - (PASS, 2024-11-24 — 초기 오프라인 시도 시 새 플러그인 미캐시로 실패 → 자동 재시도(`--refresh-dependencies`) 후 전체 테스트 통과)
-- **리스크/의존성**: Flyway 플러그인 10.x가 buildscript classpath에 PostgreSQL 플러그인을 요구하므로 신규 버전 반영 시 플러그인 아티팩트 캐시 유무를 확인해야 함. CLI/Gradle 간 버전 불일치 발생 시 재현 가능.
+- **리스크/의존성**: Flyway 플러그인 10.x가 buildscript classpath에 PostgreSQL 플러그인을 요구하므로 신규 버전 반영 시 플러그인 아티팩트 캐시 유무를 확인해야 함. CLI/Gradle 간 버전 불일치 발생 시 재현 가능..
+
+### AUTH-201 로그인/세션 안정화 — DONE (2025-11-01, Codex)
+- **범위**: 로그인 API 오류 응답 안정화, 세션 만료 자동 정리, 디바이스 식별 관리 도입.
+- **세부 작업**
+  - `user_session` 테이블에 `device_id` 컬럼과 활성 인덱스 추가(`V12__add_user_session_device_id.sql`), 엔터티/리포지토리 갱신.
+  - `AuthService`에서 디바이스 ID 정규화·저장, 만료 세션 일괄 `EXPIRED` 처리, 기기 불일치 시 세션을 `DEVICE_MISMATCH`로 즉시 폐기하도록 개편.
+  - `ResponseStatusException` 발생 시 세션 폐기가 롤백되지 않도록 트랜잭션 전략(noRollbackFor) 조정 및 신규 동작 검증용 통합 테스트 추가.
+- **테스트**
+  - `./gradlew test --tests com.dormmate.backend.modules.auth.AuthServiceTest`
+    - (PASS, 2025-11-01 — 디바이스 저장·만료 세션 폐기·기기 불일치 차단 시나리오 검증)
+- **후속 과제**: 가입/승인(AU-101~103) 구현 시 비밀번호 변경·탈퇴와 연동해 전체 세션 폐기 기능을 확장해야 한다.
 
 ### FR-201 슬롯 접근 제어 — WIP (2025-10-31, Codex)
 - **근거 문서**: `mvp-scenario.md §3.1`, `feature-inventory.md §2`, `mvp-plan.md:FR-201`
@@ -65,7 +81,8 @@
   1. `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest` 재실행으로 서버 슬롯 필터 회귀를 확인한다.
   2. `SlotSelector`에서 선택 슬롯 메모이제이션을 재사용하도록 정리하고 `aria-disabled`를 추가해 잠금/비활성 칸이 접근성 측면에서도 명확히 표시되도록 개선한다.
   3. `AddItemDialog`와 슬롯 필터 UI가 갱신된 `SlotSelector` 시그니처를 그대로 활용하는지 수동 점검하고, 필요 시 가드 로직을 보완한다.
-  4. 시드 데이터 및 `bundle_label_sequence` 상태를 샘플 조회해 데모 기준 칸/배정 데이터가 의도대로인지 스팟 체크한다.
+ 4. 시드 데이터 및 `bundle_label_sequence` 상태를 샘플 조회해 데모 기준 칸/배정 데이터가 의도대로인지 스팟 체크한다.
+- 2025-11-02: 관리자 전용 데모 리셋 스크립트(`backend/src/main/resources/db/demo/fridge_demo_refresh.sql`)를 추가했다. `/admin/seed/fridge-demo` API가 이 스크립트를 호출해 냉장고/검사 테이블을 **모두 TRUNCATE** 한 뒤 표준 데이터를 재삽입하므로, 데모 환경에서만 사용하고 운영 데이터에는 절대 실행하지 않도록 주석과 시나리오 문서에 경고를 남겼다.
 - **테스트 계획**
   - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest`
   - `npm run lint` (Next.js lint로 TS/ESLint 경고 확인)
@@ -84,11 +101,53 @@
   - `npm run lint`
     - (PASS, 2025-10-31 — SlotSelector 리팩터링 후 TS/ESLint 경고 없음)
 
-### FR-202 포장 등록 플로우 — WIP (2024-11-24, Codex)
-- **현행 파악**: 서버/프런트 모두 기존 구현만 검증했고, 포장 등록 기능 자체 보완은 진행하지 않음.
-- **진행 메모**
-  - 통합 테스트에서 용량 초과 422 응답이 유지되는지 재실행.
-  - 프런트 `FridgeProvider#addBundle`에 허용량 초과 안내 문구를 추가해 사용자 메시지를 개선.
-- **TODO**
-  - 실제 등록 플로우 요구사항(폼 검증, 즉시 갱신)을 충족시키는 코드 변경 여부 확인.
-  - 필요 시 추가 UI/서버 로직 보완 계획 마련.
+
+### FR-202 포장 등록 플로우 — In Progress (2024-11-24, Codex)
+- **근거 문서**: `mvp-scenario.md §3.1`(거주자 등록 1~4단계), `feature-inventory.md §2`(허용량·라벨 정책), `data-model.md §4.2`(칸 용량·라벨 시퀀스).
+- **현행 파악**
+  - 서버 `FridgeService#createBundle`는 `max_bundle_count` 초과 시 422와 `CAPACITY_EXCEEDED` 코드를 반환하며, `ProblemResponse`가 `code` 필드를 포함해 프런트에서 식별 가능하다.
+  - `FridgeIntegrationTest.maxBundleCountExceededReturns422`는 상태 코드뿐 아니라 `$.code`·`$.detail`에 `CAPACITY_EXCEEDED`가 담기는지를 검증하고 있다.
+  - 프런트 `FridgeProvider#addBundle`는 허용량 초과 응답을 슬롯 메타 기반 문구로 가공하지만, 423(`COMPARTMENT_SUSPENDED` / `COMPARTMENT_LOCKED`)에 대해서는 원문 코드 문자열이 그대로 노출돼 사용자 메시지가 거칠다.
+  - `AddItemDialog`는 수량·유통기한 검증과 남은 용량 안내를 제공하고 있으며, 성공 시 `bundleState`/`units`를 즉시 갱신해 목록/검색이 리프레시된다.
+- **세부 작업**
+  1. 423 응답(`COMPARTMENT_SUSPENDED`, `COMPARTMENT_LOCKED`, `COMPARTMENT_UNDER_INSPECTION`)을 받는 모든 포장 등록/수정 흐름에서 사용자 친화 메시지를 강제하도록 `FridgeProvider`와 관련 훅을 보완한다.
+  2. 허용량 초과·칸 잠금 상황별 안내 문구를 상태 보드에 정의한 정책과 맞춰 재검토하고, 중복 코드가 있으면 util 함수로 정리한다.
+  3. `FridgeIntegrationTest` 전체를 재실행해 422 응답 계약이 회귀하지 않는지 확인하고, 필요하면 API 문서(`FridgeController` OpenAPI 주석)와 동기화한다.
+  4. 수동 검증: 포장 등록 → 허용량 초과 → 잠금/정지 칸 선택 시 메시지 확인, 등록 후 목록/검색 즉시 갱신 여부 확인.
+- **테스트 계획**
+  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.maxBundleCountExceededReturns422`
+  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest`
+  - `npm run lint`
+  - 수동: 거주자 계정으로 허용량 초과 및 잠금/중지 칸 안내 메시지 확인.
+- **진행 로그**
+  - 2025-11-01: `ProblemResponse`에 `code` 필드와 기본 메시지를 추가하고, 허용량 초과 통합 테스트에 응답 본문(`code`/`detail`) 검증을 보강.
+  - 2025-11-01: `FridgeProvider#addBundle`에서 허용량 초과 시 슬롯 메타 기반 안내 문구를 노출하도록 개선.
+  - 2025-11-01: `./gradlew test --tests ...capacityExceededReturnsUnprocessableEntity` 실행 시 원격 플러그인 다운로드 제한으로 빌드 실패 → 캐시 부재 환경에서 테스트 미실행.
+  - 2025-11-01: `npm run lint` 실행 시 `next` 미설치로 실패(의존성 다운로드 불가 환경). 추후 CI/개발 환경에서 재확인 필요.
+  - 2025-11-02: 423 상태 응답(`COMPARTMENT_SUSPENDED`/`COMPARTMENT_LOCKED`/`COMPARTMENT_UNDER_INSPECTION`)을 UI 헬퍼로 통합해 코드 문자열 대신 사용자 친화 문구가 노출되도록 개선.
+  - 2025-11-02: `npm run lint` (PASS) — 새 헬퍼 도입 후 ESLint/TypeScript 경고 없음.
+  - 2025-11-02: `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.maxBundleCountExceededReturns422 --offline` 실행 시 Gradle 배포판 다운로드가 필요해 네트워크 제한으로 실패(services.gradle.org 접근 불가). 로컬 캐시 확보 후 재시도 필요.
+  - 2025-11-02: `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.capacityExceededReturnsUnprocessableEntity`
+    - (PASS, 2025-11-02 — CAPACITY_EXCEEDED ProblemDetail 회귀 검증 완료)
+  - 2025-11-02: `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest`
+    - (PASS, 2025-11-02 — 냉장고 통합 테스트 전체 회귀 통과)
+
+### IN-304 거주자 검사 열람 뷰 — WIP (2025-11-02, Codex)
+- **근거 문서**: `mvp-scenario.md §3.2`, `feature-inventory.md §2`, `docs/mvp-plan.md:IN-304`
+- **현행 파악**
+  - `/fridge/inspections` 및 `/fridge/inspections/{id}`는 현재 층별장/관리자 권한에 맞춰 구현되어 있으며, 거주자는 `FORBIDDEN_SLOT`으로 차단돼 검사 일정·결과를 열람할 수 없다.
+  - `FridgeService#verifyBundleReadAccess`는 거주자의 `room_assignment`와 `compartment_room_access`를 기반으로 칸 접근을 제한하므로, 같은 로직을 검사 API에도 적용하면 본인 칸 데이터만 노출시킬 수 있다.
+  - 프런트 검사 페이지는 기본적으로 검사 시작/조치 버튼이 활성화된 상태라 거주자에게 동일 UI가 노출되면 권한 오류(403)가 발생한다.
+- **세부 작업**
+  1. 검사 조회용 서비스/컨트롤러에 거주자 읽기 권한을 추가하고, 본인에게 배정된 칸만 필터링하도록 `room_assignment`와 `compartment_room_access` 기반 검증을 도입한다.
+  2. 거주자 열람 플로우를 검증하는 통합 테스트(`residentCanViewOwnInspectionHistory`, `residentCannotViewOthersInspection`)를 추가한다.
+  3. 프런트 `/fridge/inspections` 페이지에서 사용자 역할에 따라 버튼/액션을 비활성화하고, 검사 진행 현황·잠금 상태·조치 결과만 노출되도록 조건부 렌더링을 적용한다.
+  4. 역할별 UI 분기 및 권한 오류 여부를 수동/Playwright 테스트로 확인하고, 결과를 로그에 기록한다.
+- **테스트 계획**
+  - `./gradlew test --tests com.dormmate.backend.modules.inspection.*`
+  - `npm run lint`
+  - 수동 또는 `npx playwright test --grep @inspection-resident` (신규 작성 예정)
+- **리스크/의존성**: 검사 API 권한 확장 시 층별장/관리자 전용 메타데이터(예: 참여자 목록, 메모 등)가 거주자에게 노출되지 않도록 DTO 마스킹을 재검토해야 한다. `room_assignment` 또는 `compartment_room_access` 데이터가 누락된 계정은 여전히 403을 받게 되므로 시드 데이터 보정이 필요하다.
+  - 2025-11-02: `InspectionService`에 거주자 접근 검증 로직과 `/fridge/inspections` GET 목록 API를 추가해 본인 칸만 열람하도록 제한.
+  - 2025-11-02: `InspectionIntegrationTest`에 거주자 열람·차단 시나리오를 추가하고 샘플 데이터(배정/칸 매핑)를 보강.
+  - 2025-11-02: `/fridge/inspections` 프런트 페이지를 거주자용 읽기 전용 뷰로 확장하고, 검사 이력/진행 현황 UI를 분기 구현.

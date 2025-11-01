@@ -1,6 +1,8 @@
 package com.dormmate.backend.modules.inspection;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -57,6 +59,8 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
     private String residentToken;
     private List<UUID> bundlesToCleanup;
     private UUID slot2FAId;
+    private UUID residentId;
+    private UUID residentRoomId;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -64,6 +68,9 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         managerToken = login("bob", "bob123!");
         residentToken = login("alice", "alice123!");
         slot2FAId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+        residentId = fetchUserId("alice");
+        residentRoomId = ensureResidentAssignment(residentId);
+        ensureCompartmentAccess(residentRoomId, slot2FAId);
 
         jdbcTemplate.update("DELETE FROM inspection_action_item");
         jdbcTemplate.update("DELETE FROM inspection_action");
@@ -71,6 +78,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         jdbcTemplate.update("DELETE FROM inspection_session");
         jdbcTemplate.update("UPDATE fridge_item SET status = 'ACTIVE', deleted_at = NULL");
         jdbcTemplate.update("UPDATE fridge_bundle SET status = 'ACTIVE', deleted_at = NULL");
+        jdbcTemplate.update("UPDATE fridge_compartment SET is_locked = FALSE, locked_until = NULL");
     }
 
     @AfterEach
@@ -120,6 +128,65 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                                 }
                                 """.formatted(slot2FAId)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void residentCanViewOwnInspectionSession() throws Exception {
+        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
+        UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
+
+        JsonNode session = startInspection(managerToken, slot2FAId);
+        UUID sessionId = UUID.fromString(session.path("sessionId").asText());
+
+        recordDisposeAction(managerToken, sessionId, bundleId, itemId);
+
+        mockMvc.perform(get("/fridge/inspections/" + sessionId)
+                        .header("Authorization", "Bearer " + residentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.slotId").value(slot2FAId.toString()))
+                .andExpect(jsonPath("$.summary[0].count").value(1));
+
+        mockMvc.perform(get("/fridge/inspections")
+                        .header("Authorization", "Bearer " + residentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].sessionId", hasItem(sessionId.toString())));
+    }
+
+    @Test
+    void residentCannotViewOtherCompartmentInspection() throws Exception {
+        UUID otherSlotId = fetchSlotId(FLOOR_2, 1);
+        JsonNode otherSession = startInspection(managerToken, otherSlotId);
+        UUID otherSessionId = UUID.fromString(otherSession.path("sessionId").asText());
+
+        mockMvc.perform(get("/fridge/inspections/" + otherSessionId)
+                        .header("Authorization", "Bearer " + residentToken))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN_SLOT"));
+
+        mockMvc.perform(get("/fridge/inspections")
+                        .header("Authorization", "Bearer " + residentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].sessionId", not(hasItem(otherSessionId.toString()))));
+    }
+
+    @Test
+    void residentCanViewSubmittedInspectionHistoryWithFilter() throws Exception {
+        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
+        UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
+
+        JsonNode session = startInspection(managerToken, slot2FAId);
+        UUID sessionId = UUID.fromString(session.path("sessionId").asText());
+        recordDisposeAction(managerToken, sessionId, bundleId, itemId);
+        submitInspection(managerToken, sessionId);
+
+        mockMvc.perform(get("/fridge/inspections")
+                        .param("status", InspectionStatus.SUBMITTED.name())
+                        .param("limit", "5")
+                        .header("Authorization", "Bearer " + residentToken))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[*].sessionId", hasItem(sessionId.toString())));
     }
 
     @Test
@@ -176,7 +243,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         mockMvc.perform(post("/fridge/inspections/%s/actions".formatted(sessionId))
                         .header("Authorization", "Bearer " + token)
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
+                .content("""
                                 {
                                   "actions": [
                                     {
@@ -188,8 +255,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                                   ]
                                 }
                                 """.formatted(bundleId, itemId)))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.summary[0].count").value(1));
+                .andExpect(status().isOk());
     }
 
     private JsonNode ensureBundleForAlice(UUID slotId) throws Exception {
@@ -222,6 +288,48 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         return bundle;
     }
 
+    private UUID ensureResidentAssignment(UUID userId) {
+        UUID roomId = fetchRoomId(2, "01");
+        jdbcTemplate.update("UPDATE room_assignment SET released_at = NOW(), updated_at = NOW() WHERE dorm_user_id = ?", userId);
+        jdbcTemplate.update("UPDATE room_assignment SET released_at = NOW(), updated_at = NOW() WHERE room_id = ?", roomId);
+        jdbcTemplate.update(
+                """
+                        INSERT INTO room_assignment (id, room_id, dorm_user_id, personal_no, assigned_at, released_at, created_at, updated_at)
+                        VALUES (?, ?, ?, ?, NOW(), NULL, NOW(), NOW())
+                        """,
+                UUID.randomUUID(),
+                roomId,
+                userId,
+                1
+        );
+        return roomId;
+    }
+
+    private void ensureCompartmentAccess(UUID roomId, UUID compartmentId) {
+        Integer existing = jdbcTemplate.queryForObject(
+                """
+                        SELECT COUNT(*) FROM compartment_room_access
+                        WHERE room_id = ? AND fridge_compartment_id = ? AND released_at IS NULL
+                        """,
+                Integer.class,
+                roomId,
+                compartmentId
+        );
+        if (existing != null && existing > 0) {
+            return;
+        }
+        jdbcTemplate.update(
+                """
+                        INSERT INTO compartment_room_access (
+                            id, fridge_compartment_id, room_id, assigned_at, released_at, created_at, updated_at
+                        ) VALUES (?, ?, ?, NOW(), NULL, NOW(), NOW())
+                        """,
+                UUID.randomUUID(),
+                compartmentId,
+                roomId
+        );
+    }
+
     private UUID fetchSlotId(int floorNo, int slotIndex) {
         return jdbcTemplate.queryForObject(
                 """
@@ -233,6 +341,23 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                 (rs, rowNum) -> UUID.fromString(rs.getString("id")),
                 floorNo,
                 slotIndex
+        );
+    }
+
+    private UUID fetchRoomId(int floorNo, String roomNumber) {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM room WHERE floor = ? AND room_number = ?",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                floorNo,
+                roomNumber
+        );
+    }
+
+    private UUID fetchUserId(String loginId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM dorm_user WHERE login_id = ?",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                loginId
         );
     }
 

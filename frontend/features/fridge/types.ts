@@ -21,6 +21,7 @@ export type Slot = {
   lockedUntil?: string | null
   capacity?: number | null
   displayName?: string | null
+  occupiedCount?: number | null
 }
 
 export type Owner = "me" | "other"

@@ -1,5 +1,6 @@
 package com.dormmate.backend.modules.inspection.presentation;
 
+import java.util.List;
 import java.util.UUID;
 
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionRequest;
@@ -28,6 +29,15 @@ public class InspectionController {
 
     public InspectionController(InspectionService inspectionService) {
         this.inspectionService = inspectionService;
+    }
+
+    @GetMapping
+    public ResponseEntity<List<InspectionSessionResponse>> listSessions(
+            @RequestParam(name = "slotId", required = false) UUID slotId,
+            @RequestParam(name = "status", required = false) String status,
+            @RequestParam(name = "limit", required = false) Integer limit
+    ) {
+        return ResponseEntity.ok(inspectionService.listSessions(slotId, status, limit));
     }
 
     @PostMapping

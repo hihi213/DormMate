@@ -28,3 +28,26 @@
 - 명령 전체 목록은 `./auto --help`로 확인한다.
 - CLI는 `.codex/state.json`에 현재 프로필, 테스트 결과, 메모를 저장하므로 수동으로 수정하지 않는다.
 - 세션 중 실행한 주요 명령과 결과는 PR/이슈 코멘트 또는 팀이 지정한 회고 문서에 요약해 다음 단계 준비를 원활히 한다.
+- `/admin/seed/fridge-demo`는 데모 전용 API이므로 어떤 자동화 스크립트·CI에서도 호출하지 않는다. 필요 시 운영자가 직접 실행하고, 실행 전후 점검은 아래 "데모 데이터 초기화" 섹션을 따른다.
+
+## 데모 데이터 초기화 (관리자 전용)
+
+> ⚠️ **운영 DB에서는 절대 호출 금지.** 이 절차는 냉장고/검사 관련 테이블을 모두 비운 뒤 데모 데이터를 다시 삽입한다.
+
+| 구분 | 내용 |
+| --- | --- |
+| 목적 | 시연 전에 냉장고/검사 데이터를 표준 데모 상태로 초기화하기 위함 |
+| 실행 효과 | `fridge_unit`, `fridge_compartment`, `compartment_room_access`, `bundle_label_sequence`, `fridge_bundle`, `fridge_item`, `inspection_*` 등 관련 테이블을 TRUNCATE 후 샘플 데이터를 재삽입 (`backend/src/main/resources/db/demo/fridge_demo_refresh.sql`) |
+| 실행 전 확인 | ① 대상 DB가 데모/스테이징 환경인지 확인 ② 필요 시 백업 완료 ③ 데모 진행자가 초기화에 동의했는지 재확인 |
+| 실행 절차 | 1. 관리자 계정으로 API 인증 토큰 발급<br>2. `POST /admin/seed/fridge-demo` 호출<br>3. 백엔드 로그에서 "FRIDGE_DEMO_DATA_REFRESHED" 응답 및 Flyway 스크립트 실행 정상 여부 확인 |
+| 실행 후 점검 | ① `/fridge/slots` 목록에서 층/칸 구조가 초기값으로 복원됐는지 확인 ② 데모 계정(`alice`, `bob`, …) 로그인 후 포장/물품 샘플이 적재됐는지 점검 ③ 필요 시 `bundle_label_sequence.next_number`가 1 이상으로 초기화됐는지 확인 |
+
+### 비상/경고 문구 표기 위치
+- 본 섹션 외에도 `docs/mvp-scenario.md §2 사전 준비` 및 `docs/ops/status-board.md`에 동일 경고를 반복 노출한다.
+- 운영 절차 문서, 배포 체크리스트, 페이지 데크 등에 “/admin/seed/fridge-demo는 데모 전용”이라는 문구를 추가하고, 자동화나 예약 작업에 포함시키지 않는다.
+
+## 운영 점검 루틴
+- **검사 → 알림 연동**: `inspection_action`에서 `correlation_id`가 채워진 알림을 `notification`에서 확인하고, 거주자 알림을 통해 조치 상세로 이동하는 흐름을 주기적으로 리허설한다.
+- **알림 설정 이력**: `notification_preference`의 `updated_at`을 기준으로 ON/OFF 변경 이력을 살펴보고, 동일 계정이 여러 기기에서 설정을 변경했을 때 즉시 일관되게 반영되는지 확인한다.
+- **발송 실패 로그**: `notification_dispatch_log`에서 최근 알림 실패 건을 조회하고, `error_code`·`error_message`를 기반으로 재시도 또는 장애 전파가 가능한지 점검한다.
+- **검사 조치 감사**: `inspection_action_item`의 스냅샷 데이터를 점검해 폐기·경고 근거가 남아 있는지 확인하고, `unregistered_item_event`가 누락되지 않았는지 주기적으로 모니터링한다.

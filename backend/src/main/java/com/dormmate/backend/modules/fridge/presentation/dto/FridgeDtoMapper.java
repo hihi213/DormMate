@@ -29,6 +29,12 @@ public final class FridgeDtoMapper {
 
         Integer capacity = includeCapacity ? compartment.getMaxBundleCount() : null;
         String displayName = includeCapacity ? buildDisplayName(compartment, floorNo) : null;
+        Integer occupiedCount = null;
+        if (includeCapacity) {
+            occupiedCount = (int) compartment.getBundles().stream()
+                    .filter(bundle -> bundle.getStatus() != null && bundle.getStatus().isActive())
+                    .count();
+        }
 
         return new FridgeSlotResponse(
                 compartment.getId(),
@@ -41,7 +47,8 @@ public final class FridgeDtoMapper {
                 compartment.isLocked(),
                 compartment.getLockedUntil(),
                 capacity,
-                displayName
+                displayName,
+                occupiedCount
         );
     }
 

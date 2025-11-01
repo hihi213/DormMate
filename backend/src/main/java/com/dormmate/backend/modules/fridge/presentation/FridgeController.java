@@ -53,9 +53,11 @@ public class FridgeController {
             @RequestParam(name = "slotId", required = false) UUID slotId,
             @RequestParam(name = "owner", required = false) String owner,
             @RequestParam(name = "status", required = false) String status,
-            @RequestParam(name = "search", required = false) String search
+            @RequestParam(name = "search", required = false) String search,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size
     ) {
-        return ResponseEntity.ok(fridgeService.getBundles(slotId, owner, status, search));
+        return ResponseEntity.ok(fridgeService.getBundles(slotId, owner, status, search, page, size));
     }
 
     @Operation(

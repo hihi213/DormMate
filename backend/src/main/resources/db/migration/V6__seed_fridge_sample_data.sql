@@ -177,14 +177,9 @@ room_access_upsert AS (
         updated_at = CURRENT_TIMESTAMP
     RETURNING fridge_compartment_id, room_id
 ),
-seed_users AS (
-    SELECT login_id, id
-    FROM dorm_user
-    WHERE login_id IN ('alice', 'bob', 'carol')
-),
 bundle_data AS (
     SELECT *
-FROM (VALUES
+    FROM (VALUES
         ('alice', '2F-R1', '001', '앨리스 기본 식료품', '임박/만료 시나리오용 샘플 포장'),
         ('bob',   '2F-R1', '002', '밥 야식 재료',    '임박/만료 시나리오용 샘플 포장'),
         ('dylan', '2F-R3', '003', '딜런 비상 간식',  '야간 학습 대비 비상 식품'),
@@ -192,6 +187,11 @@ FROM (VALUES
         ('eric',  '3F-R2', '201', 'Eric 관리 포장',  '층별장 점검용 포장'),
         ('fiona', '3F-R3', '301', 'Fiona 냉동 샘플', '3층 공용 검증용 냉동 포장')
     ) AS v(login_id, slot_code, label_code, bundle_name, memo)
+),
+seed_users AS (
+    SELECT du.login_id, du.id
+    FROM dorm_user du
+    WHERE du.login_id IN (SELECT DISTINCT bd.login_id FROM bundle_data bd)
 ),
 bundle_upsert AS (
     INSERT INTO fridge_bundle (
@@ -246,11 +246,15 @@ FROM (VALUES
         ('001', 1, '우유', 1, '팩',  'MEDIUM', (CURRENT_DATE + INTERVAL '5 days')::DATE, '냉장 보관 중. 임박 알림 확인용'),
         ('001', 2, '계란', 10, '개', 'HIGH',   (CURRENT_DATE + INTERVAL '2 days')::DATE, '소비 권장 D-2'),
         ('002', 1, '김치', 1, '통',  'LOW',    (CURRENT_DATE + INTERVAL '7 days')::DATE, '장기 보관 체크용'),
+        ('002', 2, '떡볶이', 1, '팩', 'MEDIUM', (CURRENT_DATE - INTERVAL '1 day')::DATE, '검사 시 만료 확인용'),
         ('003', 1, '컵라면', 3, '개', 'LOW',   (CURRENT_DATE + INTERVAL '14 days')::DATE, '야식 대기 식품'),
         ('003', 2, '초콜릿', 2, '개', 'MEDIUM',(CURRENT_DATE + INTERVAL '21 days')::DATE, '당 충전용'),
+        ('003', 3, '샌드위치', 2, '개', 'MEDIUM', (CURRENT_DATE + INTERVAL '9 days')::DATE, 'D-9 예시'),
         ('101', 1, '샐러드', 1, '팩', 'MEDIUM',(CURRENT_DATE + INTERVAL '4 days')::DATE, '가벼운 식사'),
+        ('101', 2, '과일 세트', 1, '팩', 'MEDIUM', (CURRENT_DATE + INTERVAL '11 days')::DATE, 'D-11 예시'),
         ('201', 1, '시금치', 1, '봉지', 'LOW',(CURRENT_DATE + INTERVAL '6 days')::DATE, '층별장 검사용 신선 식품'),
-        ('301', 1, '만두', 12, '개', 'LOW',   (CURRENT_DATE + INTERVAL '30 days')::DATE, '공용 냉동 식품')
+        ('301', 1, '만두', 12, '개', 'LOW',   (CURRENT_DATE + INTERVAL '30 days')::DATE, '공용 냉동 식품'),
+        ('301', 2, '비상 식량', 1, '박스', 'LOW', (CURRENT_DATE + INTERVAL '180 days')::DATE, '장기 보관용 비상 식량')
     ) AS v(label_code, sequence_no, item_name, quantity, unit, priority, expires_on, memo)
 ),
 item_upsert AS (
