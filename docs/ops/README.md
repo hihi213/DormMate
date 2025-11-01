@@ -37,10 +37,10 @@
 | 구분 | 내용 |
 | --- | --- |
 | 목적 | 시연 전에 냉장고/검사 데이터를 표준 데모 상태로 초기화하기 위함 |
-| 실행 효과 | `fridge_unit`, `fridge_compartment`, `compartment_room_access`, `bundle_label_sequence`, `fridge_bundle`, `fridge_item`, `inspection_*` 등 관련 테이블을 TRUNCATE 후 샘플 데이터를 재삽입 (`backend/src/main/resources/db/demo/fridge_demo_refresh.sql`) |
-| 실행 전 확인 | ① 대상 DB가 데모/스테이징 환경인지 확인 ② 필요 시 백업 완료 ③ 데모 진행자가 초기화에 동의했는지 재확인 |
-| 실행 절차 | 1. 관리자 계정으로 API 인증 토큰 발급<br>2. `POST /admin/seed/fridge-demo` 호출<br>3. 백엔드 로그에서 "FRIDGE_DEMO_DATA_REFRESHED" 응답 및 Flyway 스크립트 실행 정상 여부 확인 |
-| 실행 후 점검 | ① `/fridge/slots` 목록에서 층/칸 구조가 초기값으로 복원됐는지 확인 ② 데모 계정(`alice`, `bob`, …) 로그인 후 포장/물품 샘플이 적재됐는지 점검 ③ 필요 시 `bundle_label_sequence.next_number`가 1 이상으로 초기화됐는지 확인 |
+| 실행 효과 | 기존 사용자·포장·검사 데이터는 유지한 채, 전시 일정(11/12~11/20) 기준 물품 7건을 추가한다. 기존에 `item_name`이 `전시 데모:`로 시작하는 물품은 먼저 삭제한 뒤 다시 삽입한다. (SQL: `backend/src/main/resources/db/demo/fridge_exhibition_items.sql`) |
+| 실행 전 확인 | ① 대상 DB가 데모/스테이징 환경인지 확인 ② 기준 포장(앨리스·밥 등)과 기본 시드가 준비돼 있는지 확인 ③ 데모 진행자가 해당 물품 구성을 사용할지 재확인 |
+| 실행 절차 | 1. 관리자 계정으로 API 인증 토큰 발급<br>2. `POST /admin/seed/fridge-demo` 호출<br>3. 백엔드 로그에서 \"FRIDGE_DEMO_DATA_REFRESHED\" 응답과 함께 `inserted_count`가 7로 기록됐는지 확인 |
+| 실행 후 점검 | ① `/fridge/bundles` 또는 프런트 목록에서 `전시 데모:`로 시작하는 물품이 추가됐는지 확인 ② 필요한 경우 동일 API를 다시 호출해도 총 7건으로 유지되는지 검증 ③ 데모 시나리오에 맞는 임박/만료 일정(11/11~11/20)이 노출되는지 확인 |
 
 ### 비상/경고 문구 표기 위치
 - 본 섹션 외에도 `docs/mvp-scenario.md §2 사전 준비` 및 `docs/ops/status-board.md`에 동일 경고를 반복 노출한다.

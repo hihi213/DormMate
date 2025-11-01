@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent } from "react"
 import { useRouter } from "next/navigation"
 import { ClipboardCheck, ListChecks, ShieldCheck, Loader2 } from "lucide-react"
 
@@ -8,41 +8,24 @@ import BottomNav from "@/components/bottom-nav"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Textarea } from "@/components/ui/textarea"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import { getCurrentUser, logout as doLogout, subscribeAuth, type AuthUser } from "@/lib/auth"
 import { SlotSelector } from "@/features/fridge/components/slot-selector"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
-import {
-  fetchFridgeSlots,
-  updateFridgeCompartment,
-} from "@/features/fridge/api"
+import { fetchFridgeSlots, updateFridgeCompartment } from "@/features/fridge/api"
 import type { ResourceStatus, Slot, UpdateCompartmentConfigPayload } from "@/features/fridge/types"
 import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
-
-const SCHEDULE_STORAGE_KEY = "fridge-inspections-schedule-v1"
-const HISTORY_STORAGE_KEY = "fridge-inspections-history-v1"
-
-type Schedule = {
-  id: string
-  dateISO: string
-  title?: string
-  notes?: string
-  completed?: boolean
-  completedAt?: string
-  completedBy?: string
-  summary?: { passed: number; warned: number; discarded: number }
-}
-
-type HistoryRecord = {
-  id: string
-  dateISO: string
-  passed?: number
-  warned?: number
-  discarded?: number
-  notes?: string
-}
+import {
+  createInspectionSchedule,
+  deleteInspectionSchedule,
+  fetchInspectionHistory,
+  fetchInspectionSchedules,
+  updateInspectionSchedule,
+} from "@/features/inspections/api"
+import type { InspectionSchedule, InspectionSession } from "@/features/inspections/types"
 
 const ROLE_LABEL = {
   RESIDENT: "거주자",
@@ -61,9 +44,10 @@ export default function AdminPage() {
 
 function AdminInner() {
   const router = useRouter()
+  const isMountedRef = useRef(true)
   const [authUser, setAuthUser] = useState<AuthUser | null>(getCurrentUser())
-  const [schedule, setSchedule] = useState<Schedule[]>([])
-  const [history, setHistory] = useState<HistoryRecord[]>([])
+  const [schedules, setSchedules] = useState<InspectionSchedule[]>([])
+  const [history, setHistory] = useState<InspectionSession[]>([])
   const [mounted, setMounted] = useState(false)
   const { toast } = useToast()
   const [slots, setSlots] = useState<Slot[]>([])
@@ -74,6 +58,21 @@ function AdminInner() {
     status: "ACTIVE",
   })
   const [savingSlot, setSavingSlot] = useState(false)
+  const [inspectionDataLoading, setInspectionDataLoading] = useState(false)
+  const [scheduleForm, setScheduleForm] = useState<{ datetime: string; title: string; notes: string }>({
+    datetime: "",
+    title: "",
+    notes: "",
+  })
+  const [creatingSchedule, setCreatingSchedule] = useState(false)
+  const [scheduleActionId, setScheduleActionId] = useState<string | null>(null)
+  const [scheduleDeleteId, setScheduleDeleteId] = useState<string | null>(null)
+
+  useEffect(() => {
+    return () => {
+      isMountedRef.current = false
+    }
+  }, [])
 
   useEffect(() => {
     setMounted(true)
@@ -81,29 +80,49 @@ function AdminInner() {
     return () => unsubscribe()
   }, [])
 
+  const isAdmin = authUser?.roles.includes("ADMIN") ?? false
+
+  const reloadInspectionMeta = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!isAdmin) {
+        if (isMountedRef.current) {
+          setSchedules([])
+          setHistory([])
+        }
+        return
+      }
+      setInspectionDataLoading(true)
+      try {
+        const [scheduleData, historyData] = await Promise.all([
+          fetchInspectionSchedules(),
+          fetchInspectionHistory({ status: "SUBMITTED", limit: 10 }),
+        ])
+        if (!isMountedRef.current) return
+        setSchedules(scheduleData)
+        setHistory(historyData)
+      } catch (error) {
+        if (!isMountedRef.current) return
+        console.error("Failed to load inspection meta", error)
+        if (!options?.silent) {
+          toast({
+            title: "검사 정보를 불러오지 못했습니다.",
+            description: "네트워크 상태를 확인한 뒤 다시 시도해 주세요.",
+            variant: "destructive",
+          })
+        }
+      } finally {
+        if (isMountedRef.current) {
+          setInspectionDataLoading(false)
+        }
+      }
+    },
+    [isAdmin, toast],
+  )
+
   useEffect(() => {
-    if (!mounted) return
-    if (typeof window === "undefined") return
-    try {
-      const rawSchedule = JSON.parse(localStorage.getItem(SCHEDULE_STORAGE_KEY) || "null") as Schedule[] | null
-      if (Array.isArray(rawSchedule)) {
-        setSchedule(rawSchedule)
-      }
-    } catch {
-      setSchedule([])
-    }
-
-    try {
-      const rawHistory = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || "null") as HistoryRecord[] | null
-      if (Array.isArray(rawHistory)) {
-        setHistory(rawHistory)
-      }
-    } catch {
-      setHistory([])
-    }
-  }, [mounted])
-
-  const isAdmin = authUser?.roles.includes("ADMIN")
+    if (!mounted || !isAdmin) return
+    void reloadInspectionMeta({ silent: true })
+  }, [mounted, isAdmin, reloadInspectionMeta])
 
   useEffect(() => {
     if (mounted && authUser && !authUser.roles.includes("ADMIN")) {
@@ -154,24 +173,147 @@ function AdminInner() {
     })
   }, [selectedSlotId, slots])
 
-  const upcomingSchedules = useMemo(
-    () =>
-      schedule
-        .filter((entry) => !entry.completed)
-        .slice()
-        .sort((a, b) => a.dateISO.localeCompare(b.dateISO)),
-    [schedule],
+  const upcomingSchedules = useMemo(() => {
+    return schedules
+      .filter((entry) => entry.status === "SCHEDULED")
+      .slice()
+      .sort(
+        (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
+      )
+  }, [schedules])
+
+  const recentHistory = useMemo(() => {
+    const toMillis = (value?: string | null) => (value ? new Date(value).getTime() : 0)
+    return history
+      .slice()
+      .sort((a, b) => {
+        const endA = a.endedAt ?? a.startedAt
+        const endB = b.endedAt ?? b.startedAt
+        return toMillis(endB) - toMillis(endA)
+      })
+      .slice(0, 3)
+      .map((session) => {
+        const occurredAt = session.endedAt ?? session.startedAt
+        const counts = session.summary.reduce(
+          (acc, entry) => {
+            if (entry.action === "PASS") acc.passed += entry.count
+            else if (entry.action.startsWith("WARN")) acc.warned += entry.count
+            else if (entry.action.startsWith("DISPOSE") || entry.action === "UNREGISTERED_DISPOSE") acc.discarded += entry.count
+            return acc
+          },
+          { passed: 0, warned: 0, discarded: 0 },
+        )
+        return {
+          id: session.sessionId,
+          occurredAt,
+          notes: session.notes ?? undefined,
+          ...counts,
+        }
+      })
+  }, [history])
+
+  const handleCreateSchedule = useCallback(
+    async (event: FormEvent<HTMLFormElement>) => {
+      event.preventDefault()
+      if (!scheduleForm.datetime) {
+        toast({
+          title: "일정 시간을 입력해 주세요.",
+          variant: "destructive",
+        })
+        return
+      }
+      const date = new Date(scheduleForm.datetime)
+      if (Number.isNaN(date.getTime())) {
+        toast({
+          title: "잘못된 날짜 형식입니다.",
+          description: "날짜와 시간을 다시 확인해 주세요.",
+          variant: "destructive",
+        })
+        return
+      }
+      try {
+        setCreatingSchedule(true)
+        await createInspectionSchedule({
+          scheduledAt: date.toISOString(),
+          title: scheduleForm.title.trim() ? scheduleForm.title.trim() : undefined,
+          notes: scheduleForm.notes.trim() ? scheduleForm.notes.trim() : undefined,
+        })
+        if (!isMountedRef.current) return
+        setScheduleForm({ datetime: "", title: "", notes: "" })
+        toast({
+          title: "검사 일정을 추가했습니다.",
+        })
+        await reloadInspectionMeta()
+      } catch (error) {
+        if (!isMountedRef.current) return
+        console.error("Failed to create inspection schedule", error)
+        toast({
+          title: "일정을 생성하지 못했습니다.",
+          description: error instanceof Error ? error.message : "다시 시도해 주세요.",
+          variant: "destructive",
+        })
+      } finally {
+        if (isMountedRef.current) {
+          setCreatingSchedule(false)
+        }
+      }
+    },
+    [scheduleForm, toast, reloadInspectionMeta],
   )
 
-  const entryTime = (entry: Schedule) => entry.completedAt ?? entry.dateISO
+  const handleCompleteSchedule = useCallback(
+    async (scheduleId: string) => {
+      try {
+        setScheduleActionId(scheduleId)
+        await updateInspectionSchedule(scheduleId, { status: "COMPLETED" })
+        if (!isMountedRef.current) return
+        toast({
+          title: "일정을 완료 처리했습니다.",
+        })
+        await reloadInspectionMeta()
+      } catch (error) {
+        if (!isMountedRef.current) return
+        console.error("Failed to complete inspection schedule", error)
+        toast({
+          title: "완료 처리에 실패했습니다.",
+          description: error instanceof Error ? error.message : "다시 시도해 주세요.",
+          variant: "destructive",
+        })
+      } finally {
+        if (isMountedRef.current) {
+          setScheduleActionId(null)
+        }
+      }
+    },
+    [reloadInspectionMeta, toast],
+  )
 
-  const completedSchedules = useMemo(
-    () =>
-      schedule
-        .filter((entry) => entry.completed)
-        .slice()
-        .sort((a, b) => entryTime(b).localeCompare(entryTime(a))),
-    [schedule],
+  const handleDeleteSchedule = useCallback(
+    async (scheduleId: string) => {
+      if (!confirm("해당 검사를 삭제할까요?")) return
+      try {
+        setScheduleDeleteId(scheduleId)
+        await deleteInspectionSchedule(scheduleId)
+        if (!isMountedRef.current) return
+        toast({
+          title: "검사 일정을 삭제했습니다.",
+        })
+        await reloadInspectionMeta()
+      } catch (error) {
+        if (!isMountedRef.current) return
+        console.error("Failed to delete inspection schedule", error)
+        toast({
+          title: "삭제에 실패했습니다.",
+          description: error instanceof Error ? error.message : "다시 시도해 주세요.",
+          variant: "destructive",
+        })
+      } finally {
+        if (isMountedRef.current) {
+          setScheduleDeleteId(null)
+        }
+      }
+    },
+    [reloadInspectionMeta, toast],
   )
 
   const selectedSlot = useMemo(() => slots.find((slot) => slot.slotId === selectedSlotId) ?? null, [slots, selectedSlotId])
@@ -363,6 +505,64 @@ function AdminInner() {
         <Card>
           <CardHeader className="pb-3">
             <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+              검사 일정 등록
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleCreateSchedule} className="space-y-4">
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground" htmlFor="schedule-datetime">
+                  일정 시간
+                </Label>
+                <Input
+                  id="schedule-datetime"
+                  type="datetime-local"
+                  value={scheduleForm.datetime}
+                  onChange={(event) =>
+                    setScheduleForm((prev) => ({ ...prev, datetime: event.target.value }))
+                  }
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground" htmlFor="schedule-title">
+                  제목 (선택)
+                </Label>
+                <Input
+                  id="schedule-title"
+                  value={scheduleForm.title}
+                  onChange={(event) =>
+                    setScheduleForm((prev) => ({ ...prev, title: event.target.value }))
+                  }
+                  placeholder="예: 11월 정기 점검"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs text-muted-foreground" htmlFor="schedule-notes">
+                  메모 (선택)
+                </Label>
+                <Textarea
+                  id="schedule-notes"
+                  value={scheduleForm.notes}
+                  onChange={(event) =>
+                    setScheduleForm((prev) => ({ ...prev, notes: event.target.value }))
+                  }
+                  rows={3}
+                  placeholder="점검 전 준비 사항을 남겨 주세요."
+                />
+              </div>
+              <div className="flex justify-end">
+                <Button type="submit" disabled={creatingSchedule}>
+                  {creatingSchedule && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
+                  일정 추가
+                </Button>
+              </div>
+            </form>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
               <ClipboardCheck className="h-4 w-4 text-emerald-700" />
               예정된 검사
               <Badge variant="secondary" className="ml-auto">
@@ -371,17 +571,60 @@ function AdminInner() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {upcomingSchedules.length === 0 ? (
+            {inspectionDataLoading ? (
+              <p className="text-sm text-muted-foreground">검사 일정을 불러오는 중입니다…</p>
+            ) : upcomingSchedules.length === 0 ? (
               <p className="text-sm text-muted-foreground">예정된 검사가 없습니다.</p>
             ) : (
               <ul className="space-y-2">
-                {upcomingSchedules.map((entry) => (
-                  <li key={entry.id} className="rounded-md border px-3 py-2">
-                    <div className="text-sm font-medium text-gray-900">{entry.title ?? "검사"}</div>
-                    <div className="text-xs text-muted-foreground">{new Date(entry.dateISO).toLocaleString("ko-KR")}</div>
-                    {entry.notes && <div className="mt-1 text-xs text-muted-foreground">{entry.notes}</div>}
-                  </li>
-                ))}
+                {upcomingSchedules.map((entry) => {
+                  const completing = scheduleActionId === entry.scheduleId
+                  const deleting = scheduleDeleteId === entry.scheduleId
+                  return (
+                    <li key={entry.scheduleId} className="rounded-md border px-3 py-2">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex-1 space-y-1">
+                          <div className="text-sm font-medium text-gray-900">{entry.title ?? "검사"}</div>
+                          <div className="text-xs text-muted-foreground">
+                            {new Date(entry.scheduledAt).toLocaleString("ko-KR", {
+                              month: "numeric",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </div>
+                          {entry.notes && <div className="text-xs text-muted-foreground">{entry.notes}</div>}
+                          {entry.inspectionSessionId && (
+                            <div className="text-[11px] text-emerald-600">
+                              연결된 세션 · <span className="font-mono">{entry.inspectionSessionId.slice(0, 8)}…</span>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex flex-col gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleCompleteSchedule(entry.scheduleId)}
+                            disabled={completing || deleting}
+                          >
+                            {completing && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
+                            완료 처리
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="border-rose-200 text-rose-600 hover:bg-rose-50"
+                            onClick={() => handleDeleteSchedule(entry.scheduleId)}
+                            disabled={deleting || completing}
+                          >
+                            {deleting && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
+                            삭제
+                          </Button>
+                        </div>
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             )}
           </CardContent>
@@ -395,27 +638,34 @@ function AdminInner() {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-2">
-            {history.length === 0 ? (
+            {inspectionDataLoading ? (
+              <p className="text-sm text-muted-foreground">검사 결과를 불러오는 중입니다…</p>
+            ) : recentHistory.length === 0 ? (
               <p className="text-sm text-muted-foreground">최근 제출된 검사 결과가 없습니다.</p>
             ) : (
               <ul className="space-y-2">
-                {history.slice(0, 3).map((entry) => (
+                {recentHistory.map((entry) => (
                   <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2">
                     <div>
                       <div className="text-sm font-medium text-gray-900">
-                        {new Date(entry.dateISO).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+                        {new Date(entry.occurredAt ?? "").toLocaleString("ko-KR", {
+                          month: "numeric",
+                          day: "numeric",
+                          hour: "2-digit",
+                          minute: "2-digit",
+                        })}
                       </div>
                       {entry.notes && <div className="text-xs text-muted-foreground">{entry.notes}</div>}
                     </div>
                     <div className="flex gap-1 text-xs">
                       <Badge variant="outline" className="border-emerald-200 text-emerald-700">
-                        통과 {entry.passed ?? 0}
+                        통과 {entry.passed}
                       </Badge>
                       <Badge variant="outline" className="border-amber-200 text-amber-700">
-                        경고 {entry.warned ?? 0}
+                        경고 {entry.warned}
                       </Badge>
                       <Badge variant="outline" className="border-rose-200 text-rose-700">
-                        폐기 {entry.discarded ?? 0}
+                        폐기 {entry.discarded}
                       </Badge>
                     </div>
                   </li>

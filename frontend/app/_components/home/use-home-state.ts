@@ -10,15 +10,7 @@ import {
   logout as doLogout,
   subscribeAuth,
 } from "@/lib/auth"
-
-const SCHED_KEY = "fridge-inspections-schedule-v1"
-
-type Schedule = {
-  id: string
-  dateISO: string
-  title?: string
-  notes?: string
-}
+import { fetchNextInspectionSchedule } from "@/features/inspections/api"
 
 export type NextInspection = { dday: string; label: string } | null
 
@@ -58,28 +50,30 @@ export function useHomeState() {
   }, [mounted])
 
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(SCHED_KEY) || "null") as Schedule[] | null
-      if (Array.isArray(saved) && saved.length) {
-        const now = new Date()
-        const upcoming = saved
-          .map((s) => ({ ...s, d: new Date(s.dateISO) }))
-          .filter((s) => s.d.getTime() >= now.getTime())
-          .sort((a, b) => a.d.getTime() - b.d.getTime())[0]
-        if (upcoming) {
-          const d = calcDday(upcoming.d)
-          setNextInspection({
-            dday: d.dday,
-            label: `${fmtMonthDay(upcoming.d)} (${d.dday})`,
-          })
-        } else {
+    let cancelled = false
+    const loadNextInspection = async () => {
+      try {
+        const schedule = await fetchNextInspectionSchedule()
+        if (cancelled) return
+        if (!schedule) {
+          setNextInspection({ dday: "-", label: "예정 없음" })
+          return
+        }
+        const target = new Date(schedule.scheduledAt)
+        const { dday } = calcDday(target)
+        setNextInspection({
+          dday,
+          label: `${fmtMonthDay(target)} (${dday})`,
+        })
+      } catch {
+        if (!cancelled) {
           setNextInspection({ dday: "-", label: "예정 없음" })
         }
-      } else {
-        setNextInspection({ dday: "-", label: "예정 없음" })
       }
-    } catch {
-      setNextInspection({ dday: "-", label: "예정 없음" })
+    }
+    void loadNextInspection()
+    return () => {
+      cancelled = true
     }
   }, [])
 

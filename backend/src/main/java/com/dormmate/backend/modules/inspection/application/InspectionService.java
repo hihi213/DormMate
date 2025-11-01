@@ -43,6 +43,9 @@ import com.dormmate.backend.modules.fridge.infrastructure.persistence.Compartmen
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeCompartmentRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
+import com.dormmate.backend.modules.inspection.domain.InspectionSchedule;
+import com.dormmate.backend.modules.inspection.domain.InspectionScheduleStatus;
+import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionScheduleRepository;
 import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionSessionRepository;
 import com.dormmate.backend.modules.notification.application.NotificationService;
 import com.dormmate.backend.global.security.SecurityUtils;
@@ -63,6 +66,7 @@ public class InspectionService {
     private final DormUserRepository dormUserRepository;
     private final RoomAssignmentRepository roomAssignmentRepository;
     private final CompartmentRoomAccessRepository compartmentRoomAccessRepository;
+    private final InspectionScheduleRepository inspectionScheduleRepository;
     private final NotificationService notificationService;
     private final Clock clock;
 
@@ -74,6 +78,7 @@ public class InspectionService {
             DormUserRepository dormUserRepository,
             RoomAssignmentRepository roomAssignmentRepository,
             CompartmentRoomAccessRepository compartmentRoomAccessRepository,
+            InspectionScheduleRepository inspectionScheduleRepository,
             NotificationService notificationService,
             Clock clock
     ) {
@@ -84,6 +89,7 @@ public class InspectionService {
         this.dormUserRepository = dormUserRepository;
         this.roomAssignmentRepository = roomAssignmentRepository;
         this.compartmentRoomAccessRepository = compartmentRoomAccessRepository;
+        this.inspectionScheduleRepository = inspectionScheduleRepository;
         this.notificationService = notificationService;
         this.clock = clock;
     }
@@ -115,6 +121,18 @@ public class InspectionService {
             }
         }
 
+        InspectionSchedule scheduleToLink = null;
+        if (request.scheduleId() != null) {
+            scheduleToLink = inspectionScheduleRepository.findById(request.scheduleId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SCHEDULE_NOT_FOUND"));
+            if (scheduleToLink.getStatus() != InspectionScheduleStatus.SCHEDULED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "SCHEDULE_NOT_ACTIVE");
+            }
+            if (scheduleToLink.getInspectionSession() != null) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "SCHEDULE_ALREADY_LINKED");
+            }
+        }
+
         InspectionSession session = new InspectionSession();
         session.setFridgeCompartment(compartment);
         session.setStartedBy(currentUser);
@@ -132,6 +150,10 @@ public class InspectionService {
         session.getParticipants().add(participant);
 
         InspectionSession saved = inspectionSessionRepository.save(session);
+        if (scheduleToLink != null) {
+            scheduleToLink.setInspectionSession(saved);
+            inspectionScheduleRepository.save(scheduleToLink);
+        }
         return mapSession(saved, currentUser);
     }
 
@@ -220,6 +242,13 @@ public class InspectionService {
         session.getFridgeCompartment().setLocked(false);
         session.getFridgeCompartment().setLockedUntil(null);
         inspectionSessionRepository.save(session);
+
+        inspectionScheduleRepository.findByInspectionSessionId(session.getId()).ifPresent(schedule -> {
+            schedule.setInspectionSession(null);
+            schedule.setStatus(InspectionScheduleStatus.SCHEDULED);
+            schedule.setCompletedAt(null);
+            inspectionScheduleRepository.save(schedule);
+        });
     }
 
     public InspectionSessionResponse recordActions(UUID sessionId, InspectionActionRequest request) {
@@ -307,6 +336,20 @@ public class InspectionService {
         session.getFridgeCompartment().setLockedUntil(null);
 
         InspectionSession saved = inspectionSessionRepository.save(session);
+        inspectionScheduleRepository.findByInspectionSessionId(saved.getId()).ifPresent(schedule -> {
+            boolean updated = false;
+            if (schedule.getStatus() != InspectionScheduleStatus.COMPLETED) {
+                schedule.setStatus(InspectionScheduleStatus.COMPLETED);
+                updated = true;
+            }
+            if (schedule.getCompletedAt() == null) {
+                schedule.setCompletedAt(now);
+                updated = true;
+            }
+            if (updated) {
+                inspectionScheduleRepository.save(schedule);
+            }
+        });
         notificationService.sendInspectionResultNotifications(saved);
         return mapSession(saved, currentUser);
     }

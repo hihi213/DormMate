@@ -174,15 +174,33 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** 냉장고 슬롯 목록 조회 */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description 조회할 층 (지정하지 않으면 전체) */
+                    floor?: number;
+                    /** @description full 지정 시 용량·표시 이름·점유 수 등 상세 정보를 포함 */
+                    view?: "basic" | "full";
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
             };
             requestBody?: never;
-            responses: never;
+            responses: {
+                /** @description 슬롯 목록 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FridgeSlot"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
         };
         put?: never;
         post?: never;
@@ -271,7 +289,9 @@ export interface paths {
                     status?: "active" | "deleted";
                     /** @description 포장명/물품명/라벨(A123) 검색 */
                     search?: string;
+                    /** @description 페이지 인덱스 (0부터 시작) */
                     page?: number;
+                    /** @description 페이지 당 항목 수 */
                     size?: number;
                 };
                 header?: never;
@@ -558,7 +578,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 검사 세션 목록 조회 */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 특정 칸의 세션만 조회 */
+                    slotId?: string;
+                    /** @description 세션 상태 필터 */
+                    status?: "IN_PROGRESS" | "SUBMITTED" | "CANCELLED";
+                    /** @description 반환할 최대 세션 수 */
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 검사 세션 목록 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InspectionSession"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
         put?: never;
         /** 검사 세션 시작 */
         post: {
@@ -651,7 +700,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                sessionId: number;
+                sessionId: string;
             };
             cookie?: never;
         };
@@ -661,7 +710,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    sessionId: number;
+                    sessionId: string;
                 };
                 cookie?: never;
             };
@@ -689,7 +738,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    sessionId: number;
+                    sessionId: string;
                 };
                 cookie?: never;
             };
@@ -967,6 +1016,7 @@ export interface components {
             lockedUntil?: string | null;
             capacity?: number | null;
             displayName?: string | null;
+            occupiedCount?: number | null;
         };
         UpdateCompartmentConfigRequest: {
             maxBundleCount?: number;
