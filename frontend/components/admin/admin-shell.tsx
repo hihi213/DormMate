@@ -1,6 +1,16 @@
 "use client"
 
-import { Children, isValidElement, type ComponentType, type ReactNode, type SVGProps, useEffect, useMemo, useState } from "react"
+import {
+  Children,
+  isValidElement,
+  type ComponentType,
+  type ReactNode,
+  type SVGProps,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
 import {
@@ -86,7 +96,10 @@ function NavList({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
 
   return (
-    <nav className="flex flex-1 flex-col gap-6 px-4 py-6 text-sm">
+    <nav
+      className="flex flex-1 flex-col gap-6 px-4 py-6 text-sm"
+      aria-label="관리자 주요 내비게이션"
+    >
       {NAV_GROUPS.map((group) => (
         <div key={group.label} className="space-y-3">
           <p className="px-3 text-xs font-semibold uppercase tracking-wide text-slate-500">
@@ -135,6 +148,8 @@ export default function AdminShell({ children }: AdminShellProps) {
   const user = useAuthUser()
   const [searchKeyword, setSearchKeyword] = useState("")
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const desktopSearchRef = useRef<HTMLInputElement | null>(null)
+  const mobileSearchRef = useRef<HTMLInputElement | null>(null)
 
   const { mainContent, railContent } = useMemo(() => {
     const nodes = Children.toArray(children)
@@ -169,6 +184,21 @@ export default function AdminShell({ children }: AdminShellProps) {
     console.info("[AdminSearch] 검색 시도:", searchKeyword.trim())
   }
 
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
+        event.preventDefault()
+        if (window.matchMedia("(min-width: 1024px)").matches) {
+          desktopSearchRef.current?.focus()
+        } else {
+          mobileSearchRef.current?.focus()
+        }
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [])
+
   const userInitials = useMemo(() => {
     if (!user?.name) return "A"
     const parts = user.name.trim().split(" ")
@@ -185,6 +215,12 @@ export default function AdminShell({ children }: AdminShellProps) {
 
   return (
     <div className="min-h-screen bg-slate-50">
+      <a
+        href="#admin-main-content"
+        className="sr-only focus-visible:not-sr-only focus-visible:absolute focus-visible:left-4 focus-visible:top-4 focus-visible:z-50 focus-visible:rounded-md focus-visible:bg-emerald-600 focus-visible:px-4 focus-visible:py-2 focus-visible:text-white"
+      >
+        본문으로 건너뛰기
+      </a>
       <div className="flex min-h-screen w-full">
         <aside className="hidden w-[260px] flex-col border-r border-slate-200 bg-white lg:flex">
           <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-4">
@@ -246,6 +282,7 @@ export default function AdminShell({ children }: AdminShellProps) {
               >
                 <Search className="pointer-events-none absolute left-3 size-4 text-slate-400" aria-hidden />
                 <Input
+                  ref={desktopSearchRef}
                   value={searchKeyword}
                   onChange={(event) => setSearchKeyword(event.target.value)}
                   className="h-10 rounded-full border-slate-200 bg-slate-50 pl-10 pr-4 text-sm shadow-inner focus:border-emerald-500 focus:ring-emerald-500"
@@ -302,6 +339,7 @@ export default function AdminShell({ children }: AdminShellProps) {
               <form onSubmit={handleSearchSubmit} className="relative" role="search" aria-label="관리자 전역 검색(모바일)">
                 <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
                 <Input
+                  ref={mobileSearchRef}
                   value={searchKeyword}
                   onChange={(event) => setSearchKeyword(event.target.value)}
                   className="h-10 rounded-full border-slate-200 bg-slate-50 pl-10 pr-4 text-sm shadow-inner focus:border-emerald-500 focus:ring-emerald-500"
@@ -312,12 +350,16 @@ export default function AdminShell({ children }: AdminShellProps) {
           </header>
 
           <div className="flex flex-1">
-            <main className="flex-1 overflow-y-auto">
-              <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8 lg:px-10">
+            <main id="admin-main-content" className="flex-1 overflow-y-auto" role="main">
+              <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8 lg:px-10">
                 {mainContent}
               </div>
             </main>
-            <aside className="hidden w-72 border-l border-slate-200 bg-white/80 px-6 py-8 xl:block">
+            <aside
+              className="hidden w-72 border-l border-slate-200 bg-white/80 px-6 py-8 xl:block"
+              role="complementary"
+              aria-label="관리자 퀵 액션"
+            >
               {railContent ?? (
                 <div className="space-y-4">
                   <h2 className="text-sm font-semibold text-slate-800">운영 퀵 액션</h2>

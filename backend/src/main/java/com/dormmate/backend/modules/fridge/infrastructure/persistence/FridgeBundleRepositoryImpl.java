@@ -152,7 +152,7 @@ public class FridgeBundleRepositoryImpl implements FridgeBundleRepositoryCustom 
         parts.add("lower(concat(chr(65 + fc.slot_index), to_char(fb.label_number, 'FM000'))) like :keyword");
         parts.add("lower(concat(chr(65 + fc.slot_index), '-', to_char(fb.label_number, 'FM000'))) like :keyword");
         if (condition.searchItems()) {
-            parts.add("EXISTS (SELECT 1 FROM fridge_item fi WHERE fi.bundle_id = fb.id AND lower(fi.item_name) like :keyword)");
+            parts.add("EXISTS (SELECT 1 FROM fridge_item fi WHERE fi.fridge_bundle_id = fb.id AND lower(fi.item_name) like :keyword)");
         }
         return "(" + String.join(" OR ", parts) + ")";
     }

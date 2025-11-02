@@ -7,10 +7,22 @@ public record ProblemResponse(String type, String title, int status, String deta
     private static final String DEFAULT_TYPE_PREFIX = "https://dormmate.app/errors/";
 
     public static ProblemResponse of(HttpStatus httpStatus, String code, String detail, String instance) {
+        return of(httpStatus, code, detail, instance, null);
+    }
+
+    public static ProblemResponse of(
+            HttpStatus httpStatus,
+            String code,
+            String detail,
+            String instance,
+            String typeOverride
+    ) {
         String safeCode = (code != null && !code.isBlank()) ? code : httpStatus.name();
         String normalized = safeCode.toLowerCase().replaceAll("[^a-z0-9\\-_.]+", "-");
         String safeDetail = (detail != null && !detail.isBlank()) ? detail : httpStatus.getReasonPhrase();
-        String type = DEFAULT_TYPE_PREFIX + normalized;
+        String type = (typeOverride != null && !typeOverride.isBlank())
+                ? typeOverride
+                : DEFAULT_TYPE_PREFIX + normalized;
         return new ProblemResponse(type, httpStatus.getReasonPhrase(), httpStatus.value(), safeDetail, instance, safeCode);
     }
 }

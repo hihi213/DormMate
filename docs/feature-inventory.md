@@ -256,3 +256,12 @@ Phase 2에서는 세탁실, 도서관, 다목적실 등 추가 모듈을 도입�
 | `LAUNDRY_EVENT` | `LAUNDRY_EVENT:{machineId}:{eventUuid}` | 생성 시각 + 6시간 | 종료 임박/시간 정정/메시지 등 단기 이벤트. 이벤트 UUID는 도메인 서비스에서 생성. |
 | `ROOM_PENALTY` | `ROOM_PENALTY:{userId}:{penaltyHistoryId}` | 생성 시각 + 30일 | 벌점/상점 기록 공지. 만료 전에도 사용자가 읽음 처리 가능. |
 | 기타 | `{KIND}:{businessKey}` | 정책에 따라 설정 | 신규 kind 추가 시 동일 표에 항목을 추가하고 OpenAPI 예시를 갱신한다. |
+
+### 8.7 알림 선호 기본값
+
+| `kind_code` | 표시 이름 | 기본 Enabled | 백그라운드 허용 기본값 | 메모 |
+|---|---|---|---|---|
+| `FRIDGE_RESULT` | 냉장고 검사 결과 | ON | ON | 검사 조치·벌점 알림은 즉시 전달한다. |
+| `FRIDGE_EXPIRY` | 냉장고 임박 알림 | ON | OFF | 3일 이내 임박 알림. 기본은 앱 사용 중에만 알림, 사용자가 백그라운드 허용을 선택 가능. |
+| `FRIDGE_EXPIRED` | 냉장고 만료 알림 | ON | ON | 만료 물품은 긴급성을 고려해 기본적으로 백그라운드 알림 허용. |
+| 기타 | 신규 kind 도입 시 정의 | ON | 서비스 정책에 따라 설정 | 신규 kind 추가 시 본 표와 OpenAPI를 함께 갱신한다. |

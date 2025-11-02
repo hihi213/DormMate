@@ -180,6 +180,83 @@ class FridgeReallocationIntegrationTest extends AbstractPostgresIntegrationTest 
         }
     }
 
+    @Test
+    void applyFailsWhenRoomNotOnFloor() throws Exception {
+        JsonNode preview = requestPreview(FLOOR_2);
+        ObjectNode applyPayload = buildApplyPayload(FLOOR_2, preview.path("allocations"));
+        int firstChillIndex = findAllocationIndex(preview.path("allocations"), "CHILL", 0);
+        UUID otherFloorRoomId = jdbcTemplate.queryForObject(
+                "SELECT id FROM room WHERE floor <> ? LIMIT 1",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                FLOOR_2
+        );
+
+        ArrayNode allocationsNode = (ArrayNode) applyPayload.path("allocations");
+        ObjectNode targetAllocation = (ObjectNode) allocationsNode.get(firstChillIndex);
+        ArrayNode roomIds = (ArrayNode) targetAllocation.withArray("roomIds");
+        roomIds.add(otherFloorRoomId.toString());
+
+        mockMvc.perform(
+                        post("/admin/fridge/reallocations/apply")
+                                .header("Authorization", "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(applyPayload.toString())
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ROOM_NOT_ON_FLOOR"))
+                .andExpect(jsonPath("$.type").value("urn:problem:dormmate:room_not_on_floor"));
+    }
+
+    @Test
+    void applyFailsWhenChillDistributionImbalanced() throws Exception {
+        JsonNode preview = requestPreview(FLOOR_2);
+        ObjectNode applyPayload = buildApplyPayload(FLOOR_2, preview.path("allocations"));
+
+        int firstChillIndex = findAllocationIndex(preview.path("allocations"), "CHILL", 0);
+        int secondChillIndex = findAllocationIndex(preview.path("allocations"), "CHILL", 1);
+
+        ArrayNode allocationsNode = (ArrayNode) applyPayload.path("allocations");
+        ObjectNode firstChill = (ObjectNode) allocationsNode.get(firstChillIndex);
+        ObjectNode secondChill = (ObjectNode) allocationsNode.get(secondChillIndex);
+
+        ArrayNode firstRooms = (ArrayNode) firstChill.withArray("roomIds");
+        ArrayNode secondRooms = (ArrayNode) secondChill.withArray("roomIds");
+        JsonNode movedRoom = secondRooms.remove(secondRooms.size() - 1);
+        firstRooms.add(movedRoom);
+
+        mockMvc.perform(
+                        post("/admin/fridge/reallocations/apply")
+                                .header("Authorization", "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(applyPayload.toString())
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("ROOM_DISTRIBUTION_IMBALANCED"))
+                .andExpect(jsonPath("$.type").value("urn:problem:dormmate:room_distribution_imbalanced"));
+    }
+
+    @Test
+    void applyFailsWhenSharedCompartmentMissingRooms() throws Exception {
+        JsonNode preview = requestPreview(FLOOR_2);
+        ObjectNode applyPayload = buildApplyPayload(FLOOR_2, preview.path("allocations"));
+
+        int freezeIndex = findAllocationIndex(preview.path("allocations"), "FREEZE", 0);
+        ArrayNode allocationsNode = (ArrayNode) applyPayload.path("allocations");
+        ObjectNode freezeAllocation = (ObjectNode) allocationsNode.get(freezeIndex);
+        ArrayNode roomIds = (ArrayNode) freezeAllocation.withArray("roomIds");
+        roomIds.remove(roomIds.size() - 1);
+
+        mockMvc.perform(
+                        post("/admin/fridge/reallocations/apply")
+                                .header("Authorization", "Bearer " + adminToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(applyPayload.toString())
+                )
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("SHARED_COMPARTMENT_MUST_INCLUDE_ALL_ROOMS"))
+                .andExpect(jsonPath("$.type").value("urn:problem:dormmate:shared_compartment_must_include_all_rooms"));
+    }
+
     private JsonNode requestPreview(short floor) throws Exception {
         ObjectNode payload = objectMapper.createObjectNode();
         payload.put("floor", floor);
@@ -256,6 +333,20 @@ class FridgeReallocationIntegrationTest extends AbstractPostgresIntegrationTest 
                 assertThat(actualRooms).containsExactlyInAnyOrderElementsOf(expectedRooms);
             }
         });
+    }
+
+    private int findAllocationIndex(JsonNode allocations, String compartmentType, int occurrence) {
+        int seen = 0;
+        for (int i = 0; i < allocations.size(); i++) {
+            JsonNode node = allocations.get(i);
+            if (compartmentType.equalsIgnoreCase(node.path("compartmentType").asText())) {
+                if (seen == occurrence) {
+                    return i;
+                }
+                seen++;
+            }
+        }
+        throw new AssertionError("No allocation found for type %s at occurrence %d".formatted(compartmentType, occurrence));
     }
 
     private String loginAndGetAccessToken(String loginId, String password) throws Exception {

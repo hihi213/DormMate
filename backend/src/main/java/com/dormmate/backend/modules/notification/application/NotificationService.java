@@ -38,6 +38,8 @@ import org.springframework.web.server.ResponseStatusException;
 public class NotificationService {
 
     private static final String KIND_INSPECTION_RESULT = "FRIDGE_RESULT";
+    public static final String KIND_FRIDGE_EXPIRY = "FRIDGE_EXPIRY";
+    public static final String KIND_FRIDGE_EXPIRED = "FRIDGE_EXPIRED";
     private static final int DEFAULT_TTL_HOURS = 24 * 7;
     private static final String DEDUPE_PREFIX = "FRIDGE_RESULT:";
 
@@ -46,6 +48,20 @@ public class NotificationService {
                     KIND_INSPECTION_RESULT,
                     "냉장고 검사 결과",
                     "검사 조치 및 벌점 알림",
+                    true,
+                    true
+            ),
+            new PreferenceDefinition(
+                    KIND_FRIDGE_EXPIRY,
+                    "냉장고 임박 알림",
+                    "유통기한 3일 이내 물품 안내",
+                    true,
+                    false
+            ),
+            new PreferenceDefinition(
+                    KIND_FRIDGE_EXPIRED,
+                    "냉장고 만료 알림",
+                    "유통기한이 지난 물품 경고",
                     true,
                     true
             )
@@ -243,7 +259,11 @@ public class NotificationService {
     private boolean isEnabled(UUID userId, String kindCode) {
         NotificationPreferenceId id = new NotificationPreferenceId(userId, kindCode);
         Optional<NotificationPreference> preference = notificationPreferenceRepository.findById(id);
-        return preference.map(NotificationPreference::isEnabled).orElse(true);
+        if (preference.isPresent()) {
+            return preference.get().isEnabled();
+        }
+        PreferenceDefinition definition = PREFERENCE_BY_CODE.get(kindCode);
+        return definition == null || definition.defaultEnabled();
     }
 
     public Optional<Notification> sendNotification(
@@ -294,6 +314,27 @@ public class NotificationService {
 
         notificationRepository.save(notification);
         return Optional.of(notification);
+    }
+
+    public Notification createFailureNotification(
+            DormUser user,
+            String kindCode,
+            String title,
+            String body,
+            Map<String, Object> metadata
+    ) {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        Notification notification = new Notification();
+        notification.setUser(user);
+        notification.setKindCode(kindCode);
+        notification.setTitle(title);
+        notification.setBody(body);
+        notification.setState(NotificationState.EXPIRED);
+        notification.setTtlAt(now);
+        notification.setExpiredAt(now);
+        notification.setMetadata(metadata == null ? Map.of() : metadata);
+        notificationRepository.save(notification);
+        return notification;
     }
 
     private void expireNotifications(UUID userId) {

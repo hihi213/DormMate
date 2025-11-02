@@ -872,6 +872,115 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void adminBundleSearchSupportsKeywordAndCaseInsensitiveMatch() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        createBundle(residentToken, slotId, "Alpha Search Bundle");
+        createBundle(residentToken, slotId, "beta mix pack");
+        createBundle(residentToken, slotId, "Gamma Storage");
+
+
+        MvcResult result = mockMvc.perform(
+                        get("/fridge/bundles")
+                                .param("slotId", slotId.toString())
+                                .param("owner", "all")
+                                .param("search", "ALPHA")
+                                .param("page", "0")
+                                .param("size", "10")
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(body.path("totalCount").asInt()).isEqualTo(1);
+        JsonNode items = body.path("items");
+        assertThat(items.isArray()).isTrue();
+        assertThat(items.size()).isEqualTo(1);
+        assertThat(items.get(0).path("bundleName").asText()).isEqualTo("Alpha Search Bundle");
+    }
+
+    @Test
+    void adminBundleSearchSupportsLabelLookup() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode firstBundle = createBundle(residentToken, slotId, "Label Base One");
+        JsonNode secondBundle = createBundle(residentToken, slotId, "Label Focus Two");
+
+        String targetLabel = secondBundle.path("bundle").path("labelDisplay").asText();
+
+        MvcResult result = mockMvc.perform(
+                        get("/fridge/bundles")
+                                .param("slotId", slotId.toString())
+                                .param("owner", "all")
+                                .param("search", targetLabel.toLowerCase())
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(body.path("totalCount").asInt()).isEqualTo(1);
+        JsonNode item = body.path("items").get(0);
+        assertThat(item.path("bundleId").asText()).isEqualTo(secondBundle.path("bundle").path("bundleId").asText());
+        assertThat(item.path("labelDisplay").asText()).isEqualTo(targetLabel);
+    }
+
+    @Test
+    void adminBundleListWithDeletedFilterReturnsOnlyDeletedBundles() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode activeBundle = createBundle(residentToken, slotId, "Active bundle snapshot");
+        JsonNode deletedBundle = createBundle(residentToken, slotId, "Deleted bundle snapshot");
+        UUID deletedBundleId = UUID.fromString(deletedBundle.path("bundle").path("bundleId").asText());
+
+        mockMvc.perform(
+                        delete("/fridge/bundles/" + deletedBundleId)
+                                .header("Authorization", "Bearer " + residentToken)
+                )
+                .andExpect(status().isNoContent());
+
+        MvcResult result = mockMvc.perform(
+                        get("/fridge/bundles")
+                                .param("slotId", slotId.toString())
+                                .param("owner", "all")
+                                .param("status", "deleted")
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(body.path("totalCount").asInt()).isEqualTo(1);
+        JsonNode item = body.path("items").get(0);
+        assertThat(item.path("bundleId").asText()).isEqualTo(deletedBundleId.toString());
+        assertThat(item.path("status").asText()).isEqualTo("DELETED");
+
+        // sanity check that active bundle remains active when fetching default view
+        MvcResult activeResult = mockMvc.perform(
+                        get("/fridge/bundles")
+                                .param("slotId", slotId.toString())
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode activeBody = objectMapper.readTree(activeResult.getResponse().getContentAsString());
+        assertThat(activeBody.path("items").findValuesAsText("bundleId"))
+                .contains(activeBundle.path("bundle").path("bundleId").asText());
+    }
+    @Test
     void residentCannotAccessDeletedBundleHistory() throws Exception {
         String residentToken = loginAndGetAccessToken("alice", "alice123!");
 
