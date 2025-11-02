@@ -27,6 +27,7 @@ import {
   formatStickerLabel,
   formatStickerWithSequence,
 } from "@/features/fridge/utils/labels"
+import { buildCapacityExceededMessage, buildSlotUnavailableMessage } from "@/features/fridge/utils/messages"
 import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
 
 type AddBundlePayload = {
@@ -39,6 +40,9 @@ type AddBundlePayload = {
 type UpdateItemPatch = Partial<Pick<Item, "name" | "expiryDate" | "quantity" | "unitCode" | "freshness">> & {
   removedAt?: string | null
 }
+
+const filterActiveUnits = (list: ItemUnit[]): ItemUnit[] =>
+  list.filter((unit) => !unit.removedAt)
 
 type FridgeContextValue = {
   slots: Slot[]
@@ -82,45 +86,7 @@ const isSuspendedError = (error: unknown): error is ErrorWithStatus =>
 const isCapacityError = (error: unknown): error is ErrorWithStatus & { code?: string } =>
   error instanceof Error && (error as ErrorWithStatus).status === 422
 
-const SLOT_UNAVAILABLE_CODES = new Set(["COMPARTMENT_SUSPENDED", "COMPARTMENT_LOCKED", "COMPARTMENT_UNDER_INSPECTION"])
-const isSystemCodeMessage = (value?: string) => !!value && /^[A-Z0-9_]+$/.test(value.trim())
-
 type SlotRestrictionError = ErrorWithStatus & { code?: string; message?: string }
-
-const resolveSlotUnavailableMessage = ({
-  error,
-  slot,
-  actionClause,
-  fallbackMessage,
-}: {
-  error?: SlotRestrictionError
-  slot?: Slot | null
-  actionClause: string
-  fallbackMessage?: string
-}): string => {
-  const trimmedMessage = error?.message?.trim()
-  const slotLabel = slot ? formatSlotDisplayName(slot) : "해당 칸"
-  const fallback =
-    fallbackMessage ?? `현재 ${slotLabel}을 사용할 수 없어 ${actionClause}`
-
-  if (trimmedMessage && !SLOT_UNAVAILABLE_CODES.has(trimmedMessage) && !isSystemCodeMessage(trimmedMessage)) {
-    return trimmedMessage
-  }
-
-  const derivedCode =
-    error?.code ??
-    (trimmedMessage && SLOT_UNAVAILABLE_CODES.has(trimmedMessage) ? trimmedMessage : undefined)
-
-  switch (derivedCode) {
-    case "COMPARTMENT_SUSPENDED":
-      return `관리자 점검 중인 ${slotLabel}에서는 ${actionClause}`
-    case "COMPARTMENT_LOCKED":
-    case "COMPARTMENT_UNDER_INSPECTION":
-      return `검사 중인 ${slotLabel}에서는 ${actionClause}`
-    default:
-      return fallback
-  }
-}
 
 export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const currentUserId = getCurrentUserId() || undefined
@@ -186,7 +152,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
 
         if (inventoryResult.status === "fulfilled") {
           setBundleState(inventoryResult.value.bundles)
-          setUnits(inventoryResult.value.units)
+          setUnits(filterActiveUnits(inventoryResult.value.units))
         } else {
           console.error("Failed to load fridge inventory", inventoryResult.reason)
           setBundleState([])
@@ -216,6 +182,26 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const items = useMemo(() => toItems(bundles, units), [bundles, units])
   const logic = useFridgeLogic(items, slots, currentUserId)
 
+  const refreshSlots = useCallback(async () => {
+    try {
+      const updatedSlots = await fetchFridgeSlots()
+      setSlots(updatedSlots)
+    } catch (error) {
+      console.error("Failed to refresh fridge slots after mutation", error)
+    }
+  }, [])
+
+  useEffect(() => {
+    if (!currentUserId) return
+    if (typeof window === "undefined") return
+    const intervalId = window.setInterval(() => {
+      void refreshSlots()
+    }, 30000)
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [currentUserId, refreshSlots])
+
   const addBundle = useCallback<FridgeContextValue["addBundle"]>(
     async (payload) => {
       try {
@@ -236,8 +222,13 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           currentUserId,
         )
 
+        const activeCreatedUnits = filterActiveUnits(createdUnits)
+
         setBundleState((prev) => [bundle, ...prev.filter((existing) => existing.bundleId !== bundle.bundleId)])
-        setUnits((prev) => [...createdUnits, ...prev.filter((unit) => unit.bundleId !== bundle.bundleId)])
+        setUnits((prev) => [
+          ...activeCreatedUnits,
+          ...prev.filter((unit) => unit.bundleId !== bundle.bundleId),
+        ])
         setSlots((prev) =>
           prev.map((slot) => {
             if (slot.slotId !== payload.slotId) {
@@ -251,13 +242,15 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           }),
         )
 
+        void refreshSlots()
+
         return {
           success: true,
           data: {
             bundleId: bundle.bundleId,
             unitIds: createdUnits.map((u) => u.unitId),
             bundle,
-            units: createdUnits,
+            units: activeCreatedUnits,
           },
           message: `${bundle.bundleName} 묶음이 등록되었습니다.`,
         }
@@ -265,13 +258,14 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         if (isSuspendedError(error)) {
           const apiError = error as SlotRestrictionError
           const slotMeta = slots.find((slot) => slot.slotId === payload.slotId) ?? null
-          const message = resolveSlotUnavailableMessage({
-            error: apiError,
+          const message = buildSlotUnavailableMessage({
             slot: slotMeta,
             actionClause: "등록을 진행할 수 없습니다.",
             fallbackMessage: slotMeta
               ? `현재 ${formatSlotDisplayName(slotMeta)}을 사용할 수 없어 등록을 진행할 수 없습니다. 잠시 후 다시 시도해 주세요.`
               : "해당 칸을 사용할 수 없어 등록을 진행할 수 없습니다. 잠시 후 다시 시도해 주세요.",
+            code: apiError.code,
+            message: apiError.message,
           })
           return {
             success: false,
@@ -282,13 +276,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         if (isCapacityError(error)) {
           const apiError = error as ErrorWithStatus & { code?: string; message?: string }
           const slotMeta = slots.find((slot) => slot.slotId === payload.slotId)
-          const slotLabel = slotMeta ? formatSlotDisplayName(slotMeta) : "선택한 칸"
-          const capacity = slotMeta?.capacity
-          const fallbackMessage = capacity
-            ? `${slotLabel} 칸은 최대 ${capacity}개 포장을 보관할 수 있습니다. 기존 포장을 정리하거나 다른 칸을 선택해 주세요.`
-            : `${slotLabel}의 허용량을 초과했습니다. 다른 칸을 선택하거나 기존 포장을 정리해 주세요.`
-          const apiMessage = apiError.message && apiError.message !== "CAPACITY_EXCEEDED" ? apiError.message : undefined
-          const capacityMessage = apiError.code === "CAPACITY_EXCEEDED" ? fallbackMessage : apiMessage ?? fallbackMessage
+          const capacityMessage = buildCapacityExceededMessage(slotMeta)
           return {
             success: false,
             error: capacityMessage,
@@ -301,7 +289,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [currentUserId, slots],
+    [currentUserId, slots, refreshSlots],
   )
 
   const addSingleItem = useCallback<FridgeContextValue["addSingleItem"]>(
@@ -389,21 +377,23 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         )
 
         setUnits((prev) =>
-          prev.map((unit) =>
-            unit.unitId === unitId
-              ? {
-                  ...unit,
-                  name: updatedUnit.name,
-                  expiryDate: updatedUnit.expiryDate,
-                  quantity: updatedUnit.quantity ?? null,
-                  unitCode: updatedUnit.unitCode ?? null,
-                  freshness: updatedUnit.freshness ?? null,
-                  lastInspectedAt: updatedUnit.lastInspectedAt ?? null,
-                  updatedAfterInspection: updatedUnit.updatedAfterInspection,
-                  updatedAt: updatedUnit.updatedAt,
-                  removedAt: updatedUnit.removedAt ?? null,
-                }
-              : unit,
+          filterActiveUnits(
+            prev.map((unit) =>
+              unit.unitId === unitId
+                ? {
+                    ...unit,
+                    name: updatedUnit.name,
+                    expiryDate: updatedUnit.expiryDate,
+                    quantity: updatedUnit.quantity ?? null,
+                    unitCode: updatedUnit.unitCode ?? null,
+                    freshness: updatedUnit.freshness ?? null,
+                    lastInspectedAt: updatedUnit.lastInspectedAt ?? null,
+                    updatedAfterInspection: updatedUnit.updatedAfterInspection,
+                    updatedAt: updatedUnit.updatedAt,
+                    removedAt: updatedUnit.removedAt ?? null,
+                  }
+                : unit,
+            ),
           ),
         )
 
@@ -425,10 +415,11 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           const apiError = error as SlotRestrictionError
           const slotMeta =
             slots.find((slot) => slot.slotId === targetBundle.slotId) ?? null
-          const message = resolveSlotUnavailableMessage({
-            error: apiError,
+          const message = buildSlotUnavailableMessage({
             slot: slotMeta,
             actionClause: "물품을 수정할 수 없습니다.",
+            code: apiError.code,
+            message: apiError.message,
           })
           return {
             success: false,
@@ -488,7 +479,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
               next.push(unit)
             }
           })
-          return next
+          return filterActiveUnits(next)
         })
 
         const pieces: string[] = []
@@ -515,10 +506,11 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
               : patch.memo !== undefined
                 ? "대표 메모를 수정할 수 없습니다."
                 : "대표명을 수정할 수 없습니다."
-          const message = resolveSlotUnavailableMessage({
-            error: apiError,
+          const message = buildSlotUnavailableMessage({
             slot: slotMeta,
             actionClause,
+            code: apiError.code,
+            message: apiError.message,
           })
           return {
             success: false,
@@ -572,10 +564,11 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         if (isSuspendedError(error)) {
           const apiError = error as SlotRestrictionError
-          const message = resolveSlotUnavailableMessage({
-            error: apiError,
+          const message = buildSlotUnavailableMessage({
             slot: slotMeta,
             actionClause: "물품을 삭제할 수 없습니다.",
+            code: apiError.code,
+            message: apiError.message,
           })
           return {
             success: false,
@@ -614,14 +607,16 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
             return { ...slot, occupiedCount: next }
           }),
         )
+        void refreshSlots()
         return { success: true, message: "묶음이 삭제되었습니다." }
       } catch (error) {
         if (isSuspendedError(error)) {
           const apiError = error as SlotRestrictionError
-          const message = resolveSlotUnavailableMessage({
-            error: apiError,
+          const message = buildSlotUnavailableMessage({
             slot: slotMeta,
             actionClause: "묶음을 삭제할 수 없습니다.",
+            code: apiError.code,
+            message: apiError.message,
           })
           return {
             success: false,
@@ -638,7 +633,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [bundles, slots],
+    [bundles, slots, refreshSlots],
   )
 
   const setLastInspectionNow = useCallback(() => {

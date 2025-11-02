@@ -94,6 +94,7 @@ export async function fetchAdminBundleList(
 }
 
 export type FetchDeletedBundlesParams = {
+  slotId?: string
   since?: string
   page?: number
   size?: number
@@ -107,6 +108,9 @@ export async function fetchAdminDeletedBundles(
   const trimmedSince = params.since?.trim()
   if (trimmedSince) {
     search.set("since", trimmedSince)
+  }
+  if (params.slotId) {
+    search.set("slotId", params.slotId)
   }
 
   const page = Number.isInteger(params.page) ? Number(params.page) : 0

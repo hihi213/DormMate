@@ -36,17 +36,13 @@ import {
 import { resolveNotificationMeta } from "@/features/notifications/utils/metadata"
 import type { NotificationStateFilter } from "@/features/notifications/types"
 import { cn } from "@/lib/utils"
+import { getDefaultErrorMessage } from "@/lib/api-errors"
 
 const STATE_OPTIONS: Array<{ value: NotificationStateFilter; label: string }> = [
   { value: "all", label: "전체" },
   { value: "unread", label: "미읽음 우선" },
   { value: "read", label: "읽음" },
 ]
-
-const NOTIFICATION_ERROR_MESSAGES: Record<string, string> = {
-  NOTIFICATION_NOT_FOUND: "해당 알림을 찾을 수 없습니다.",
-  NOTIFICATION_EXPIRED: "이미 만료된 알림입니다. 목록을 새로고침합니다.",
-}
 
 function formatDateTime(value?: string | null, fallback = "정보 없음") {
   if (!value) return fallback
@@ -64,20 +60,6 @@ function formatRelative(value?: string | null) {
   } catch (_error) {
     return ""
   }
-}
-
-function resolveNotificationError(code?: string, fallback?: string): string {
-  const normalized = code?.toUpperCase()
-  if (normalized === "UNAUTHORIZED") {
-    return "세션이 만료되었거나 로그인되지 않았습니다. 다시 로그인해 주세요."
-  }
-  if (normalized === "FORBIDDEN") {
-    return "관리자 권한이 필요합니다. 권한을 확인한 뒤 다시 시도해 주세요."
-  }
-  if (normalized && NOTIFICATION_ERROR_MESSAGES[normalized]) {
-    return NOTIFICATION_ERROR_MESSAGES[normalized]
-  }
-  return fallback ?? "알림 작업 중 오류가 발생했습니다."
 }
 
 export default function AdminNotificationsPage() {
@@ -175,7 +157,8 @@ export default function AdminNotificationsPage() {
   const handleMarkAll = async () => {
     const result = await markAllAsRead()
     if (!result.success) {
-      const message = resolveNotificationError(result.code, result.error)
+      const message =
+        result.error ?? getDefaultErrorMessage(result.code) ?? "알림 작업 중 오류가 발생했습니다."
       toast({
         title: "모든 알림을 읽음 처리하지 못했습니다.",
         description: message,
@@ -192,7 +175,8 @@ export default function AdminNotificationsPage() {
   const handleMarkSingle = async (notificationId: string) => {
     const result = await markAsRead(notificationId)
     if (!result.success) {
-      const message = resolveNotificationError(result.code, result.error)
+      const message =
+        result.error ?? getDefaultErrorMessage(result.code) ?? "알림 작업 중 오류가 발생했습니다."
       toast({
         title: "알림을 읽음 처리하지 못했습니다.",
         description: message,

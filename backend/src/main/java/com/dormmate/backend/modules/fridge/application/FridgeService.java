@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -74,6 +75,7 @@ public class FridgeService {
 
     private static final int MAX_LABEL = 999;
     private static final Pattern LABEL_SEARCH_PATTERN = Pattern.compile("([A-Za-z]+)[-\\s]?([0-9]{1,3})");
+    private static final Pattern SLOT_LETTER_TOKEN_PATTERN = Pattern.compile("\\b([A-Za-z]{1,4})\\b");
     private final FridgeUnitRepository fridgeUnitRepository;
     private final FridgeCompartmentRepository fridgeCompartmentRepository;
     private final CompartmentRoomAccessRepository compartmentRoomAccessRepository;
@@ -228,6 +230,7 @@ public class FridgeService {
         String trimmedSearch = StringUtils.hasText(search) ? search.trim() : null;
         String normalizedKeyword = trimmedSearch != null ? trimmedSearch.toLowerCase() : null;
         LabelSearchCriteria labelCriteria = parseLabelSearch(trimmedSearch).orElse(null);
+        List<Integer> slotLetterCandidates = extractSlotLetterCandidates(trimmedSearch);
 
         FridgeBundleSearchCondition condition = new FridgeBundleSearchCondition(
                 compartmentId,
@@ -237,6 +240,7 @@ public class FridgeService {
                 labelCriteria != null ? labelCriteria.slotIndex() : null,
                 labelCriteria != null ? labelCriteria.labelNumber() : null,
                 StringUtils.hasText(normalizedKeyword),
+                slotLetterCandidates,
                 null,
                 FridgeBundleSearchOrder.CREATED_AT_DESC
         );
@@ -262,7 +266,7 @@ public class FridgeService {
         return new BundleListResponse(summaries, total);
     }
 
-    public BundleListResponse getDeletedBundles(OffsetDateTime since, int page, int size) {
+    public BundleListResponse getDeletedBundles(UUID slotId, OffsetDateTime since, int page, int size) {
         if (!SecurityUtils.hasRole("ADMIN")) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FORBIDDEN");
         }
@@ -271,13 +275,14 @@ public class FridgeService {
         OffsetDateTime baseline = since != null ? since : OffsetDateTime.now(clock).minusMonths(3);
 
         FridgeBundleSearchCondition condition = new FridgeBundleSearchCondition(
-                null,
+                slotId,
                 null,
                 EnumSet.of(FridgeBundleStatus.DELETED),
                 null,
                 null,
                 null,
                 false,
+                List.of(),
                 baseline,
                 FridgeBundleSearchOrder.DELETED_AT_DESC
         );
@@ -526,6 +531,24 @@ public class FridgeService {
         } catch (IllegalArgumentException ex) {
             return Optional.empty();
         }
+    }
+
+    private List<Integer> extractSlotLetterCandidates(String rawKeyword) {
+        if (!StringUtils.hasText(rawKeyword)) {
+            return List.of();
+        }
+        Matcher matcher = SLOT_LETTER_TOKEN_PATTERN.matcher(rawKeyword);
+        Set<Integer> indices = new LinkedHashSet<>();
+        while (matcher.find()) {
+            String token = matcher.group(1);
+            try {
+                int slotIndex = LabelFormatter.fromSlotLetter(token.toUpperCase(Locale.ROOT));
+                indices.add(slotIndex);
+            } catch (IllegalArgumentException ignored) {
+                // 무시: 슬롯 코드 규칙에 맞지 않는 일반 단어
+            }
+        }
+        return List.copyOf(indices);
     }
 
     private record LabelSearchCriteria(int slotIndex, int labelNumber) {

@@ -63,6 +63,10 @@ erDiagram
 ### 4.1 계정 및 권한
 DormMate의 거주자는 호실과 개인 번호를 기반으로 가입 요청을 제출하고, 관리자가 이를 승인하거나 반려한다. 승인되면 즉시 `dorm_user` 레코드가 활성화되어 역할 매핑과 세션 관리가 가능해지고, 반려 시에는 사유를 포함한 결괏값을 `signup_request`에 남겨 추후 감사에 참고한다. Band 톡으로 전달하던 추가 메모는 시스템에 보관하지 않는다.
 
+> **현재 구현 vs 확장 계획**
+> - **현재**: 로그인/세션 유지, 역할 부여/회수, 비밀번호 변경 시 전체 세션 폐기. 리프레시 토큰은 SHA-256 해시로 저장되며 TTL은 환경별 7일로 통일된다.
+> - **향후**: 가입 승인/탈퇴, 벌점 연계, 감사 로그 UI 등은 Phase 2에서 다룬다. 문서에 명시된 `audit_log`, `penalty_history`는 아직 placeholder 상태다.
+
 | 엔터티               | 주요 필드                                                                                                                                                              | 설명 및 정책 근거                                                                                                            |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
 | `dorm_user`       | `id`, `login_id`(unique, lower-case), `password_hash`, `full_name`, `email`, `status`(`PENDING`/`ACTIVE`/`INACTIVE`), `created_at`, `updated_at`, `deactivated_at` | 가입 승인 전까지 `PENDING` 상태 유지(`docs/feature-inventory.md:29`), 탈퇴 시 `INACTIVE` 처리 후 이력 보존(`docs/feature-inventory.md:44`) |
@@ -71,7 +75,10 @@ DormMate의 거주자는 호실과 개인 번호를 기반으로 가입 요청�
 | `room_assignment` | `id`, `room_id`, `dorm_user_id`, `personal_no`, `assigned_at`, `released_at`, `created_at`, `updated_at`                                                          | 호실 배정 이력 및 중도 퇴사 처리. `released_at`이 NULL이면 현 입주자(`nogitReadME.md:18`)                                                 |
 | `role`            | `code`, `name`, `description`, `created_at`, `updated_at`                                                                                                         | `RESIDENT`, `FLOOR_MANAGER`, `ADMIN` 기본 제공                                                                            |
 | `user_role`       | `id`, `dorm_user_id`, `role_code`, `granted_at`, `granted_by`, `revoked_at`, `created_at`, `updated_at`                                                          | 층별장 임명/해제 즉시 반영(`docs/feature-inventory.md:118`). 생성/갱신 시각으로 권한 부여 이력을 추적한다.                           |
-| `user_session`    | `id`, `dorm_user_id`, `refresh_token`(SHA-256 hash), `device_id`, `issued_at`, `expires_at`, `created_at`, `updated_at`, `revoked_at`, `revoked_reason`          | 7일 세션 유지 및 비밀번호 변경 시 세션 무효화(`docs/feature-inventory.md:37`). `device_id`로 기기별 세션을 추적해 중복 로그인 차단·보안 감사에 활용한다. `issued_at`/`updated_at`은 토큰 재발급 이력 확인용이며, 저장 시 리프레시 토큰은 해시 처리해 노출을 방지한다. |
+| `user_session`    | `id`, `dorm_user_id`, `refresh_token_hash`, `device_id`, `issued_at`, `expires_at`, `created_at`, `updated_at`, `revoked_at`, `revoked_reason`                   | 7일 세션 유지 및 비밀번호 변경 시 세션 무효화(`docs/feature-inventory.md:37`). 리프레시 토큰은 SHA-256 해시로 저장되며(`backend/modules/auth/application/AuthService`), `device_id`로 기기별 세션을 추적한다. |
+
+> **Placeholder 엔터티**  
+> `audit_log`, `penalty_history` 등은 Phase 2에서 사용할 예정으로, 현재 릴리스에는 테이블만 정의되어 있거나 stub 상태다. 구현 시 본 문서를 갱신해 실제 필드·정책을 반영해야 한다.
 
 #### 운영 정책 메모
 - **층 구성**: 2층은 남성, 3~5층은 여성 전용으로 운영하며 각 층에는 201~224 형태의 24개 호실이 존재한다.  

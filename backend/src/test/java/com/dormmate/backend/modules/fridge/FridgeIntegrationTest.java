@@ -750,6 +750,132 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void bundleSearchSupportsMultiLetterSlotCodeAndOwnerRoom() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode created = createBundle(residentToken, slotId, "multi-letter-slot");
+        UUID bundleId = UUID.fromString(created.path("bundle").path("bundleId").asText());
+        bundlesToCleanup.add(bundleId);
+
+        Integer originalSlotIndex = jdbcTemplate.queryForObject(
+                "SELECT slot_index FROM fridge_compartment WHERE id = ?",
+                Integer.class,
+                slotId
+        );
+        jdbcTemplate.update("UPDATE fridge_compartment SET slot_index = ? WHERE id = ?", 26, slotId);
+
+        try {
+            MvcResult slotTokenResult = mockMvc.perform(
+                            get("/fridge/bundles")
+                                    .param("owner", "all")
+                                    .param("search", "AA")
+                                    .header("Authorization", "Bearer " + adminToken)
+                    )
+                    .andExpect(status().isOk())
+                    .andReturn();
+
+            JsonNode slotSummaries = objectMapper.readTree(slotTokenResult.getResponse().getContentAsString()).path("items");
+            JsonNode slotSummary = findBundleSummaryById(slotSummaries, bundleId);
+            assertThat(slotSummary).isNotNull();
+            assertThat(slotSummary.path("slotLabel").asText()).isEqualTo("AA");
+
+            String roomSearchToken = jdbcTemplate.queryForObject("""
+                    SELECT CONCAT(r.floor, 'F ', r.room_number)
+                      FROM room_assignment ra
+                      JOIN dorm_user du ON du.id = ra.dorm_user_id
+                      JOIN room r ON r.id = ra.room_id
+                     WHERE du.login_id = ?
+                       AND ra.released_at IS NULL
+                    """, String.class, "alice");
+
+            MvcResult roomResult = mockMvc.perform(
+                            get("/fridge/bundles")
+                                    .param("owner", "all")
+                                    .param("search", roomSearchToken)
+                                    .header("Authorization", "Bearer " + adminToken)
+                    )
+                    .andExpect(status().isOk())
+                    .andReturn();
+
+            JsonNode roomSummaries = objectMapper.readTree(roomResult.getResponse().getContentAsString()).path("items");
+            JsonNode roomSummary = findBundleSummaryById(roomSummaries, bundleId);
+            assertThat(roomSummary).isNotNull();
+            assertThat(roomSummary.path("ownerRoomNumber").asText()).isEqualTo(roomSearchToken);
+        } finally {
+            if (originalSlotIndex != null) {
+                jdbcTemplate.update("UPDATE fridge_compartment SET slot_index = ? WHERE id = ?", originalSlotIndex, slotId);
+            }
+        }
+    }
+
+    @Test
+    void deletedBundleListingCanFilterBySlotId() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String aliceToken = loginAndGetAccessToken("alice", "alice123!");
+        String dianaToken = loginAndGetAccessToken("diana", "diana123!");
+        UUID slotFloor2 = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+        UUID slotFloor3 = fetchSlotId(FLOOR_3, SLOT_INDEX_A);
+
+        clearSlotBundles(slotFloor2);
+        clearSlotBundles(slotFloor3);
+
+        JsonNode aliceBundle = createBundle(aliceToken, slotFloor2, "slot-2F-deleted");
+        UUID aliceBundleId = UUID.fromString(aliceBundle.path("bundle").path("bundleId").asText());
+        bundlesToCleanup.add(aliceBundleId);
+        mockMvc.perform(
+                        delete("/fridge/bundles/" + aliceBundleId)
+                                .header("Authorization", "Bearer " + aliceToken)
+                )
+                .andExpect(status().isNoContent());
+
+        JsonNode dianaBundle = createBundle(dianaToken, slotFloor3, "slot-3F-deleted");
+        UUID dianaBundleId = UUID.fromString(dianaBundle.path("bundle").path("bundleId").asText());
+        bundlesToCleanup.add(dianaBundleId);
+        mockMvc.perform(
+                        delete("/fridge/bundles/" + dianaBundleId)
+                                .header("Authorization", "Bearer " + dianaToken)
+                )
+                .andExpect(status().isNoContent());
+
+        String sinceIso = OffsetDateTime.now(ZoneOffset.UTC).minusDays(1).toString();
+
+        MvcResult filteredResult = mockMvc.perform(
+                        get("/admin/fridge/bundles/deleted")
+                                .param("since", sinceIso)
+                                .param("slotId", slotFloor2.toString())
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode filteredBody = objectMapper.readTree(filteredResult.getResponse().getContentAsString());
+        JsonNode filteredItems = filteredBody.path("items");
+        assertThat(filteredItems.isArray()).isTrue();
+        assertThat(filteredItems.size()).isGreaterThanOrEqualTo(1);
+        filteredItems.forEach(item -> assertThat(item.path("slotId").asText()).isEqualTo(slotFloor2.toString()));
+
+        MvcResult unfilteredResult = mockMvc.perform(
+                        get("/admin/fridge/bundles/deleted")
+                                .param("since", sinceIso)
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode unfilteredItems = objectMapper.readTree(unfilteredResult.getResponse().getContentAsString()).path("items");
+        assertThat(unfilteredItems.isArray()).isTrue();
+        assertThat(unfilteredItems.size()).isGreaterThanOrEqualTo(filteredItems.size());
+        unfilteredItems.forEach(item -> {
+            String slotId = item.path("slotId").asText();
+            assertThat(slotId).isNotEmpty();
+        });
+    }
+
+    @Test
     void floorManagerCanViewBundlesWithoutMemo() throws Exception {
         String residentToken = loginAndGetAccessToken("alice", "alice123!");
         String managerToken = loginAndGetAccessToken("bob", "bob123!");

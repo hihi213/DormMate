@@ -2,16 +2,14 @@
 
 DormMate의 냉장고 임박/만료 알림 배치 스케줄러 운영 기준을 정리한 문서다. 운영자는 본 가이드를 기준으로 재시도, 오류 대응, 복구 절차를 수행한다.
 
-## 1. 배치 스케줄 및 재시도 정책
+## 1. 배치 스케줄 및 현재 동작
 
-- 실행 시각: 매일 09:00 KST에 `FridgeExpiryNotificationScheduler`가 기동한다.
-- 기본 재시도 규칙
-  - 실패 시 5분 간격으로 최대 3회 자동 재시도 (환경 변수 `NOTIFICATION_BATCH_MAX_RETRY`, `NOTIFICATION_BATCH_RETRY_INTERVAL_MINUTES`로 조정 가능).
-  - 재시도 중에도 dedupe 키는 동일하게 유지하여 동일 사용자에게 중복 알림이 생성되지 않도록 한다.
-  - 재시도 횟수 및 상태는 애플리케이션 로그에 `[ALERT][Batch][FRIDGE_EXPIRY] attempt=2 user=... errorCode=...` 포맷으로 남긴다.
-- 3회 모두 실패 시
-  - 관리자 알림(웹/모바일)으로 “임박/만료 배치 실패” 경고를 발송한다.
-  - 운영자는 아래 복구 절차를 따른다.
+- 실행 시각: 매일 09:00 KST에 `FridgeExpiryNotificationScheduler#runDailyBatch`가 한 번 실행된다.
+- 현재 버전에는 자동 재시도 로직이 없다. 실패 시 예외가 로깅되고 `notification_dispatch_log`에 `FAILED` 상태가 기록된다.
+- 알림 TTL은 24시간이며 dedupe 키는 `{kind}:{userId}:{yyyyMMdd}` 형식으로 하루 한 번 알림만 발송된다.
+
+> **향후 계획**  
+> 자동 재시도(예: 5분 간격 3회)와 관리자 경보 발송은 미구현이다. 운영 요구가 생기면 재시도 스케줄러 및 경보 체계를 추가하고 본 가이드를 업데이트한다.
 
 ## 2. 오류 코드 / 로그 표준화
 
@@ -31,9 +29,10 @@ DormMate의 냉장고 임박/만료 알림 배치 스케줄러 운영 기준을 
 ## 3. 수동 재실행 및 복구 절차
 
 1. 장애 원인을 제거했는지 확인한다 (DB/네트워크/시스템 상태).
-2. 수동 재실행 명령(`./gradlew runFridgeExpiryBatch` 또는 운영 환경에 맞는 Trigger)을 사용한다.
+2. 수동 재실행 명령은 아직 스크립트화되어 있지 않다. 필요 시 `FridgeExpiryNotificationScheduler#runDailyBatch`를 Spring Shell/Actuator 혹은 임시 Admin API로 노출해야 한다.
+   - **임시 조치**: 로컬에서 `./gradlew bootRun` 실행 후 `/admin/notifications/run-expiry-batch`(임시 엔드포인트)와 같은 관리용 API를 마련하거나, IDE에서 빈을 수동 실행한다.
 3. 실행 후 `notification_dispatch_log`를 조회해 성공 로그를 확인한다.
-4. 여전히 실패 시 운영 채널(Slack 등)에 재시도 결과와 오류 메시지를 공유하고, 추가 조치를 논의한다.
+4. 여전히 실패 시 운영 채널에 결과와 오류 메시지를 공유하고, 재시도 시점을 합의한다.
 
 ## 4. 참고 문서
 

@@ -17,8 +17,6 @@ tags:
     description: 거주자 냉장고 포장/물품 기능
   - name: Inspections
     description: 층별장 검사 세션 및 결과 기록
-  - name: Events
-    description: 폴링 기반 실시간 이벤트 전파
   - name: FridgeAdmin
     description: 관리자 냉장고 자원 제어
   - name: Notifications
@@ -74,6 +72,9 @@ components:
         status: { type: integer }
         detail: { type: string }
         instance: { type: string }
+        code:
+          type: string
+          description: 서비스 정의 오류 코드(예: `CAPACITY_EXCEEDED`)
     RoleCode:
       type: string
       enum: [RESIDENT, FLOOR_MANAGER, ADMIN]
@@ -639,35 +640,6 @@ components:
         notes:
           type: string
           nullable: true
-    PollEvent:
-      type: object
-      properties:
-        eventId: { type: integer, format: int64 }
-        type: { type: string }
-        resourceId:
-          type: integer
-          format: int64
-          nullable: true
-        floorCode:
-          type: string
-          nullable: true
-        data: { type: string }
-        correlationId:
-          type: string
-          nullable: true
-        createdAt:
-          type: string
-          format: date-time
-          nullable: true
-      required: [eventId, type, data]
-    PollResponse:
-      type: object
-      properties:
-        lastId: { type: integer, format: int64 }
-        events:
-          type: array
-          items: { $ref: '#/components/schemas/PollEvent' }
-      required: [lastId, events]
 paths:
   /auth/login:
     post:
@@ -1322,43 +1294,3 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
-  /events/poll:
-    get:
-      tags: [Events]
-      summary: 폴링 커서 조회
-      description: sinceId 이후 이벤트를 event_id 오름차순으로 반환한다.
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: query
-          name: sinceId
-          schema: { type: integer, format: int64 }
-          description: 마지막으로 수신한 eventId. 빈 값이면 최신 50개를 반환한다.
-        - in: query
-          name: limit
-          schema: { type: integer, minimum: 1, maximum: 200, default: 50 }
-          description: 한번에 받을 이벤트 수 상한
-        - in: query
-          name: resourceId
-          schema: { type: integer, format: int64 }
-          description: 특정 리소스(event_log.resource_id) 필터
-        - in: query
-          name: floor
-          schema:
-            type: string
-          description: "층 코드 필터 (예: 2F)"
-      responses:
-        '200':
-          description: 이벤트 목록
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/PollResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/UnprocessableEntity' }
-        '423':
-          description: 세션 잠금 상태
-          content:
-            application/problem+json:
-              schema: { $ref: '#/components/schemas/Problem' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }

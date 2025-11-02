@@ -31,6 +31,7 @@ import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
+import { getDefaultErrorMessage } from "@/lib/api-errors"
 import { useToast } from "@/hooks/use-toast"
 import {
   applyReallocation,
@@ -55,6 +56,7 @@ import type { ResourceStatus } from "@/features/fridge/types"
 const FLOOR_OPTIONS = [2, 3, 4, 5]
 const BUNDLE_PAGE_SIZE = 8
 const DELETED_PAGE_SIZE = 10
+const LABEL_REUSE_LOOKBACK_MONTHS = 3
 
 const STATUS_BADGE: Record<ResourceStatus, { label: string; className: string }> = {
   ACTIVE: { label: "운영중", className: "bg-emerald-100 text-emerald-700" },
@@ -76,26 +78,6 @@ const INSPECTION_STATUS_LABEL: Record<AdminInspectionSession["status"], string> 
 }
 
 type ApiErrorLike = Error & { code?: string; status?: number }
-
-const REALLOCATION_ERROR_MESSAGES: Record<string, string> = {
-  COMPARTMENT_IN_USE: "잠금 또는 검사 중인 칸이 포함되어 있어 재배분할 수 없습니다. 먼저 상태를 해제한 뒤 다시 시도하세요.",
-  ROOM_NOT_ON_FLOOR: "선택한 호실이 해당 층에 존재하지 않습니다.",
-  COMPARTMENT_NOT_ON_FLOOR: "다른 층에 속한 냉장고 칸이 포함되어 있습니다.",
-  COMPARTMENT_NOT_FOUND: "선택한 냉장고 칸 정보를 찾을 수 없습니다.",
-  COMPARTMENT_UNIT_INACTIVE: "비활성 상태의 냉장고가 포함되어 있습니다. 상태를 활성화한 뒤 다시 시도하세요.",
-  EXCLUSIVE_COMPARTMENT_REQUIRES_ROOMS: "냉장 칸에는 최소 한 개 이상의 호실을 지정해야 합니다.",
-  SHARED_COMPARTMENT_REQUIRES_ROOMS: "냉동 칸에는 층 내 모든 호실을 지정해야 합니다.",
-  SHARED_COMPARTMENT_MUST_INCLUDE_ALL_ROOMS: "냉동 칸에는 층 내 모든 호실을 포함해야 합니다.",
-  DUPLICATE_ROOM_ASSIGNMENT: "동일 호실이 여러 칸에 중복 배정되었습니다.",
-  ROOM_ASSIGNED_MULTIPLE_COMPARTMENTS: "동일 호실이 여러 냉장 칸에 중복 배정되었습니다.",
-  CHILL_COMPARTMENT_MISSING_ASSIGNMENTS: "일부 냉장 칸에 배정된 호실이 없습니다.",
-  ROOM_COVERAGE_MISMATCH: "모든 호실이 균등하게 배정되도록 조정해 주세요.",
-  ROOM_DISTRIBUTION_IMBALANCED: "호실 분배가 균등하지 않습니다. 추천값을 기반으로 조정해 주세요.",
-  CHILL_COMPARTMENT_INACTIVE: "활성 상태의 냉장 칸이 없어 재배분을 진행할 수 없습니다.",
-  ALLOCATIONS_REQUIRED: "재배분할 칸을 선택하고 배정안을 입력해 주세요.",
-  ROOMS_NOT_FOUND_ON_FLOOR: "해당 층에 등록된 호실 정보를 찾을 수 없습니다.",
-  COMPARTMENTS_NOT_FOUND_ON_FLOOR: "해당 층에 배정 가능한 냉장고 칸이 없습니다.",
-}
 
 const REALLOCATION_WARNING_LABELS: Record<string, string> = {
   INACTIVE_COMPARTMENT: "비활성 칸",
@@ -119,40 +101,24 @@ function getErrorCode(error: unknown): string | undefined {
   return undefined
 }
 
-function getErrorStatus(error: unknown): number | undefined {
-  if (error && typeof error === "object" && "status" in error) {
-    const status = (error as ApiErrorLike).status
-    return typeof status === "number" ? status : undefined
-  }
-  return undefined
-}
-
 function resolveReallocationErrorMessage(error: unknown): string {
   const fallback =
     error instanceof Error && error.message ? error.message : "재배분 처리 중 오류가 발생했습니다."
   const code = getErrorCode(error)
-  const status = getErrorStatus(error)
-  if (status === 401 || code === "UNAUTHORIZED") {
-    return "관리자 인증이 필요하거나 세션이 만료되었습니다. 다시 로그인한 뒤 시도해 주세요."
-  }
-  if (status === 403 || code === "FORBIDDEN") {
-    return "재배분 기능은 관리자 권한이 필요합니다. 권한을 확인한 뒤 요청을 다시 시도해 주세요."
-  }
   if (!code) {
     return fallback
   }
-  return REALLOCATION_ERROR_MESSAGES[code] ?? `${fallback} (${code})`
+  return getDefaultErrorMessage(code) ?? `${fallback} (${code})`
 }
 
 function resolveDeletedBundlesError(error: unknown): string {
   const fallback =
     error instanceof Error && error.message ? error.message : "삭제된 포장 이력을 불러오지 못했습니다."
   const code = getErrorCode(error)
-  const status = getErrorStatus(error)
-  if (status === 403 || code === "FORBIDDEN") {
-    return "삭제 이력은 관리자만 열람할 수 있습니다."
+  if (!code) {
+    return fallback
   }
-  return code ? `${fallback} (${code})` : fallback
+  return getDefaultErrorMessage(code) ?? `${fallback} (${code})`
 }
 
 function formatInspectionActionLabel(action: string): string {
@@ -202,6 +168,15 @@ type BundleState = {
   search: string
 }
 
+const INITIAL_BUNDLE_STATE: BundleState = {
+  loading: false,
+  error: null,
+  items: [],
+  totalCount: 0,
+  page: 0,
+  search: "",
+}
+
 type InspectionState = {
   loading: boolean
   error: string | null
@@ -217,15 +192,41 @@ export default function AdminFridgePage() {
   const [slotsError, setSlotsError] = useState<string | null>(null)
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
 
-  const [bundleState, setBundleState] = useState<BundleState>({
-    loading: false,
-    error: null,
-    items: [],
-    totalCount: 0,
-    page: 0,
-    search: "",
-  })
+  const [bundleState, setBundleState] = useState<BundleState>(INITIAL_BUNDLE_STATE)
   const [bundleSearchInput, setBundleSearchInput] = useState("")
+  const [labelReuseLookup, setLabelReuseLookup] = useState<Record<string, string>>({})
+
+  const resetBundleFilters = useCallback(() => {
+    setBundleSearchInput("")
+    setBundleState((prev) => ({
+      ...prev,
+      loading: false,
+      error: null,
+      items: [],
+      totalCount: 0,
+      page: 0,
+      search: "",
+    }))
+  }, [])
+
+  const handleSlotSelect = useCallback(
+    (slotId: string) => {
+      if (slotId === selectedSlotId) return
+      resetBundleFilters()
+      setSelectedSlotId(slotId)
+    },
+    [selectedSlotId, resetBundleFilters],
+  )
+
+  const handleFloorChange = useCallback(
+    (floor: number) => {
+      if (floor === selectedFloor) return
+      resetBundleFilters()
+      setSelectedSlotId(null)
+      setSelectedFloor(floor)
+    },
+    [resetBundleFilters, selectedFloor],
+  )
 
   const [inspectionState, setInspectionState] = useState<InspectionState>({
     loading: false,
@@ -291,8 +292,14 @@ export default function AdminFridgePage() {
         const response = await fetchAdminCompartments({ floor })
         const mapped = response.map(mapAdminSlot)
         setSlots(mapped)
-        if (!mapped.find((slot) => slot.slotId === selectedSlotId)) {
-          setSelectedSlotId(mapped[0]?.slotId ?? null)
+        const hasCurrent = mapped.some((slot) => slot.slotId === selectedSlotId)
+        if (!hasCurrent) {
+          const nextSlotId = mapped[0]?.slotId ?? null
+          if (nextSlotId) {
+            handleSlotSelect(nextSlotId)
+          } else {
+            setSelectedSlotId(null)
+          }
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "칸 정보를 불러오는 중 오류가 발생했습니다."
@@ -306,12 +313,64 @@ export default function AdminFridgePage() {
         setSlotsLoading(false)
       }
     },
-    [selectedSlotId, toast],
+    [selectedSlotId, handleSlotSelect, toast],
   )
 
   useEffect(() => {
     void loadSlots(selectedFloor)
   }, [selectedFloor, loadSlots])
+
+  useEffect(() => {
+    const slotId = selectedSlotId
+    if (!slotId) return
+    let cancelled = false
+    const loadLabelReuse = async () => {
+      try {
+        const sinceISO = subMonths(new Date(), LABEL_REUSE_LOOKBACK_MONTHS).toISOString()
+        const response = await fetchAdminDeletedBundles({
+          slotId,
+          since: sinceISO,
+          page: 0,
+          size: 200,
+        })
+        if (cancelled) return
+        const prefix = `${slotId}::`
+        setLabelReuseLookup((prev) => {
+          const next = { ...prev }
+          Object.keys(next)
+            .filter((key) => key.startsWith(prefix))
+            .forEach((key) => delete next[key])
+          (response.items ?? []).forEach((item) => {
+            if (!item) return
+            if (item.slotId !== slotId) return
+            const label = item.labelDisplay
+            if (!label) return
+            const deletedAt =
+              item.deletedAt ?? item.removedAt ?? item.updatedAt ?? item.createdAt ?? null
+            next[`${prefix}${label}`] = deletedAt ?? ""
+          })
+          return next
+        })
+      } catch (error) {
+        if (cancelled) return
+        console.error("Failed to evaluate label reuse history", error)
+        const prefix = `${slotId}::`
+        setLabelReuseLookup((prev) => {
+          const next = { ...prev }
+          Object.keys(next)
+            .filter((key) => key.startsWith(prefix))
+            .forEach((key) => delete next[key])
+          return next
+        })
+      }
+    }
+
+    void loadLabelReuse()
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedSlotId])
 
   useEffect(() => {
     if (!selectedSlotId) return
@@ -435,8 +494,7 @@ export default function AdminFridgePage() {
   }
 
   const handleResetSearch = () => {
-    setBundleSearchInput("")
-    setBundleState((prev) => ({ ...prev, page: 0, search: "" }))
+    resetBundleFilters()
   }
 
   const handleDeletedOpenChange = (open: boolean) => {
@@ -612,7 +670,7 @@ export default function AdminFridgePage() {
             value={String(selectedFloor)}
             onValueChange={(value) => {
               const parsed = Number(value)
-              setSelectedFloor(Number.isNaN(parsed) ? FLOOR_OPTIONS[0]! : parsed)
+              handleFloorChange(Number.isNaN(parsed) ? FLOOR_OPTIONS[0]! : parsed)
             }}
           >
             <SelectTrigger className="w-[140px]">
@@ -881,7 +939,7 @@ export default function AdminFridgePage() {
                   <button
                     key={slot.slotId}
                     type="button"
-                    onClick={() => setSelectedSlotId(slot.slotId)}
+                    onClick={() => handleSlotSelect(slot.slotId)}
                     className={cn(
                       "flex h-full flex-col rounded-xl border bg-white p-4 text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2",
                       isSelected
@@ -1151,6 +1209,9 @@ export default function AdminFridgePage() {
                         <TableBody>
                           {bundleState.items.map((bundle) => {
                             const freshnessBadge = formatFreshness(bundle.freshness)
+                            const reuseKey = `${bundle.slotId}::${bundle.labelDisplay}`
+                            const reuseInfo = labelReuseLookup[reuseKey]
+                            const reuseDisplayDate = reuseInfo ? formatDateTime(reuseInfo, "-") : null
                             return (
                               <TableRow key={bundle.bundleId}>
                                 <TableCell className="font-medium">{bundle.labelDisplay}</TableCell>
@@ -1175,6 +1236,18 @@ export default function AdminFridgePage() {
                                   {freshnessBadge ? (
                                     <Badge className={freshnessBadge.className}>
                                       {freshnessBadge.label}
+                                    </Badge>
+                                  ) : null}
+                                  {reuseInfo ? (
+                                    <Badge
+                                      className="bg-sky-100 text-sky-700"
+                                      title={
+                                        reuseDisplayDate
+                                          ? `최근 삭제 시각 ${reuseDisplayDate}`
+                                          : undefined
+                                      }
+                                    >
+                                      라벨 재사용
                                     </Badge>
                                   ) : null}
                                 </TableCell>

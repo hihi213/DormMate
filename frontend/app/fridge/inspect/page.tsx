@@ -110,6 +110,15 @@ function InspectInner() {
   const prevStorageKeyRef = useRef<string | null>(null)
   const [lastDraftSavedAt, setLastDraftSavedAt] = useState<number | null>(null)
 
+  const refreshSlots = useCallback(async () => {
+    try {
+      const data = await fetchInspectionSlots()
+      setSlots(data)
+    } catch (error) {
+      console.error("Failed to refresh inspection slots", error)
+    }
+  }, [])
+
   useEffect(() => {
     const current = getCurrentUser()
     const canInspect = current?.roles.includes("FLOOR_MANAGER") || current?.roles.includes("ADMIN")
@@ -556,6 +565,7 @@ function InspectInner() {
       setSession(response)
       setStage("committed")
       clearStoredResults()
+      await refreshSlots()
       toast({
         title: "검사 결과가 제출되었습니다.",
       })
@@ -576,6 +586,7 @@ function InspectInner() {
     try {
       await cancelInspection(session.sessionId)
       clearStoredResults()
+      await refreshSlots()
       toast({ title: "검사 세션이 취소되었습니다." })
     } catch (error) {
       const message = error instanceof Error ? error.message : "검사 취소에 실패했습니다."

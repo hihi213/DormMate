@@ -1,6 +1,7 @@
 package com.dormmate.backend.modules.fridge.presentation;
 
 import java.time.OffsetDateTime;
+import java.util.UUID;
 
 import com.dormmate.backend.modules.fridge.application.FridgeService;
 import com.dormmate.backend.modules.fridge.presentation.dto.BundleListResponse;
@@ -26,9 +27,10 @@ public class FridgeAdminBundleController {
     public ResponseEntity<BundleListResponse> getDeletedBundles(
             @RequestParam(name = "since", required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) OffsetDateTime since,
+            @RequestParam(name = "slotId", required = false) UUID slotId,
             @RequestParam(name = "page", defaultValue = "0") int page,
             @RequestParam(name = "size", defaultValue = "20") int size
     ) {
-        return ResponseEntity.ok(fridgeService.getDeletedBundles(since, page, size));
+        return ResponseEntity.ok(fridgeService.getDeletedBundles(slotId, since, page, size));
     }
 }
