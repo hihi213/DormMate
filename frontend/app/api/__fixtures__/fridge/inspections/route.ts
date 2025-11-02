@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server"
+import { buildInspectionSchedules } from "../backend/_lib/fixture-auth"
 
 const slotId = "00000000-0000-0000-0000-00000000a001"
 const cancelNote = "자동화 테스트용 취소 세션 메모"
@@ -54,6 +55,8 @@ export async function GET(request: Request) {
       return NextResponse.json(slotListResponse)
     case "active":
       return new NextResponse(null, { status: 204 })
+    case "schedules":
+      return NextResponse.json(buildInspectionSchedules())
     case "history":
     default:
       return NextResponse.json([canceledSessionDto])
