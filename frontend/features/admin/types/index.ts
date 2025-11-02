@@ -34,11 +34,17 @@ export type AdminResource = {
   lastInspection?: string
 }
 
+export type AdminUserRole = "RESIDENT" | "FLOOR_MANAGER" | "ADMIN"
+
 export type AdminUser = {
   id: string
   name: string
-  room: string
-  role: "RESIDENT" | "FLOOR_MANAGER" | "ADMIN"
+  room: string | null
+  floor?: number | null
+  roomCode?: string | null
+  personalNo?: number | null
+  role: AdminUserRole
+  roles?: AdminUserRole[]
   status: "ACTIVE" | "INACTIVE"
   lastLogin: string
   inspectionsInProgress?: number

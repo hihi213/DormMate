@@ -42,6 +42,7 @@ export type PaginatedTableProps<TData> = {
     onPageChange?: (page: number) => void
   }
   getRowId?: (row: TData, index: number) => React.Key
+  onRowClick?: (row: TData, index: number) => void
   className?: string
 }
 
@@ -55,6 +56,7 @@ export function PaginatedTable<TData>({
   emptyMessage = "표시할 데이터가 없습니다.",
   pagination,
   getRowId,
+  onRowClick,
   className,
 }: PaginatedTableProps<TData>) {
   const totalPages = React.useMemo(() => {
@@ -144,11 +146,24 @@ export function PaginatedTable<TData>({
               </TableCell>
             </TableRow>
           ) : (
-            data.map((row, index) => (
-              <TableRow
-                key={getRowId ? getRowId(row, index) : index}
-                data-row-index={index}
-              >
+            data.map((row, index) => {
+              const clickable = Boolean(onRowClick)
+              return (
+                <TableRow
+                  key={getRowId ? getRowId(row, index) : index}
+                  data-row-index={index}
+                  className={cn(clickable && "cursor-pointer transition hover:bg-muted/40")}
+                  onClick={() => onRowClick?.(row, index)}
+                  onKeyDown={(event) => {
+                    if (!onRowClick) return
+                    if (event.key === "Enter" || event.key === " ") {
+                      event.preventDefault()
+                      onRowClick(row, index)
+                    }
+                  }}
+                  tabIndex={clickable ? 0 : undefined}
+                  role={clickable ? "button" : undefined}
+                >
                 {columns.map((column) => (
                   <TableCell
                     key={String(column.key)}
@@ -164,8 +179,9 @@ export function PaginatedTable<TData>({
                         ] ?? "—"}
                   </TableCell>
                 ))}
-              </TableRow>
-            ))
+                </TableRow>
+              )
+            })
           )}
         </TableBody>
       </Table>

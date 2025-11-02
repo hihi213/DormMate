@@ -21,6 +21,8 @@ tags:
     description: 관리자 냉장고 자원 제어
   - name: Notifications
     description: 사용자 알림 조회 및 설정
+  - name: Admin
+    description: 관리자 대시보드 및 계정 관리
 components:
   securitySchemes:
     BearerAuth:
@@ -74,7 +76,7 @@ components:
         instance: { type: string }
         code:
           type: string
-          description: 서비스 정의 오류 코드(예: `CAPACITY_EXCEEDED`)
+          description: "서비스 정의 오류 코드(예: `CAPACITY_EXCEEDED`)"
     RoleCode:
       type: string
       enum: [RESIDENT, FLOOR_MANAGER, ADMIN]
@@ -160,6 +162,43 @@ components:
         createdAt: { type: string, format: date-time }
         updatedAt: { type: string, format: date-time }
       required: [userId, loginId, displayName, roles, isFloorManager, isAdmin, createdAt, updatedAt]
+    AdminUser:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        room:
+          type: string
+          nullable: true
+        floor:
+          type: integer
+          nullable: true
+        roomCode:
+          type: string
+          nullable: true
+        personalNo:
+          type: integer
+          nullable: true
+        role: { $ref: '#/components/schemas/RoleCode' }
+        roles:
+          type: array
+          items: { $ref: '#/components/schemas/RoleCode' }
+        status:
+          type: string
+          enum: [ACTIVE, INACTIVE]
+        lastLogin: { type: string }
+        inspectionsInProgress:
+          type: integer
+        penalties:
+          type: integer
+      required: [id, name, role, status, lastLogin, inspectionsInProgress, penalties]
+    AdminUsersResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/AdminUser' }
+      required: [items]
     SlotType:
       type: string
       enum: [CHILL, FREEZE]
@@ -734,6 +773,21 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 
+  /admin/users:
+    get:
+      tags: [Admin]
+      summary: 관리자 사용자 목록 조회
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: 사용자 목록
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminUsersResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /admin/fridge/compartments/{compartmentId}:
     patch:
       tags: [FridgeAdmin]
@@ -921,7 +975,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/ReallocationApplyResponse' }
         '400':
-          description: 잘못된 재배분 요청 (예: ROOM_NOT_ON_FLOOR, ROOM_DISTRIBUTION_IMBALANCED, SHARED_COMPARTMENT_MUST_INCLUDE_ALL_ROOMS)
+          description: "잘못된 재배분 요청 (예: ROOM_NOT_ON_FLOOR, ROOM_DISTRIBUTION_IMBALANCED, SHARED_COMPARTMENT_MUST_INCLUDE_ALL_ROOMS)"
           content:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
