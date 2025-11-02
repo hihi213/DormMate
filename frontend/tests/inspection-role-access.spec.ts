@@ -40,8 +40,9 @@ test.describe('검사 권한 UI 가드', () => {
     await setupFixtureAuthSession(page, { role: 'floorManager' });
     await page.goto('/fridge/inspections');
 
-    await expect(page.getByText('검사 진행 현황')).toBeVisible();
-    await expect(page.getByText('내 보관 칸')).toBeVisible();
-    await expect(page.getByText('냉장(A)').first()).toBeVisible();
+    await expect(page.getByRole('heading', { name: '검사 일정' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '일정 추가' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '검사 시작' })).toBeVisible();
+    await expect(page.getByText('냉장(A)')).toBeVisible();
   });
 });
