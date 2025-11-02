@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | `@admin` | 공통 관리자 smoke (로그인, 대시보드 렌더) | 모든 관리자 스펙의 상위 태그 |
 | `@admin-resource` | 냉장고 자원 관리(필터, 상세 Drawer, 재배분 흐름) | Future: 세탁/도서관/다목적실 확장 |
-| `@admin-roles` | 층별장 임명/해제, 관리자 권한 변경 | 진행 중 검사 세션 경고 검사 |
+| `@admin-roles` | 층별장 임명/해제, 관리자 권한 변경 | 권한 변경 알림 및 감사 로그 확인 |
 | `@admin-policy` | 알림·벌점 정책 수정, DangerZone 확인 | 09:00 배치/TTL 재설정 검증 |
 | `@admin-report` | 보고서 다운로드, 감사 로그 조회 | CSV 존재 여부 및 파일명 패턴 검사 |
 | `@admin-responsive` (옵션) | 주요 화면 반응형 뷰포트 스냅샷 | smoke 완료 후 opt-in |
@@ -43,7 +43,7 @@
 
 ### 4.3 `admin-roles.spec.ts` (`@admin`, `@admin-roles`)
 1. 권한·계정 탭 → 층별장 필터 적용.
-2. 행 선택 후 `층별장 해제` 클릭 → 진행 중 검사 세션 안내 노출 확인.
+2. 행 선택 후 `층별장 해제` 클릭 → 확인 다이얼로그 및 토스트 안내 검증.
 3. 임명/해제 성공 후 감사 로그 Drawer에서 최근 항목 존재 검증.
 
 ### 4.4 `admin-policy.spec.ts` (`@admin`, `@admin-policy`)

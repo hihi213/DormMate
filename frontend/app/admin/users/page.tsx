@@ -252,8 +252,7 @@ export default function AdminUsersPage() {
               </Badge>
               <h1 className="text-2xl font-semibold text-slate-900">층별장 및 관리자 계정 관리</h1>
               <p className="text-sm text-slate-600">
-                층별장 승격/복귀, 관리자 임명, 계정 비활성화를 처리합니다. 진행 중 검사 세션이 있는 경우 승계·종료 절차를
-                먼저 확인하세요.
+                층별장 승격/복귀, 관리자 임명, 계정 비활성화를 처리합니다. 변경 이력은 감사 로그에서 추적하세요.
               </p>
             </div>
             <Badge variant="secondary" className="h-fit rounded-full bg-emerald-100 px-4 py-1 text-sm font-medium text-emerald-700">
@@ -519,6 +518,7 @@ export default function AdminUsersPage() {
               : ""
           }
           open={Boolean(drawerUser)}
+          direction="right"
           onOpenChange={(open) => {
             if (!open) closeDrawer()
           }}
@@ -537,10 +537,6 @@ export default function AdminUsersPage() {
                 <div>
                   <Label className="text-xs text-muted-foreground">추가 권한</Label>
                   <p className="font-medium text-slate-900">{drawerUser.role === "FLOOR_MANAGER" ? "층별장" : "-"}</p>
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">진행 중 검사</Label>
-                  <p className="font-medium text-slate-900">{drawerUser.inspectionsInProgress ?? 0}건</p>
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">누적 벌점</Label>

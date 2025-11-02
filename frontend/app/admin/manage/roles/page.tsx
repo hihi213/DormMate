@@ -71,7 +71,7 @@ export default function AdminRolesPage() {
       <header className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold text-slate-800">권한·계정</h1>
         <p className="text-sm text-muted-foreground">
-          층별장 승격/복귀, 관리자 임명, 계정 비활성화를 처리합니다. 진행 중 검사 세션이 있을 경우 안전 종료 또는 승계를 안내합니다.
+          층별장 승격/복귀, 관리자 임명, 계정 비활성화를 처리합니다. 권한 변경 후 감사 로그에 사유를 남기고 운영 공지로 공유하세요.
         </p>
       </header>
 
@@ -198,7 +198,7 @@ export default function AdminRolesPage() {
           },
         }}
       >
-        <span className="text-xs text-muted-foreground">층별장 변경 시 진행 중 검사 세션 승계/종료 절차를 확인하세요.</span>
+        <span className="text-xs text-muted-foreground">층별장 변경 후 감사 로그와 운영 공지를 통해 이력을 공유하세요.</span>
       </BulkEditor>
 
       <DetailsDrawer
@@ -219,10 +219,6 @@ export default function AdminRolesPage() {
               <div>
                 <Label className="text-xs text-muted-foreground">계정 상태</Label>
                 <p className="font-medium text-slate-900">{drawerUser.status}</p>
-              </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">진행 중 검사</Label>
-                <p className="font-medium text-slate-900">{drawerUser.inspectionsInProgress ?? 0}건</p>
               </div>
               <div>
                 <Label className="text-xs text-muted-foreground">누적 벌점</Label>
