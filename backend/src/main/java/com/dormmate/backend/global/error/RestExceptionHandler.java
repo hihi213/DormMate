@@ -1,5 +1,6 @@
 package com.dormmate.backend.global.error;
 
+import com.dormmate.backend.global.error.ProblemException;
 import com.dormmate.backend.global.error.ProblemResponse;
 
 import org.springframework.http.HttpStatus;
@@ -20,6 +21,16 @@ public class RestExceptionHandler {
         HttpStatus status = statusCode instanceof HttpStatus httpStatus
                 ? httpStatus
                 : HttpStatus.valueOf(statusCode.value());
+        if (ex instanceof ProblemException problemException) {
+            ProblemResponse body = ProblemResponse.of(
+                    status,
+                    problemException.getCode(),
+                    problemException.getDetailMessage(),
+                    null,
+                    problemException.getProblemType()
+            );
+            return ResponseEntity.status(status).body(body);
+        }
         String message = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
         ProblemResponse body = ProblemResponse.of(status, message, message, null);
         return ResponseEntity.status(status).body(body);

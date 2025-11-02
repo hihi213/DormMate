@@ -13,6 +13,11 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import static org.springframework.http.HttpStatus.BAD_REQUEST;
+import static org.springframework.http.HttpStatus.CONFLICT;
+import static org.springframework.http.HttpStatus.NOT_FOUND;
+
+import com.dormmate.backend.global.error.ProblemException;
 import com.dormmate.backend.modules.auth.domain.Room;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.RoomRepository;
 import com.dormmate.backend.modules.fridge.domain.CompartmentRoomAccess;
@@ -35,7 +40,6 @@ import com.dormmate.backend.modules.inspection.infrastructure.persistence.Inspec
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import org.springframework.web.server.ResponseStatusException;
 
 @Service
 @Transactional
@@ -66,7 +70,7 @@ public class FridgeReallocationService {
         short floor = request.floor();
         List<Room> rooms = roomRepository.findByFloorOrderByRoomNumber(floor);
         if (rooms.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "ROOMS_NOT_FOUND_ON_FLOOR");
+            throw problem(NOT_FOUND, "ROOMS_NOT_FOUND_ON_FLOOR", "No rooms registered on floor %d".formatted(floor));
         }
 
         List<FridgeCompartment> compartments = fridgeCompartmentRepository.findByFloorWithAccesses(floor).stream()
@@ -75,7 +79,7 @@ public class FridgeReallocationService {
                 .toList();
 
         if (compartments.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "COMPARTMENTS_NOT_FOUND_ON_FLOOR");
+            throw problem(NOT_FOUND, "COMPARTMENTS_NOT_FOUND_ON_FLOOR", "No active fridge compartments found on floor %d".formatted(floor));
         }
 
         Set<UUID> compartmentIds = compartments.stream()
@@ -116,7 +120,7 @@ public class FridgeReallocationService {
         short floor = request.floor();
         List<Room> rooms = roomRepository.findByFloorOrderByRoomNumber(floor);
         if (rooms.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "ROOMS_NOT_FOUND_ON_FLOOR");
+            throw problem(NOT_FOUND, "ROOMS_NOT_FOUND_ON_FLOOR", "No rooms registered on floor %d".formatted(floor));
         }
         Map<UUID, Room> roomMap = rooms.stream().collect(Collectors.toMap(Room::getId, room -> room));
 
@@ -124,12 +128,12 @@ public class FridgeReallocationService {
                 .map(CompartmentAllocationInput::compartmentId)
                 .toList();
         if (requestedCompartmentIds.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ALLOCATIONS_REQUIRED");
+            throw problem(BAD_REQUEST, "ALLOCATIONS_REQUIRED", "At least one compartment allocation must be provided");
         }
 
         List<FridgeCompartment> compartments = fridgeCompartmentRepository.findByIdInForUpdate(requestedCompartmentIds);
         if (compartments.size() != requestedCompartmentIds.size()) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "COMPARTMENT_NOT_FOUND");
+            throw problem(NOT_FOUND, "COMPARTMENT_NOT_FOUND", "One or more compartments do not exist on floor %d".formatted(floor));
         }
 
         Map<UUID, FridgeCompartment> compartmentLookup = compartments.stream()
@@ -144,10 +148,10 @@ public class FridgeReallocationService {
         for (FridgeCompartment compartment : compartments) {
             FridgeUnit unit = compartment.getFridgeUnit();
             if (unit.getFloorNo() != floor) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "COMPARTMENT_NOT_ON_FLOOR");
+                throw problem(BAD_REQUEST, "COMPARTMENT_NOT_ON_FLOOR", "Compartment %s is not on floor %d".formatted(compartment.getId(), floor));
             }
             if (!unit.getStatus().isActive()) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "COMPARTMENT_UNIT_INACTIVE");
+                throw problem(CONFLICT, "COMPARTMENT_UNIT_INACTIVE", "Fridge unit is inactive for compartment %s".formatted(compartment.getId()));
             }
         }
 
@@ -156,7 +160,7 @@ public class FridgeReallocationService {
         Map<UUID, List<UUID>> requestedAssignments = new HashMap<>();
         for (CompartmentAllocationInput input : request.allocations()) {
             FridgeCompartment compartment = Optional.ofNullable(compartmentLookup.get(input.compartmentId()))
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "COMPARTMENT_NOT_FOUND"));
+                    .orElseThrow(() -> problem(NOT_FOUND, "COMPARTMENT_NOT_FOUND", "Compartment %s not found".formatted(input.compartmentId())));
             List<UUID> roomIds = input.roomIds() == null ? List.of() : input.roomIds();
             if (compartment.getCompartmentType() == CompartmentType.CHILL) {
                 validateExclusiveRooms(roomIds, floorRoomIds, compartment);
@@ -165,13 +169,14 @@ public class FridgeReallocationService {
             }
             roomIds.forEach(roomId -> {
                 if (!roomMap.containsKey(roomId)) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ROOM_NOT_ON_FLOOR");
+                    throw problem(BAD_REQUEST, "ROOM_NOT_ON_FLOOR", "Room %s is not registered on floor %d".formatted(roomId, floor));
                 }
             });
             requestedAssignments.put(compartment.getId(), List.copyOf(roomIds));
         }
 
         ensureChillCoverage(compartments, requestedAssignments, floorRoomIds);
+        ensureUniformDistribution(compartments, requestedAssignments, floorRoomIds.size());
 
         OffsetDateTime now = OffsetDateTime.now(clock);
         int releasedCount = 0;
@@ -182,7 +187,7 @@ public class FridgeReallocationService {
                 continue;
             }
             if (compartment.isLocked() || inProgressCompartmentIds.contains(compartment.getId())) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "COMPARTMENT_IN_USE");
+                throw problem(CONFLICT, "COMPARTMENT_IN_USE", "Compartment %s is locked or under inspection".formatted(compartment.getId()));
             }
             List<CompartmentRoomAccess> activeAccesses = compartmentRoomAccessRepository
                     .findByFridgeCompartmentIdAndReleasedAtIsNullOrderByAssignedAtAsc(compartment.getId());
@@ -287,27 +292,28 @@ public class FridgeReallocationService {
     }
 
     private void validateExclusiveRooms(List<UUID> roomIds, Set<UUID> floorRoomIds, FridgeCompartment compartment) {
+        String slotLabel = LabelFormatter.toSlotLetter(compartment.getSlotIndex());
         if (roomIds.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "EXCLUSIVE_COMPARTMENT_REQUIRES_ROOMS");
+            throw problem(BAD_REQUEST, "EXCLUSIVE_COMPARTMENT_REQUIRES_ROOMS", "Slot %s requires at least one room assignment".formatted(slotLabel));
         }
         Set<UUID> duplicates = findDuplicates(roomIds);
         if (!duplicates.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "DUPLICATE_ROOM_ASSIGNMENT");
+            throw problem(BAD_REQUEST, "DUPLICATE_ROOM_ASSIGNMENT", "Duplicate room assignment detected for slot %s".formatted(slotLabel));
         }
         for (UUID roomId : roomIds) {
             if (!floorRoomIds.contains(roomId)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ROOM_NOT_ON_FLOOR");
+                throw problem(BAD_REQUEST, "ROOM_NOT_ON_FLOOR", "Room %s is not on the selected floor".formatted(roomId));
             }
         }
     }
 
     private void validateSharedRooms(List<UUID> roomIds, Set<UUID> floorRoomIds, FridgeCompartment compartment) {
         if (roomIds.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SHARED_COMPARTMENT_REQUIRES_ROOMS");
+            throw problem(BAD_REQUEST, "SHARED_COMPARTMENT_REQUIRES_ROOMS", "Shared freezer slots must include the full floor coverage");
         }
         Set<UUID> unique = new HashSet<>(roomIds);
         if (!unique.equals(floorRoomIds)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SHARED_COMPARTMENT_MUST_INCLUDE_ALL_ROOMS");
+            throw problem(BAD_REQUEST, "SHARED_COMPARTMENT_MUST_INCLUDE_ALL_ROOMS", "Shared freezer must include every room on the floor");
         }
     }
 
@@ -326,16 +332,49 @@ public class FridgeReallocationService {
             }
             List<UUID> rooms = requestedAssignments.get(compartment.getId());
             if (rooms == null || rooms.isEmpty()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "CHILL_COMPARTMENT_MISSING_ASSIGNMENTS");
+                throw problem(BAD_REQUEST, "CHILL_COMPARTMENT_MISSING_ASSIGNMENTS", "Chill compartment %s missing assignments".formatted(compartment.getId()));
             }
             for (UUID roomId : rooms) {
                 if (!coverage.add(roomId)) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ROOM_ASSIGNED_MULTIPLE_COMPARTMENTS");
+                    throw problem(BAD_REQUEST, "ROOM_ASSIGNED_MULTIPLE_COMPARTMENTS", "Room %s assigned to multiple chill compartments".formatted(roomId));
                 }
             }
         }
         if (!coverage.equals(floorRoomIds)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ROOM_COVERAGE_MISMATCH");
+            throw problem(BAD_REQUEST, "ROOM_COVERAGE_MISMATCH", "Chill compartment assignment coverage mismatch for floor");
+        }
+    }
+
+    private void ensureUniformDistribution(
+            List<FridgeCompartment> compartments,
+            Map<UUID, List<UUID>> requestedAssignments,
+            int totalRooms
+    ) {
+        List<FridgeCompartment> activeChill = compartments.stream()
+                .filter(compartment -> compartment.getCompartmentType() == CompartmentType.CHILL)
+                .filter(compartment -> compartment.getStatus().isActive())
+                .sorted(Comparator.comparingInt(FridgeCompartment::getSlotIndex))
+                .toList();
+
+        if (activeChill.isEmpty()) {
+            throw problem(BAD_REQUEST, "CHILL_COMPARTMENT_INACTIVE", "No active chill compartments available for distribution");
+        }
+        if (totalRooms == 0) {
+            throw problem(BAD_REQUEST, "ROOMS_NOT_FOUND_ON_FLOOR", "No rooms registered on the selected floor");
+        }
+
+        int baseQuota = totalRooms / activeChill.size();
+        int remainder = totalRooms % activeChill.size();
+
+        for (int i = 0; i < activeChill.size(); i++) {
+            FridgeCompartment compartment = activeChill.get(i);
+            int expected = baseQuota + (i < remainder ? 1 : 0);
+            int actual = requestedAssignments.getOrDefault(compartment.getId(), List.of()).size();
+            if (actual != expected) {
+                String slotLabel = LabelFormatter.toSlotLetter(compartment.getSlotIndex());
+                String detail = "Slot %s must receive %d rooms but received %d".formatted(slotLabel, expected, actual);
+                throw problem(BAD_REQUEST, "ROOM_DISTRIBUTION_IMBALANCED", detail);
+            }
         }
     }
 
@@ -344,5 +383,13 @@ public class FridgeReallocationService {
         return values.stream()
                 .filter(value -> !seen.add(value))
                 .collect(Collectors.toSet());
+    }
+
+    private ProblemException problem(HttpStatus status, String code, String detail) {
+        return new ProblemException(status, code, detail);
+    }
+
+    private ProblemException problem(HttpStatus status, String code) {
+        return problem(status, code, null);
     }
 }

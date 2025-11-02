@@ -1,7 +1,7 @@
 "use client"
 
 import Link from "next/link"
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import {
   AlertCircle,
   AlertTriangle,
@@ -169,6 +169,34 @@ export default function AdminFridgePage() {
   const selectedSlot = useMemo(
     () => slots.find((slot) => slot.slotId === selectedSlotId) ?? null,
     [slots, selectedSlotId],
+  )
+
+  const actionShortcuts = useMemo(
+    () => [
+      {
+        id: "preview",
+        label: `${selectedFloor}층 재배분 프리뷰`,
+        description: "호실 분배 추천안을 생성하고 잠금/검사 중 칸을 확인합니다.",
+        onClick: () => setReallocationOpen(true),
+      },
+      {
+        id: "deleted",
+        label: "삭제 이력 확인",
+        description: "최근 3개월 내 삭제된 포장을 검토하고 복구 필요 여부를 판단합니다.",
+        onClick: () =>
+          setDeletedState((prev) => ({
+            ...prev,
+            open: true,
+          })),
+      },
+      {
+        id: "audit",
+        label: "감사 로그",
+        description: "칸 상태 변경 및 재배분 기록을 감사 로그에서 추적합니다.",
+        href: "/admin/audit?module=fridge",
+      },
+    ],
+    [selectedFloor],
   )
 
   const loadSlots = useCallback(
@@ -475,12 +503,13 @@ export default function AdminFridgePage() {
   }, [reallocationPreview])
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="rounded-full bg-emerald-100 p-2">
-            <Snowflake className="size-5 text-emerald-600" aria-hidden />
-          </span>
+    <Fragment>
+      <div data-admin-slot="main" className="space-y-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="rounded-full bg-emerald-100 p-2">
+              <Snowflake className="size-5 text-emerald-600" aria-hidden />
+            </span>
           <div>
             <h1 className="text-xl font-semibold text-slate-900">냉장고 칸 운영 현황</h1>
             <p className="text-sm text-slate-500">
@@ -1209,11 +1238,91 @@ export default function AdminFridgePage() {
             </Tabs>
           ) : (
             <div className="rounded-lg border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-              좌측에서 확인할 칸을 먼저 선택하세요.
-            </div>
-          )}
-        </section>
+            좌측에서 확인할 칸을 먼저 선택하세요.
+          </div>
+        )}
+      </section>
       </div>
-    </div>
+      </div>
+      <aside
+        data-admin-slot="rail"
+        className="space-y-4"
+        aria-label="냉장고 운영 퀵 액션"
+      >
+        <section className="rounded-2xl border border-emerald-100 bg-white/90 p-5 shadow-sm">
+          <h2 className="text-sm font-semibold text-slate-900">빠른 실행</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            재배분과 감사 로그를 즉시 열 수 있습니다. Cmd/Ctrl + K로 전역 검색창에 집중하세요.
+          </p>
+          <ul className="mt-4 space-y-3 text-sm text-slate-700">
+            {actionShortcuts.map((item) => (
+              <li key={item.id} className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="font-semibold text-emerald-700">{item.label}</p>
+                    <p className="mt-1 text-xs text-slate-500">{item.description}</p>
+                  </div>
+                  {item.href ? (
+                    <Button asChild size="icon" variant="ghost" className="text-emerald-600">
+                      <Link href={item.href} aria-label={`${item.label} 이동`}>
+                        <ArrowRight className="size-4" aria-hidden />
+                      </Link>
+                    </Button>
+                  ) : (
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      className="text-emerald-600"
+                      onClick={item.onClick}
+                      aria-label={`${item.label} 실행`}
+                    >
+                      <ArrowRight className="size-4" aria-hidden />
+                    </Button>
+                  )}
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+        {selectedSlot ? (
+          <section className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm" aria-label="선택된 칸 요약">
+            <h2 className="text-sm font-semibold text-slate-900">선택된 칸</h2>
+            <dl className="mt-3 space-y-2 text-xs text-slate-600">
+              <div className="flex items-center justify-between">
+                <dt>칸</dt>
+                <dd className="font-medium text-slate-900">
+                  {selectedSlot.displayName ?? `${selectedSlot.floorNo}F ${selectedSlot.slotLetter}`}
+                </dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt>상태</dt>
+                <dd className="font-medium text-slate-900">{selectedSlot.resourceStatus}</dd>
+              </div>
+              <div className="flex items-center justify-between">
+                <dt>점유</dt>
+                <dd className="font-medium text-slate-900">
+                  {typeof selectedSlot.occupiedCount === "number" && typeof selectedSlot.capacity === "number"
+                    ? `${selectedSlot.occupiedCount}/${selectedSlot.capacity}`
+                    : "정보 없음"}
+                </dd>
+              </div>
+              {selectedSlot.locked ? (
+                <div className="flex items-center justify-between">
+                  <dt>잠금 해제 예정</dt>
+                  <dd className="font-medium text-amber-600">
+                    {formatRelative(selectedSlot.lockedUntil) || "확인 필요"}
+                  </dd>
+                </div>
+              ) : null}
+            </dl>
+            <Button asChild variant="outline" size="sm" className="mt-4 w-full">
+              <Link href={`/admin/audit?module=fridge&slotId=${selectedSlot.slotId}`}>
+                감사 로그 상세 보기
+              </Link>
+            </Button>
+          </section>
+        ) : null}
+      </aside>
+    </Fragment>
   )
 }

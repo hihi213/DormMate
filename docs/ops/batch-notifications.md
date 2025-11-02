@@ -20,6 +20,7 @@ DormMate의 냉장고 임박/만료 알림 배치 스케줄러 운영 기준을 
   - `EXPIRED_BATCH_FAILED`: 만료 배치 실패
 - `errorMessage`에는 root cause만 기록한다 (예: SQLSTATE, HTTP status 등).
 - 애플리케이션 로그는 `[ALERT][Batch][FRIDGE_EXPIRY] attempt=2 user=… errorCode=EXPIRY_BATCH_FAILED detail=…` 포맷으로 남겨 모니터링 시스템이 파싱할 수 있게 한다.
+- 실패 시에도 `notification_dispatch_log`에 `status=FAILED`, `errorCode`, `errorMessage`를 저장해 재시도·운영 대응 정보를 한 곳에서 추적한다.
 - 아래 표를 참고해 오류 코드별 대응을 수행한다.
 
 | 오류 코드 | 원인 예시 | 즉시 조치 | 재시도 전 확인 사항 |

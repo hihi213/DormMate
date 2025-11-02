@@ -376,7 +376,9 @@ components:
       type: object
       properties:
         id: { type: string, format: uuid }
-        kindCode: { type: string }
+        kindCode:
+          type: string
+          description: "알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등)"
         title: { type: string }
         body: { type: string }
         state: { $ref: '#/components/schemas/NotificationState' }
@@ -411,7 +413,9 @@ components:
     NotificationPreferenceItem:
       type: object
       properties:
-        kindCode: { type: string }
+        kindCode:
+          type: string
+          description: "알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등)"
         displayName: { type: string }
         description: { type: string }
         enabled: { type: boolean }
@@ -944,10 +948,15 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ReallocationApplyResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
+        '400':
+          description: 잘못된 재배분 요청 (예: ROOM_NOT_ON_FLOOR, ROOM_DISTRIBUTION_IMBALANCED, SHARED_COMPARTMENT_MUST_INCLUDE_ALL_ROOMS)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
   /notifications:
     get:
       tags: [Notifications]
@@ -1024,7 +1033,7 @@ paths:
       parameters:
         - in: path
           name: kindCode
-          description: "알림 종류 코드 (예: FRIDGE_RESULT)"
+          description: "알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등)"
           required: true
           schema:
             type: string

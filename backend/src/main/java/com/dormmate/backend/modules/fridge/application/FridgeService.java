@@ -182,8 +182,9 @@ public class FridgeService {
         boolean isFloorManager = SecurityUtils.hasRole("FLOOR_MANAGER");
         int safePage = Math.max(page, 0);
         int safeSize = Math.min(Math.max(size, 1), 100);
-        boolean includeDeleted = "deleted".equalsIgnoreCase(statusSelector)
+        boolean requestDeletedOnly = "deleted".equalsIgnoreCase(statusSelector)
                 || "removed".equalsIgnoreCase(statusSelector);
+        boolean requestAllStatuses = "all".equalsIgnoreCase(statusSelector);
 
         UUID ownerFilter = null;
         if ("all".equalsIgnoreCase(ownerSelector)) {
@@ -215,9 +216,14 @@ public class FridgeService {
             compartmentId = null;
         }
 
-        Set<FridgeBundleStatus> statuses = includeDeleted
-                ? EnumSet.of(FridgeBundleStatus.ACTIVE, FridgeBundleStatus.DELETED)
-                : EnumSet.of(FridgeBundleStatus.ACTIVE);
+        Set<FridgeBundleStatus> statuses;
+        if (requestDeletedOnly) {
+            statuses = EnumSet.of(FridgeBundleStatus.DELETED);
+        } else if (requestAllStatuses) {
+            statuses = EnumSet.of(FridgeBundleStatus.ACTIVE, FridgeBundleStatus.DELETED);
+        } else {
+            statuses = EnumSet.of(FridgeBundleStatus.ACTIVE);
+        }
 
         String trimmedSearch = StringUtils.hasText(search) ? search.trim() : null;
         String normalizedKeyword = trimmedSearch != null ? trimmedSearch.toLowerCase() : null;

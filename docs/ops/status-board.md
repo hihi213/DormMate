@@ -214,19 +214,42 @@
   - (PASS, 2025-11-02 — 일정 API 연동 후 프런트 경고 없음)
 
 ### AD-601 칸 설정·통계 — WIP (2025-11-03, Codex)
-- **근거 문서**: `mvp-plan.md:AD-601`, `docs/design/admin-wireframes.md §1~4`, `feature-inventory.md §5 냉장고 – 관리자`
+- **근거 문서**: `mvp-plan.md:AD-601`, `docs/design/admin-wireframes.md §1~4`, `feature-inventory.md §5 냉장고 – 관리자`, `docs/ops/batch-notifications.md`
 - **현행 파악**
   - `/admin` 루트는 거주자 하단 탭·BottomNav 중심 구조를 그대로 사용해 와이어프레임의 헤더·좌측 내비게이션·우측 퀵 액션 패턴이 구현돼 있지 않다.
   - 냉장고 관리 화면은 카드/아코디언 기반 칸 뷰 대신 관리 허브 카드로만 연결되고 있어 검사 요약·물품 상세·잠금 토글·감사 로그 딥링크 UX가 부재하다.
   - 대시보드 KPI와 층별 요약 데이터가 비워져 있어 `useAdminDashboard`가 제공하는 summary/timeline/quickActions를 소비하지 못한다.
+  - 백엔드 `FridgeReallocationService`는 균등 분배 추천까지는 구현되어 있으나, 요청 시 **잔여 호실 분배/비활성 칸 제외** 시나리오 검증과 `Problem.type` 기반 오류 코드 표준화가 부족하다. 또한 냉동 칸 공용 검증이 전용 에러 코드 없이 `SHARED_*` 문자열에 머무른다.
+  - `/fridge/bundles` 조회는 서비스 단에서 메모리 필터링을 수행해 `owner=all` 요청 시 대량 데이터 로딩, 검색어 대·소문자 혼합, 삭제 플래그 조합 회귀 테스트가 부재하다.
+  - `NotificationService`는 `FRIDGE_RESULT`만 선호도로 등록돼 있어 임박/만료 정책(`docs/ops/batch-notifications.md`)을 프런트 토글과 연동하지 못하고, API 응답(재배분/검사/삭제 이력)에도 감사 로그용 ID/타임스탬프가 누락된다.
 - **세부 작업**
   1. `/admin` 전용 레이아웃을 헤더(검색·알림·프로필) + 좌측 사이드 내비 + 메인 캔버스 + 우측 퀵 액션 패널로 구축하고, 1440/1024/768 브레이크 포인트 대응을 Tailwind 유틸 클래스로 구성한다.
   2. 대시보드 페이지를 KPI 카드 그리드, 모듈 탭(냉장고/세탁실/도서관/다목적실), 운영 워치리스트, 최근 이벤트 타임라인, 퀵 액션 패널로 재구성해 `useAdminDashboard` 응답을 시각화한다.
   3. 냉장고 모듈 화면을 칸 카드 뷰로 구현해 층/유닛 필터, 상태·잠금 표시, 검사 요약/물품 상세 아코디언, 감사 로그/재배분 버튼을 포함하고 `fetchAdminResources` 데이터를 연결한다. mock 데이터일 경우에도 UI가 동작하도록 빈 상태 처리 문구를 추가한다.
   4. 대시보드와 냉장고 화면에서 재사용할 층별 통계·칸 상태 위젯을 공통 컴포넌트로 분리해 추후 API 확장 시 유지보수를 용이하게 한다.
+  5. `FridgeReallocationService`에 대한 검증 로직을 보강해 층 외 호실, 중복 할당, 냉동칸 커버리지 오류에 대해 RFC7807 `type` 필드를 `urn:problem:dormmate:*` 패턴으로 반환하고, OpenAPI/통합 테스트를 추가한다.
+  6. `/admin/fridge/reallocations/preview|apply` 통합 테스트를 다층·검사 중 잠금·냉동 칸 공용·잔여 분배 케이스까지 확장하고, 회귀 시나리오를 `FridgeReallocationIntegrationTest`에 정리한다.
+  7. `/fridge/bundles` 검색/페이징 테스트를 작성해 라벨/삭제 플래그/slot 확장 조합을 검증하고, 필요 시 JPA 쿼리 최적화 및 페이징 분기(`owner=all`)를 도입한다.
+  8. `NotificationService`에 `FRIDGE_EXPIRY`/`FRIDGE_EXPIRED` 기본 선호를 정의하고 `docs/ops/batch-notifications.md` 재시도 정책과 API 응답 메타데이터(감사 로그 키, 타임스탬프)를 동기화한다.
 - **테스트 계획**
   - `npm run lint`
   - `npx playwright test --grep @admin` (또는 수동으로 KPI/카드 뷰 렌더링 확인)
+  - `./gradlew test --tests *FridgeReallocationIntegrationTest`
+  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.*Search*`
+  - `./gradlew test --tests com.dormmate.backend.modules.notification.*`
+- **테스트 로그**
+  - `./gradlew test --tests *FridgeReallocationIntegrationTest`
+    - (PASS, 2025-11-02 — ProblemException 전환 및 재배분 검증 경계 케이스 통과)
+  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.adminBundleSearchSupportsKeywordAndCaseInsensitiveMatch`
+    - (PASS, 2025-11-02 — 관리자 키워드 검색·대소문자 처리 회귀 확인)
+  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.adminBundleSearchSupportsLabelLookup`
+    - (PASS, 2025-11-02 — 라벨 검색 및 slot 확장 시 결과 정합성 확인)
+  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.adminBundleListWithDeletedFilterReturnsOnlyDeletedBundles`
+    - (PASS, 2025-11-02 — status=deleted 필터 시 삭제 건만 반환됨을 검증)
+  - `./gradlew test --tests com.dormmate.backend.modules.notification.NotificationServiceTest --tests com.dormmate.backend.modules.notification.FridgeExpiryNotificationSchedulerIntegrationTest`
+    - (PASS, 2025-11-02 — 임박/만료 알림 선호 기본값·배치 메타데이터·FAILED dispatch 로그 적재 검증)
+  - `./gradlew test`
+    - (PASS, 2025-11-02 — 재배분/검색/알림 확장 이후 백엔드 전체 회귀 통과)
 
 ### AD-602 역할 관리 — WIP (2025-11-03, Codex)
 - **근거 문서**: `mvp-plan.md:AD-602`, `docs/design/admin-wireframes.md §6`, `feature-inventory.md §5`
@@ -362,4 +385,3 @@
 * 알림이 프런트로 내려오면 기존 GET /notifications 목록 API로 그대로 전달되므로 추가 API 연동은 없습니다. 다만 임박/만료 알림이 새로 생성되면, UI에서 사용자에게 배지/강조 색상 등을 적용할 때 kind 코드로 분기해 주세요.
 * 실패 로그는 NotificationDispatchLog에 INTERNAL_BATCH 채널과 EXPIRY_BATCH_FAILED/EXPIRED_BATCH_FAILED 코드로 쌓입니다. 필요하면 관리자 화면에서 해당 로그를 조회할 수 있도록 연동할 계획입니다.
 * 재시도 정책(5분 간격 최대 3회)과 운영 지침은 docs/ops/batch-notifications.md에 정리되어 있으니, 프런트에서 관리자 알림 등 후속 기능을 설계할 때 참고해주세요.
-

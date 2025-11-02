@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -127,6 +128,32 @@ class NotificationServiceTest {
         notificationService.sendInspectionResultNotifications(session);
 
         verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("알림 기본 선호에는 검사/임박/만료 종류가 포함된다")
+    void getPreferencesIncludesAllKindsWithDefaults() {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000303");
+        when(notificationPreferenceRepository.findByIdUserId(userId)).thenReturn(List.of());
+
+        NotificationService.NotificationPreferenceView view = notificationService.getPreferences(userId);
+
+        assertThat(view.items()).extracting(NotificationService.NotificationPreferenceItem::kindCode)
+                .containsExactlyInAnyOrder("FRIDGE_RESULT", NotificationService.KIND_FRIDGE_EXPIRY, NotificationService.KIND_FRIDGE_EXPIRED);
+
+        NotificationService.NotificationPreferenceItem expiryPref = view.items().stream()
+                .filter(item -> item.kindCode().equals(NotificationService.KIND_FRIDGE_EXPIRY))
+                .findFirst()
+                .orElseThrow();
+        assertThat(expiryPref.enabled()).isTrue();
+        assertThat(expiryPref.allowBackground()).isFalse();
+
+        NotificationService.NotificationPreferenceItem expiredPref = view.items().stream()
+                .filter(item -> item.kindCode().equals(NotificationService.KIND_FRIDGE_EXPIRED))
+                .findFirst()
+                .orElseThrow();
+        assertThat(expiredPref.enabled()).isTrue();
+        assertThat(expiredPref.allowBackground()).isTrue();
     }
 
     private InspectionSession buildSession(UUID id, InspectionAction... actions) {

@@ -1,5 +1,8 @@
 package com.dormmate.backend.modules.notification.application;
 
+import static com.dormmate.backend.modules.notification.application.NotificationService.KIND_FRIDGE_EXPIRED;
+import static com.dormmate.backend.modules.notification.application.NotificationService.KIND_FRIDGE_EXPIRY;
+
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -31,8 +34,8 @@ public class FridgeExpiryNotificationScheduler {
 
     private static final Logger log = LoggerFactory.getLogger(FridgeExpiryNotificationScheduler.class);
     private static final DateTimeFormatter DATE_KEY_FORMAT = DateTimeFormatter.BASIC_ISO_DATE;
-    private static final String KIND_EXPIRY = "FRIDGE_EXPIRY";
-    private static final String KIND_EXPIRED = "FRIDGE_EXPIRED";
+    private static final String ERROR_EXPIRY_FAILED = "EXPIRY_BATCH_FAILED";
+    private static final String ERROR_EXPIRED_FAILED = "EXPIRED_BATCH_FAILED";
     private static final int EXPIRY_LOOKAHEAD_DAYS = 3;
     private static final int TTL_HOURS = 24;
 
@@ -65,10 +68,11 @@ public class FridgeExpiryNotificationScheduler {
                         today,
                         expiryThreshold
                 ),
-                KIND_EXPIRY,
+                KIND_FRIDGE_EXPIRY,
                 "[냉장고] 유통기한 임박",
                 "임박했습니다.",
-                today
+                today,
+                ERROR_EXPIRY_FAILED
         );
 
         processNotifications(
@@ -76,10 +80,11 @@ public class FridgeExpiryNotificationScheduler {
                         FridgeItemStatus.ACTIVE,
                         today
                 ),
-                KIND_EXPIRED,
+                KIND_FRIDGE_EXPIRED,
                 "[냉장고] 유통기한 만료",
                 "지났습니다.",
-                today
+                today,
+                ERROR_EXPIRED_FAILED
         );
     }
 
@@ -88,7 +93,8 @@ public class FridgeExpiryNotificationScheduler {
             String kindCode,
             String title,
             String messageSuffix,
-            LocalDate batchDate
+            LocalDate batchDate,
+            String errorCode
     ) {
         if (items.isEmpty()) {
             return;
@@ -128,6 +134,7 @@ public class FridgeExpiryNotificationScheduler {
 
             Map<String, Object> metadata = Map.of(
                     "type", kindCode,
+                    "batchDate", batchDate.toString(),
                     "count", count,
                     "sampleNames", sampleNames
             );
@@ -146,20 +153,44 @@ public class FridgeExpiryNotificationScheduler {
                         null
                 );
 
-                created.ifPresent(notification -> recordDispatchLog(notification, NotificationDispatchStatus.SUCCESS));
+                created.ifPresent(notification -> recordDispatchLog(notification, NotificationDispatchStatus.SUCCESS, null, null));
             } catch (Exception ex) {
-                log.warn("Failed to create {} notification for user {}", kindCode, owner.getId(), ex);
+                log.warn("[ALERT][Batch][{}] attempt={} user={} errorCode={} detail={}",
+                        kindCode,
+                        1,
+                        owner.getId(),
+                        errorCode,
+                        ex.getMessage(),
+                        ex);
+                Notification failureNotification = notificationService.createFailureNotification(
+                        owner,
+                        kindCode,
+                        title,
+                        body,
+                        metadata
+                );
+                recordDispatchLog(
+                        failureNotification,
+                        NotificationDispatchStatus.FAILED,
+                        errorCode,
+                        ex.getMessage()
+                );
             }
         });
     }
 
-    private void recordDispatchLog(Notification notification, NotificationDispatchStatus status) {
+    private void recordDispatchLog(
+            Notification notification,
+            NotificationDispatchStatus status,
+            String errorCode,
+            String errorMessage
+    ) {
         NotificationDispatchLog logEntry = new NotificationDispatchLog();
         logEntry.setNotification(notification);
         logEntry.setChannel("INTERNAL_BATCH");
         logEntry.setStatus(status);
-        logEntry.setErrorCode(null);
-        logEntry.setErrorMessage(null);
+        logEntry.setErrorCode(errorCode);
+        logEntry.setErrorMessage(errorMessage);
         logEntry.setLoggedAt(OffsetDateTime.now(clock));
         notificationDispatchLogRepository.save(logEntry);
     }
