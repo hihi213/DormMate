@@ -29,7 +29,7 @@ public class UserSession extends AbstractTimestampedEntity {
     private DormUser dormUser;
 
     @Column(name = "refresh_token", nullable = false, unique = true, length = 255)
-    private String refreshToken;
+    private String refreshTokenHash;
 
     @Column(name = "issued_at", nullable = false)
     private OffsetDateTime issuedAt;
@@ -58,12 +58,12 @@ public class UserSession extends AbstractTimestampedEntity {
         this.dormUser = dormUser;
     }
 
-    public String getRefreshToken() {
-        return refreshToken;
+    public String getRefreshTokenHash() {
+        return refreshTokenHash;
     }
 
-    public void setRefreshToken(String refreshToken) {
-        this.refreshToken = refreshToken;
+    public void setRefreshTokenHash(String refreshTokenHash) {
+        this.refreshTokenHash = refreshTokenHash;
     }
 
     public OffsetDateTime getIssuedAt() {

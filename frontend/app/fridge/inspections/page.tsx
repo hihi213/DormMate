@@ -447,7 +447,9 @@ function InspectionsInner() {
     if (!deleteTargetSchedule) return
     try {
       setDeletingSchedule(true)
-      await deleteInspectionSchedule(deleteTargetSchedule.scheduleId)
+      const targetId = deleteTargetSchedule.scheduleId
+      await deleteInspectionSchedule(targetId)
+      setSchedules((prev) => prev.filter((schedule) => schedule.scheduleId !== targetId))
       toast({
         title: "검사 일정을 삭제했습니다.",
       })
