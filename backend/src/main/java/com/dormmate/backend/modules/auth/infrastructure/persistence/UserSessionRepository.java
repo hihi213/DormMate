@@ -1,6 +1,7 @@
 package com.dormmate.backend.modules.auth.infrastructure.persistence;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -34,4 +35,16 @@ public interface UserSessionRepository extends JpaRepository<UserSession, UUID> 
                               @Param("now") OffsetDateTime now,
                               @Param("revokedAt") OffsetDateTime revokedAt,
                               @Param("reason") String reason);
+    @Query("""
+            select us
+              from UserSession us
+              join fetch us.dormUser du
+             where us.revokedAt is null
+               and (us.expiresAt is null or us.expiresAt > :now)
+               and du.id in :userIds
+            """)
+    List<UserSession> findActiveSessionsByUserIds(
+            @Param("userIds") Iterable<UUID> userIds,
+            @Param("now") OffsetDateTime now
+    );
 }

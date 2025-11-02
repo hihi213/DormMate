@@ -17,4 +17,14 @@ public interface RoomAssignmentRepository extends JpaRepository<RoomAssignment, 
 
     @Query("select ra from RoomAssignment ra join fetch ra.room where ra.room.id = :roomId and ra.releasedAt is null")
     List<RoomAssignment> findActiveAssignmentsByRoom(@Param("roomId") UUID roomId);
+
+    @Query("""
+            select ra
+              from RoomAssignment ra
+              join fetch ra.room
+              join fetch ra.dormUser du
+             where ra.releasedAt is null
+               and du.id in :userIds
+            """)
+    List<RoomAssignment> findActiveAssignmentsByUserIds(@Param("userIds") Iterable<UUID> userIds);
 }

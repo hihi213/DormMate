@@ -199,6 +199,60 @@ components:
           type: array
           items: { $ref: '#/components/schemas/AdminUser' }
       required: [items]
+    AdminPoliciesResponse:
+      type: object
+      properties:
+        notification:
+          type: object
+          properties:
+            batchTime: { type: string }
+            dailyLimit: { type: integer }
+            ttlHours: { type: integer }
+          required: [batchTime, dailyLimit, ttlHours]
+        penalty:
+          type: object
+          properties:
+            limit: { type: integer }
+            template: { type: string }
+          required: [limit, template]
+      required: [notification, penalty]
+    UpdateUserStatusRequest:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [INACTIVE]
+      required: [status]
+    UpdateAdminPoliciesRequest:
+      type: object
+      properties:
+        notification:
+          $ref: '#/components/schemas/UpdateNotificationPolicy'
+        penalty:
+          $ref: '#/components/schemas/UpdatePenaltyPolicy'
+      required: [notification, penalty]
+    UpdateNotificationPolicy:
+      type: object
+      properties:
+        batchTime:
+          type: string
+          pattern: '^\\d{2}:\\d{2}$'
+        dailyLimit:
+          type: integer
+          minimum: 0
+        ttlHours:
+          type: integer
+          minimum: 1
+      required: [batchTime, dailyLimit, ttlHours]
+    UpdatePenaltyPolicy:
+      type: object
+      properties:
+        limit:
+          type: integer
+          minimum: 0
+        template:
+          type: string
+      required: [limit, template]
     SlotType:
       type: string
       enum: [CHILL, FREEZE]
@@ -778,6 +832,14 @@ paths:
       tags: [Admin]
       summary: 관리자 사용자 목록 조회
       security: [{ BearerAuth: [] }]
+      parameters:
+        - in: query
+          name: status
+          schema:
+            type: string
+            enum: [ACTIVE, INACTIVE, ALL]
+            default: ACTIVE
+          description: 조회할 사용자 상태 필터 (기본 ACTIVE)
       responses:
         '200':
           description: 사용자 목록
@@ -785,6 +847,100 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/AdminUsersResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /admin/users/{userId}/roles/floor-manager:
+    post:
+      tags: [Admin]
+      summary: 층별장 임명
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204': { description: 임명 성공 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+    delete:
+      tags: [Admin]
+      summary: 층별장 해제
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '204': { description: 해제 성공 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/users/{userId}/status:
+    patch:
+      tags: [Admin]
+      summary: 사용자 상태 변경
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: userId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserStatusRequest'
+      responses:
+        '204': { description: 상태 변경 성공 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /admin/policies:
+    get:
+      tags: [Admin]
+      summary: 관리자 정책 조회
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: 정책 정보
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminPoliciesResponse'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    put:
+      tags: [Admin]
+      summary: 관리자 정책 저장
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminPoliciesRequest'
+      responses:
+        '204': { description: 저장 성공 }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { AlertTriangle } from "lucide-react"
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -13,6 +14,11 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { BulkEditor, DangerZoneModal, DetailsDrawer, PaginatedTable } from "@/components/admin"
+import {
+  demoteAdminFloorManager,
+  deactivateAdminUser,
+  promoteAdminFloorManager,
+} from "@/features/admin/api"
 import { useAdminUsers } from "@/features/admin/hooks/use-admin-users"
 import type { AdminUser } from "@/features/admin/types"
 import { cn } from "@/lib/utils"
@@ -29,25 +35,30 @@ type FilterState = {
 type SelectionMode = "PROMOTE" | "DEACTIVATE" | null
 
 export default function AdminUsersPage() {
-  const { data, loading } = useAdminUsers()
-  const userItems = useMemo(() => data?.items ?? [], [data?.items])
-
   const [filters, setFilters] = useState<FilterState>({
     search: "",
     floor: "ALL",
     status: "ACTIVE",
   })
+  const { data, loading, error, refetch } = useAdminUsers(filters.status)
+  const userItems = useMemo(() => data?.items ?? [], [data?.items])
   const [page, setPage] = useState(1)
   const pageSize = 6
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [drawerUser, setDrawerUser] = useState<AdminUser | null>(null)
   const [searchInput, setSearchInput] = useState("")
   const [selectionMode, setSelectionMode] = useState<SelectionMode>(null)
+  const [actionLoading, setActionLoading] = useState(false)
   const { toast } = useToast()
 
   useEffect(() => {
     setSearchInput(filters.search)
   }, [filters.search])
+
+  useEffect(() => {
+    setSelectedIds([])
+    setDrawerUser(null)
+  }, [filters.status])
 
   const floors = useMemo(() => {
     const set = new Set<number>()
@@ -89,7 +100,7 @@ export default function AdminUsersPage() {
   const isSelectionEnabled = selectionMode !== null
 
   const toggleSelection = (id: string, checked: boolean) => {
-    if (!isSelectionEnabled) return
+    if (!isSelectionEnabled || actionLoading) return
     setSelectedIds((prev) => (checked ? Array.from(new Set([...prev, id])) : prev.filter((value) => value !== id)))
   }
 
@@ -114,6 +125,7 @@ export default function AdminUsersPage() {
   }
 
   const startSelection = (mode: Exclude<SelectionMode, null>) => {
+    if (actionLoading) return
     if (selectionMode === mode) {
       cancelSelection()
       return
@@ -128,6 +140,7 @@ export default function AdminUsersPage() {
   }
 
   const handleRowClick = (user: AdminUser) => {
+    if (actionLoading) return
     if (selectionMode) {
       const nextChecked = !selectedIds.includes(user.id)
       toggleSelection(user.id, nextChecked)
@@ -136,14 +149,95 @@ export default function AdminUsersPage() {
     openDrawer(user)
   }
 
-  const confirmSelection = () => {
+  const confirmSelection = async () => {
     if (!selectionMode || selectedIds.length === 0) return
-    const actionLabel = selectionMode === "PROMOTE" ? "층별장 임명" : "비활성화"
-    toast({
-      title: `${actionLabel} 준비 완료`,
-      description: `${selectedIds.length}명의 사용자를 대상으로 ${actionLabel}을 진행하세요.`,
-    })
-    cancelSelection()
+    setActionLoading(true)
+    const actionLabel = selectionMode === "PROMOTE" ? "층별장 임명" : "계정 비활성화"
+    try {
+      if (selectionMode === "PROMOTE") {
+        await Promise.all(selectedIds.map((id) => promoteAdminFloorManager(id)))
+      } else {
+        await Promise.all(selectedIds.map((id) => deactivateAdminUser(id)))
+      }
+      toast({
+        title: `${actionLabel} 완료`,
+        description: `${selectedIds.length}명의 사용자에 대해 ${actionLabel}이 반영되었습니다.`,
+      })
+      await refetch()
+      setPage(1)
+      cancelSelection()
+    } catch (err) {
+      toast({
+        title: `${actionLabel} 실패`,
+        description: err instanceof Error ? err.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handlePromoteUser = async (user: AdminUser) => {
+    setActionLoading(true)
+    try {
+      await promoteAdminFloorManager(user.id)
+      toast({
+        title: "층별장 임명 완료",
+        description: `${user.name}님이 층별장으로 임명되었습니다.`,
+      })
+      await refetch()
+      closeDrawer()
+    } catch (err) {
+      toast({
+        title: "층별장 임명 실패",
+        description: err instanceof Error ? err.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleDemoteUser = async (user: AdminUser) => {
+    setActionLoading(true)
+    try {
+      await demoteAdminFloorManager(user.id)
+      toast({
+        title: "층별장 해제 완료",
+        description: `${user.name}님의 층별장 권한을 해제했습니다.`,
+      })
+      await refetch()
+      closeDrawer()
+    } catch (err) {
+      toast({
+        title: "층별장 해제 실패",
+        description: err instanceof Error ? err.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      })
+    } finally {
+      setActionLoading(false)
+    }
+  }
+
+  const handleDeactivateUser = async (user: AdminUser) => {
+    setActionLoading(true)
+    try {
+      await deactivateAdminUser(user.id)
+      toast({
+        title: "계정 비활성화 완료",
+        description: `${user.name}님의 DormMate 접근이 중단되었습니다.`,
+      })
+      await refetch()
+      closeDrawer()
+    } catch (err) {
+      toast({
+        title: "계정 비활성화 실패",
+        description: err instanceof Error ? err.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      })
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   return (
@@ -246,6 +340,7 @@ export default function AdminUsersPage() {
               <Button
                 type="button"
                 variant={selectionMode === "PROMOTE" ? "default" : "outline"}
+                disabled={actionLoading}
                 onClick={() => startSelection("PROMOTE")}
               >
                 {selectionMode === "PROMOTE" ? "선택 취소" : "층별장 임명"}
@@ -253,6 +348,7 @@ export default function AdminUsersPage() {
               <Button
                 type="button"
                 variant={selectionMode === "DEACTIVATE" ? "default" : "outline"}
+                disabled={actionLoading}
                 onClick={() => startSelection("DEACTIVATE")}
               >
                 {selectionMode === "DEACTIVATE" ? "선택 취소" : "비활성화"}
@@ -262,6 +358,18 @@ export default function AdminUsersPage() {
         </section>
 
         <section className="space-y-4">
+          {error ? (
+            <Alert variant="destructive">
+              <AlertTriangle aria-hidden className="text-rose-600" />
+              <AlertTitle>사용자 목록을 불러오지 못했습니다</AlertTitle>
+              <AlertDescription>
+                <p>네트워크 또는 서버 상태를 확인한 뒤 다시 시도하세요.</p>
+                <Button size="sm" variant="outline" className="mt-2" onClick={refetch}>
+                  다시 시도
+                </Button>
+              </AlertDescription>
+            </Alert>
+          ) : null}
           <Card className="shadow-sm">
             <CardContent>
               <PaginatedTable
@@ -275,7 +383,7 @@ export default function AdminUsersPage() {
                         aria-label={`${row.name} 선택`}
                         checked={selectedIds.includes(row.id)}
                         onCheckedChange={(checked) => toggleSelection(row.id, Boolean(checked))}
-                        disabled={!isSelectionEnabled}
+                        disabled={!isSelectionEnabled || actionLoading}
                         onClick={(event) => event.stopPropagation()}
                       />
                     ),
@@ -382,12 +490,16 @@ export default function AdminUsersPage() {
                   label: "선택 취소",
                   variant: "ghost",
                   onSelect: cancelSelection,
+                  disabled: actionLoading,
                 },
               ]}
               primaryAction={{
                 id: "confirm",
                 label: selectionMode === "PROMOTE" ? "임명 확정" : "비활성화 확정",
-                onSelect: confirmSelection,
+                onSelect: () => {
+                  void confirmSelection()
+                },
+                disabled: actionLoading || selectedIds.length === 0,
               }}
             >
               <span className="text-xs text-muted-foreground">
@@ -440,10 +552,22 @@ export default function AdminUsersPage() {
               <div className="space-y-2">
                 <Label className="text-xs text-muted-foreground">역할 변경</Label>
                 <div className="flex gap-2">
-                  <Button type="button" variant="outline" size="sm">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={actionLoading || drawerUser?.role === "FLOOR_MANAGER"}
+                    onClick={() => drawerUser && void handlePromoteUser(drawerUser)}
+                  >
                     층별장 임명
                   </Button>
-                  <Button type="button" variant="ghost" size="sm">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    disabled={actionLoading || drawerUser?.role !== "FLOOR_MANAGER"}
+                    onClick={() => drawerUser && void handleDemoteUser(drawerUser)}
+                  >
                     일반 거주자 전환
                   </Button>
                 </div>
@@ -458,7 +582,8 @@ export default function AdminUsersPage() {
                   description="비활성화 시 DormMate 접근이 차단되며, 관련 예약/검사 세션이 모두 정리됩니다."
                   confirmLabel="비활성화"
                   onConfirm={async () => {
-                    closeDrawer()
+                    if (!drawerUser) return
+                    await handleDeactivateUser(drawerUser)
                   }}
                 />
               </div>
