@@ -196,6 +196,7 @@
   2. 일정-세션 연결(`inspection_session_id`) 검증과 중복 예약 방지 규칙을 강화해 다중 층별장이 동시에 예약해도 충돌하지 않도록 한다.
   3. (Post-MVP) 관리자 일정 등록/수정 플로우를 확장하고, 일정 생성 시 담당 층별장에게 알림을 발송하도록 구현한다.
   4. 데모/운영 데이터 마이그레이션 가이드를 작성하고, 일정 이력 백업/복구 절차를 검토한다.
+  5. 층별장 `/fridge/inspections` 화면을 “예정된 검사 / 검사 기록” 이중 섹션으로 재구성하고, 헤더 액션(일정 추가)·일정별 3dot 메뉴(수정/삭제)를 제공한다.
 - **진행 로그**
   - 2025-11-02: Flyway `V13__inspection_schedule_schema.sql`로 `inspection_schedule` 테이블과 인덱스를 생성.
   - 2025-11-02: `InspectionScheduleService`·`InspectionScheduleController`를 추가해 `/fridge/inspection-schedules` CRUD 및 `/next` 조회 엔드포인트를 제공.
@@ -204,8 +205,161 @@
   - 2025-11-02: `InspectionService.submitSession`이 연결된 일정을 자동으로 `COMPLETED` 처리하도록 보강, 통합 테스트(`scheduleLinkedInspectionCompletesAutomatically`) 추가.
   - 2025-11-02: 검사 취소 시 연결된 일정이 다시 사용 가능하도록 `inspection_session_id`를 해제하고 상태를 `SCHEDULED`로 되돌리는 로직과 통합 테스트(`cancelInspectionReleasesSchedule`)를 추가.
   - 2025-11-02: 관리자 화면은 조회 전용으로 유지하고, Post-MVP에서 관리자 일정 등록·알림 플로우를 확장하기 위한 메모를 `mvp-scenario.md`에 기록했다.
+  - 2025-11-03: 층별장 `/fridge/inspections` UI를 예정된 검사/검사 기록 섹션으로 분리하고, 일정 추가 버튼·기존 3dot 메뉴 기반 수정/삭제 흐름을 설계(구현 착수).
+  - 2025-11-03: 검사 일정 목록에 세로 3dot 메뉴와 `검사 중` 버튼을 배치하고, 별도 “진행 중” 섹션을 제거한 뒤 활성 일정은 배경색으로 강조되며 버튼/취소 액션을 동일 카드에서 처리하도록 개편.
 - **테스트**
-  - `./gradlew test --tests com.dormmate.backend.modules.inspection.InspectionScheduleIntegrationTest`
-    - (PASS, 2025-11-02 — 일정 생성/조회/완료/삭제 플로우 검증)
+- `./gradlew test --tests com.dormmate.backend.modules.inspection.InspectionScheduleIntegrationTest`
+  - (PASS, 2025-11-02 — 일정 생성/조회/완료/삭제 플로우 검증)
+- `npm run lint`
+  - (PASS, 2025-11-02 — 일정 API 연동 후 프런트 경고 없음)
+
+### AD-601 칸 설정·통계 — WIP (2025-11-03, Codex)
+- **근거 문서**: `mvp-plan.md:AD-601`, `docs/design/admin-wireframes.md §1~4`, `feature-inventory.md §5 냉장고 – 관리자`
+- **현행 파악**
+  - `/admin` 루트는 거주자 하단 탭·BottomNav 중심 구조를 그대로 사용해 와이어프레임의 헤더·좌측 내비게이션·우측 퀵 액션 패턴이 구현돼 있지 않다.
+  - 냉장고 관리 화면은 카드/아코디언 기반 칸 뷰 대신 관리 허브 카드로만 연결되고 있어 검사 요약·물품 상세·잠금 토글·감사 로그 딥링크 UX가 부재하다.
+  - 대시보드 KPI와 층별 요약 데이터가 비워져 있어 `useAdminDashboard`가 제공하는 summary/timeline/quickActions를 소비하지 못한다.
+- **세부 작업**
+  1. `/admin` 전용 레이아웃을 헤더(검색·알림·프로필) + 좌측 사이드 내비 + 메인 캔버스 + 우측 퀵 액션 패널로 구축하고, 1440/1024/768 브레이크 포인트 대응을 Tailwind 유틸 클래스로 구성한다.
+  2. 대시보드 페이지를 KPI 카드 그리드, 모듈 탭(냉장고/세탁실/도서관/다목적실), 운영 워치리스트, 최근 이벤트 타임라인, 퀵 액션 패널로 재구성해 `useAdminDashboard` 응답을 시각화한다.
+  3. 냉장고 모듈 화면을 칸 카드 뷰로 구현해 층/유닛 필터, 상태·잠금 표시, 검사 요약/물품 상세 아코디언, 감사 로그/재배분 버튼을 포함하고 `fetchAdminResources` 데이터를 연결한다. mock 데이터일 경우에도 UI가 동작하도록 빈 상태 처리 문구를 추가한다.
+  4. 대시보드와 냉장고 화면에서 재사용할 층별 통계·칸 상태 위젯을 공통 컴포넌트로 분리해 추후 API 확장 시 유지보수를 용이하게 한다.
+- **테스트 계획**
   - `npm run lint`
-    - (PASS, 2025-11-02 — 일정 API 연동 후 프런트 경고 없음)
+  - `npx playwright test --grep @admin` (또는 수동으로 KPI/카드 뷰 렌더링 확인)
+
+### AD-602 역할 관리 — WIP (2025-11-03, Codex)
+- **근거 문서**: `mvp-plan.md:AD-602`, `docs/design/admin-wireframes.md §6`, `feature-inventory.md §5`
+- **현행 파악**
+  - 권한·계정 화면은 2열 테이블+드로어 형태이며, 층별장 임명/해제 및 진행 중 검사 세션 예외 안내, 알림 템플릿 안내가 토글 버튼 수준에서 멈춰 있다.
+  - 와이어프레임이 요구하는 좌측 필터 패널, 중앙 목록, 우측 상세 패널 3열 구조와 저장된 필터/즐겨찾기 UX가 없다.
+- **세부 작업**
+  1. 상단 필터 바 + 좌측 필터 패널 + 중앙 테이블 + 우측 상세 패널 구조로 재구성하고, URL 쿼리로 필터 상태를 동기화한다.
+  2. 층별장 임명/해제·관리자 승격·계정 비활성화를 단계별 다이얼로그(사유 입력, 진행 중 검사 세션 경고, 알림 발송 안내)로 구현하고, 감사 로그 기록용 메타데이터를 포함하도록 API 호출 구조를 정리한다. 백엔드 연동 전까지는 mock 응답과 토스트로 대체한다.
+  3. 사용자 상세 패널에 검사/벌점 요약, 최근 알림, 감사 로그 바로가기 버튼을 추가하고 필수 접근성(label/aria) 속성을 적용한다.
+  4. 역할 변경 → UI 반영을 검증할 수 있는 Playwright `@admin-roles` 태그 시나리오 초안을 작성하고, 자동화 전까지는 수동 검증 로그를 남긴다.
+- **테스트 계획**
+  - `npm run lint`
+  - `npx playwright test --grep @admin-roles` (작성 전에는 수동으로 필터·액션 확인)
+
+### AD-603 운영 도구 확장 — WIP (2025-11-01, Codex)
+- **근거 문서**: `mvp-plan.md:AD-603`, `mvp-scenario.md §3.5`, `ai-impl/frontend.md` 관리자 IA 섹션
+- **현행 파악**
+  - 관리자 화면은 거주자·층별장과 동일한 하단 탭을 공유하되, `관리(⚙️)` 허브에서 자원/권한/알림/벌점/리포트를 중앙 집중 관리하는 하이브리드 IA로 합의되었다(`docs/mvp-plan.md:279`).
+  - `docs/ai-impl/frontend.md`에 FilterBar/PaginatedTable/DetailsDrawer/BulkEditor/DangerZoneModal 공통 컴포넌트 사용 지침을 추가했고, Phase 2 모듈은 Feature Flag(`ADMIN_MODULE_FLAGS`)로 제어한다.
+- **세부 작업**
+  1. [x] `frontend/components/admin`에 공통 컴포넌트 스켈레톤을 생성하고, Storybook 예제(`admin.stories.tsx`)로 사용 예시를 남긴다.
+  1-1. [x] `frontend/app/admin/components-gallery` 페이지를 추가해 Storybook 없이도 컴포넌트 시각 검증이 가능하도록 한다.
+  2. [x] 관리자 메인/자원 관리/권한·계정 화면 와이어프레임을 텍스트 문서(`docs/ai-impl/frontend-admin-wireframes.md`)로 공유하고, 승인 후 구현 순서를 결정한다.
+  3. 관리자 빠른 실행 카드가 기존 Drawer 폼을 재사용하도록 UX 흐름을 점검하고, 감사 로그 트래킹(source=shortcut|hub) 스펙을 정의한다.
+  4. 위험 액션(칸 증설, 라벨 조정, 벌점 수정, 데모 Seed 실행)을 DangerZoneModal로 통일하고, prod 빌드에서 기본 비활성화 플래그를 확인한다.
+  5. [x] 관리자 핵심 Playwright 시나리오와 `@admin` 태그 구조를 `docs/tests/admin-playwright-plan.md`에 정리한다.
+  6. [x] Playwright 공통 헬퍼(`tests/e2e/utils/admin.ts`)와 관리자 스토리지 생성 스크립트(`scripts/create-admin-storage.mjs`)를 추가한다.
+  7. [x] 백엔드 관리자 대시보드/자원/사용자/정책 조회 API를 구현하고 통합 테스트로 보호한다.
+  8. [x] 관리자 냉장고 포장 조회에서 in-memory 페이징을 제거하고, 삭제 이력은 3개월 한정 팝업용 전용 API로 분리한다. (2025-11-03 완료)
+- **진행 로그**
+- 2025-11-01: `docs/mvp-plan.md:279`에 하이브리드 IA 합의 메모 추가.
+- 2025-11-01: `docs/ai-impl/frontend.md`에 관리자 IA & 공통 컴포넌트 전략 섹션 추가(FilterBar/PaginatedTable/DetailsDrawer 재사용, 도메인 계산 서버 집중, Feature Flag 지침 포함).
+- 2025-11-01: `frontend/app/admin/components-gallery` 페이지를 추가해 공통 컴포넌트 시각 확인 및 QA 대비 문서를 마련.
+- 2025-11-01: Playwright 헬퍼(`tests/e2e/utils/admin.ts`)와 관리자 스토리지 생성 스크립트(`scripts/create-admin-storage.mjs`)를 추가하고, `playwright.config.ts`에 storage state/grep 환경 변수 지원을 확장.
+- 2025-11-01: 관리자 대시보드/관리 허브/자원·권한·정책·리포트·운영 도구 페이지를 구현해 하단 탭-관리 허브 분리 구조를 UI로 반영.
+- 2025-11-01: 관리자 대시보드/자원/권한/정책 화면을 `frontend/features/admin/hooks` 기반 데이터 훅으로 전환하고, 실제 API 부재 시 mock 데이터를 단일 위치에서 공급하도록 정리.
+- 2025-11-02: `/admin/dashboard`, `/admin/resources`, `/admin/users`, `/admin/policies` API를 추가해 프런트엔드가 실제 데이터를 조회하고, `AdminReadIntegrationTest`로 권한 및 응답 구조를 검증.
+- 2025-11-03: 냉장고 포장 목록 조회 성능 이슈 분석 완료 — DB 레벨 검색/페이징 + 삭제 이력 전용 팝업 API 분리 계획 수립.
+- 2025-11-03: `FridgeBundleRepository#searchBundles`를 네이티브 쿼리 기반 페이지네이션으로 재구성하고, `/admin/fridge/bundles/deleted` API를 추가해 3개월 한정 삭제 이력을 분리. `./gradlew test`로 회귀 테스트 통과.
+
+### FR-305 칸 증설/재배분 자동화 — WIP (2025-11-03, Codex)
+- **근거 문서**: `mvp-plan.md` 냉장고 증설 체크리스트, `feature-inventory.md §5` 냉장고 관리자 정책, `docs/data-model.md` `compartment_room_access`
+- **현행 파악**:
+  - `compartment_room_access`는 초기 시드 이후 수동 유지되고, 서비스 계층에서는 읽기 검증(`FridgeService#verifyBundleReadAccess`, `InspectionService#ensureCompartmentAccess`)에만 사용된다.
+  - 냉장고 증설 및 층별 호실 재배분 로직이 비어 있어, 관리자 도구에서 증설 시 수동 SQL 또는 외부 도구가 필요하다.
+  - 데이터 무결성: `compartment_room_access`는 `(fridge_compartment_id, room_id)` 중복을 막는 유니크 제약과 `released_at`으로 소프트 종료를 표현한다.
+- **세부 진행**
+  1. [x] 관리자 `POST /admin/fridge/reallocations/preview` 구현 — 층별 칸/호실 현황을 불러와 라운드 로빈으로 균등 분배 추천, CHILL/ FREEZE 구분 반영.
+  2. [x] 프리뷰 응답에 현재 배정, 추천 배정, 경고 목록(비활성/잠금 칸)을 포함.
+  3. [x] `POST /admin/fridge/reallocations/apply` 구현 — 트랜잭션 내 기존 배정 `released_at` 마킹 후 신규 배정 삽입, 중복/미배정 검증.
+  4. [x] 진행 중 검사 세션/잠금 칸에 대한 별도 충돌 코드(`COMPARTMENT_IN_USE`)를 반환하도록 재배분 적용 로직과 프리뷰 경고를 보강.
+  5. [x] 통합 테스트(`FridgeReallocationIntegrationTest`)로 프리뷰→확정 플로우, 권한 차단, DB 결과 검증.
+- **테스트**
+  - `./gradlew test`
+- **추가 TODO**: 감사 로그 테이블/이벤트 도입 여부 검토, 프런트 연동 시 diff 하이라이트/수정 UI 요구사항 수집.
+- **테스트 계획**
+- `npx playwright test --list --grep @admin` — 관리자 Playwright 태그 체계를 정의한 뒤 목록 확인.
+- `npm run lint` (frontend) — 공통 컴포넌트 추가 시 스타일/ESLint 검증.
+- `npm run playwright:create-admin-storage` — 관리자 storage state를 재생성해 E2E 실행에 사용.
+- **리스크/의존성**: 기존 관리자 화면과 신규 공통 컴포넌트가 혼재할 수 있으므로 점진적 릴리즈가 필요하다. DangerZone 기능은 운영 환경에서 접근 제한을 유지하고, Feature Flag 미설정 시 새 모듈은 표시되지 않도록 가드한다.
+
+### NO-403 알림 목록/설정 API — WIP (2025-11-03, Codex)
+- **근거 문서**: `docs/mvp-plan.md` NO-403, `feature-inventory.md §3`(알림 & 일정)
+- **세부 작업**
+  1. [x] `GET /notifications` 구현 — 미읽음 우선 정렬, TTL 만료 자동 처리, 페이지네이션/미읽음 카운트 제공.
+  2. [x] `PATCH /notifications/{id}/read`, `PATCH /notifications/read-all` 추가로 읽음 처리 플로우 지원.
+  3. [x] `GET /notifications/preferences`, `PATCH /notifications/preferences/{kind}`로 종류별 ON/OFF·백그라운드 토글 제어.
+  4. [ ] 알림 종류 추가 시 `SUPPORTED_PREFERENCES` 정의 및 프런트 문구 동기화.
+  5. [x] 프런트: OpenAPI 타입 재생성 후 알림 목록/읽음/설정 API 클라이언트와 상태 훅을 구현한다. UI 노출은 추후 합의 후 진행.
+  6. [x] 프런트: 목록 호출 시 `state` 파라미터 정규화, 읽음 처리(단일/전체), 설정 토글을 테스트 가능하도록 유닛/통합/Playwright 시나리오 후보를 정리한다.
+  7. [ ] QA 체크리스트: unread → read-all → preference 토글 → 401/403 에러 핸들링 흐름을 수동/자동 테스트 항목으로 문서화한다.
+- **진행 로그**
+  - 2025-11-03: `NotificationService` 조회/읽음/설정 메서드 확장, `NotificationController` 및 DTO 추가.
+  - 2025-11-03: `NotificationControllerIntegrationTest`로 목록·읽음·설정·TTL 만료 시나리오 검증.
+  - 2025-11-12: 프런트 연동 범위 확정 — 알림 REST API 전면 연동, UI는 추후 협의. OpenAPI 스키마(`NotificationListResponse`, `NotificationPreferenceResponse`, `NotificationPreferenceItem`, `UpdateNotificationPreferenceRequest`) 기준으로 타입 재생성 완료.
+  - 2025-11-12: `feature-inventory.md §3`, `nogitReadME.md` 알림 항목을 재검토해 알림 종류·TTL·설정 옵션 목록을 정리하고 헤더 드롭다운 UX 요구사항 초안을 수립.
+  - 2025-11-12: 헤더 알림 벨 드롭다운 구현 착수 — `NotificationBell` 컴포넌트/스토어 확장(`ensureLoaded`, `refresh`)으로 미읽음 배지·필터·모두 읽음 액션을 지원하고 홈 헤더에 연결.
+- **테스트**
+  - `./gradlew test --tests *NotificationControllerIntegrationTest`
+  - `npm run lint`
+    - (PASS, 2025-11-12 — 프런트 알림 스토어/훅 추가 후 ESLint 경고 없음)
+
+### NO-501 배치 알림 생성 — WIP (2025-11-03, Codex)
+- **근거 문서**: `docs/mvp-plan.md` NO-501, `feature-inventory.md §3`
+- **세부 진행**
+  1. [x] 스케줄러 설정(`@EnableScheduling`)을 추가하고 09:00 cron 배치를 구성했다.
+  2. [x] `FridgeExpiryNotificationScheduler`에서 임박(3일 이내)/만료 물품을 사용자별로 집계하고 `FRIDGE_EXPIRY`·`FRIDGE_EXPIRED` 알림을 생성하며 dedupe 키와 24시간 TTL을 적용했다.
+  3. [x] 생성된 알림은 `NotificationDispatchLog`에 `INTERNAL_BATCH` 채널 성공 로그로 기록된다.
+  4. [ ] 배치 실패 재시도/오류 코드 정책 문서화 및 관리자 알림 연동. (TODO: `docs/ops/batch-notifications.md` 기반)
+- **진행 로그**
+  - 2025-11-03: 임박/만료 배치 서비스 구현, dedupe/TTL 정책 반영, `FridgeExpiryNotificationSchedulerIntegrationTest`로 검증.
+- **테스트**
+  - `./gradlew test --tests *FridgeExpiryNotificationSchedulerIntegrationTest`
+
+
+프런트 개선
+
+프런트 전달사항
+* 백엔드 /fridge/bundles가 이제 DB 레벨에서 정렬·검색·페이징을 처리합니다. 기존 쿼리 파라미터(slotId, owner, status, search, page, size) 계약은 그대로이므로 추가 수정 없이 동작하지만, 검색어는 trim() 후 전달해 주세요(라벨 A003·A-003·품목명 모두 지원).
+* 관리자용 삭제 이력 전용 API가 추가되었습니다: GET /admin/fridge/bundles/deleted?since&size&page.
+    * since 미지정 시 자동으로 “현재 시각 - 3개월”부터 조회합니다.
+    * 응답 스키마는 BundleListResponse 그대로이고, 각 항목에 deletedAt(JSON 키는 deletedAt, DTO 내부에서 removedAt/deletedAt 공존 시 그대로 노출됨)을 포함합니다. 팝업 목록에서는 이 필드를 노출해 주세요.
+* 보안 설정상 /admin/fridge/** 경로는 ADMIN 역할만 접근 가능합니다. 프런트에서 관리자 팝업을 띄울 때 해당 토큰이 있는지 확인하고, 403이 오면 권한 안내 문구를 표시해주세요.
+* 기존 목록과 삭제 이력 팝업 간 상태 필터를 분리했으니, 메인 목록에서는 계속 status=active 기본 값으로 호출하고, 삭제 이력 팝업에서만 새 API를 사용하면 됩니다. 오래된 이력을 보고 싶을 때는 since를 과거 일시로 내려 주면 됩니다.
+* 백엔드 테스트는 cd backend && ./gradlew test로 검증 완료됐습니다. 프런트 연동 시 E2E 테스트에 관리자 시나리오(@admin)가 있다면 /admin/fridge/bundles/deleted 호출을 추가해 주세요.
+
+
+칸 재배분 관련 프런트 전달사항
+* 신규 API
+    * POST /admin/fridge/reallocations/preview: 층 번호(floor)만 보내면 현재 배정/추천 배정/경고 목록을 내려줍니다. 각 항목에는 currentRoomIds, recommendedRoomIds, warnings(잠금/검사 중 상태) 등이 포함됩니다.
+    * POST /admin/fridge/reallocations/apply: 층 번호 + 수정한 allocations(칸 ID와 최종 roomId 배열)를 전달하면 확정합니다. 성공 시 적용된 칸 수, 생성/종료된 배정 수, appliedAt가 반환됩니다.
+* 권한/에러
+    * 두 API 모두 ADMIN만 호출 가능합니다. 403 발생 시 관리자 인증을 확인하세요.
+    * 잠금(is_locked) 또는 검사 진행(INSPECTION_IN_PROGRESS) 칸을 포함하면 409 COMPARTMENT_IN_USE가 돌아옵니다. 프리뷰에 경고가 함께 내려오니 UI에서 사전 안내해 주세요.
+* 프런트 처리 포인트
+    * 프리뷰 응답을 기본값으로 렌더링한 뒤 관리자가 수정할 수 있게 하고, 최종 확정 시 recommendedRoomIds 대신 수정된 값을 roomIds에 넣어 apply 호출하세요.
+    * 프리뷰 카드에 warnings 배열을 그대로 표시해 잠금/검사 중 칸을 강조하면 좋습니다.
+    * 적용 성공 후에는 프리뷰를 다시 호출하거나 슬롯/접근 데이터를 재조회해 UI를 리프레시해 주세요.
+* 테스트 참고
+    * 백엔드 측은 FridgeReallocationIntegrationTest로 행복/에러 경로를 검증했습니다. 프런트도 관리자 시나리오 E2E에 잠금/검사 중 케이스를 추가해 주세요.
+
+
+* 알림 REST API가 준비됐어요. GET /notifications?state=all|unread|read&page&size로 미읽음 우선 정렬 목록을 받을 수 있고, 응답에는 items[], page/size/totalElements, unreadCount가 포함됩니다. TTL이 지난 항목은 호출 시 자동으로 EXPIRED 처리되므로 목록에는 내려오지 않아요.
+* 읽음 처리는 두 가지입니다. PATCH /notifications/{id}/read(단일)와 PATCH /notifications/read-all(전체 미읽음). 이미 읽었거나 만료된 알림에 대해 중복 호출해도 409 없이 NoContent가 돌아갑니다.
+* 알림 설정은 GET /notifications/preferences에서 기본값(지금은 FRIDGE_RESULT 1종)을 내려주고, PATCH /notifications/preferences/{kindCode}로 enabled/allowBackground를 토글할 수 있습니다. 요청 바디는 { "enabled": true|false, "allowBackground": true|false } 형태고, 응답은 갱신된 항목 한 건입니다.
+* OpenAPI 명세(api/openapi.yml)가 갱신돼 있으니 프런트 타입 정의/SDK를 재생성해 주세요. 신규 스키마 이름은 NotificationListResponse, NotificationPreferenceResponse, NotificationPreferenceItem, UpdateNotificationPreferenceRequest입니다.
+* 테스트로 NotificationControllerIntegrationTest를 추가했으니, 프런트에서도 목록/읽음/설정 시나리오를 QA할 때 참고하면 좋겠습니다.
+
+
+
+* 09:00 임박/만료 알림이 서버 배치로 생성되기 시작했습니다. FRIDGE_EXPIRY(D-3 이내), FRIDGE_EXPIRED(이미 지난 항목) 두 종류가 하루 한 번 생성되며 dedupe 키({kind}:{userId}:{yyyyMMdd})와 24시간 TTL로 중복을 막습니다. 알림 본문에는 개수와 최대 3개 샘플 품목명이 포함됩니다.
+* 알림이 프런트로 내려오면 기존 GET /notifications 목록 API로 그대로 전달되므로 추가 API 연동은 없습니다. 다만 임박/만료 알림이 새로 생성되면, UI에서 사용자에게 배지/강조 색상 등을 적용할 때 kind 코드로 분기해 주세요.
+* 실패 로그는 NotificationDispatchLog에 INTERNAL_BATCH 채널과 EXPIRY_BATCH_FAILED/EXPIRED_BATCH_FAILED 코드로 쌓입니다. 필요하면 관리자 화면에서 해당 로그를 조회할 수 있도록 연동할 계획입니다.
+* 재시도 정책(5분 간격 최대 3회)과 운영 지침은 docs/ops/batch-notifications.md에 정리되어 있으니, 프런트에서 관리자 알림 등 후속 기능을 설계할 때 참고해주세요.
+

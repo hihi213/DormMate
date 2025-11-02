@@ -16,7 +16,6 @@ import { formatKoreanDate } from "./utils-fridge-page"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import { useToast } from "@/hooks/use-toast"
 import { fetchNextInspectionSchedule } from "@/features/inspections/api"
-import { AdminFridgeTools } from "@/features/fridge/components/admin-tools"
 
 // Lazy load heavier bottom sheets
 const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
@@ -44,20 +43,6 @@ function FridgeInner() {
   const [addOpen, setAddOpen] = useState(false)
   const [myOnly, setMyOnly] = useState(true)
   const [nextScheduleText, setNextScheduleText] = useState<string>("")
-  const [viewMode, setViewMode] = useState<"admin" | "inventory">(() => (isAdmin ? "admin" : "inventory"))
-  const uid = getCurrentUserId()
-
-  useEffect(() => {
-    if (!isAdmin && viewMode === "admin") {
-      setViewMode("inventory")
-    }
-  }, [isAdmin, viewMode])
-
-  if (isAdmin && viewMode === "admin") {
-    return <AdminFridgeTools onRequestResidentView={() => setViewMode("inventory")} />
-  }
-
-  // Bottom Sheets state
   const [itemSheet, setItemSheet] = useState<{ open: boolean; id: string; edit?: boolean }>({
     open: false,
     id: "",
@@ -68,8 +53,9 @@ function FridgeInner() {
     id: "",
     edit: false,
   })
-
   const initializedSlotRef = useRef(false)
+  const uid = getCurrentUserId()
+
   const ownedSlotIds = useMemo(() => {
     if (!uid) return []
     const ids = new Set<string>()
@@ -237,16 +223,6 @@ function FridgeInner() {
             </div>
           </div>
           <div className="inline-flex items-center gap-1">
-            {isAdmin && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setViewMode("admin")}
-                aria-label="관리자 도구"
-              >
-                관리자 도구
-              </Button>
-            )}
             <Button
               variant="ghost"
               size="icon"

@@ -20,4 +20,8 @@ public interface InspectionScheduleRepository extends JpaRepository<InspectionSc
     );
 
     Optional<InspectionSchedule> findByInspectionSessionId(UUID inspectionSessionId);
+
+    List<InspectionSchedule> findTop5ByOrderByCreatedAtDesc();
+
+    List<InspectionSchedule> findByScheduledAtBetween(OffsetDateTime startInclusive, OffsetDateTime endInclusive);
 }

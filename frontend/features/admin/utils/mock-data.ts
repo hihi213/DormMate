@@ -1,0 +1,168 @@
+import type {
+  AdminQuickAction,
+  AdminResource,
+  AdminSummaryCard,
+  AdminTimelineEvent,
+  AdminUser,
+} from "../types"
+
+export const mockSummaryCards: AdminSummaryCard[] = [
+  { id: "inventory", label: "층별 물품", value: "128건", description: "최근 7일 등록" },
+  { id: "expiry", label: "임박·만료", value: "12건", description: "24시간 내 조치 필요" },
+  { id: "inspection", label: "검사 진행률", value: "82%", description: "주간 목표 대비" },
+  { id: "notification", label: "알림 실패", value: "1건", description: "Outbox에서 재시도" },
+]
+
+export const mockTimelineEvents: AdminTimelineEvent[] = [
+  {
+    id: "event-1",
+    time: "09:10",
+    title: "3층 검사 결과 제출",
+    detail: "층별장(박층장)이 경고 1건, 폐기 0건으로 처리",
+  },
+  {
+    id: "event-2",
+    time: "09:00",
+    title: "임박/만료 알림 배치 발송",
+    detail: "12건 발송 / 실패 0건 — 정책 09:00 기준 정상",
+  },
+  {
+    id: "event-3",
+    time: "08:30",
+    title: "냉장 B-2 칸 중단 요청",
+    detail: "거주자 4명 영향 — 자원 관리에서 상태 전환 필요",
+  },
+]
+
+export const mockQuickActions: AdminQuickAction[] = [
+  {
+    id: "compartment",
+    title: "칸 상태 전환",
+    description: "자원 관리 허브에서 SUSPENDED/ACTIVE 전환",
+    href: "/admin/manage/resources",
+    icon: "clipboard",
+  },
+  {
+    id: "promote",
+    title: "층별장 임명",
+    description: "권한·계정 화면에서 승격/복귀 처리",
+    href: "/admin/manage/roles",
+    icon: "shield",
+  },
+  {
+    id: "policy",
+    title: "알림 정책 편집",
+    description: "09:00 배치, 상한, dedupe 키 즉시 변경",
+    href: "/admin/manage/policies",
+    icon: "bell",
+  },
+  {
+    id: "report",
+    title: "보고서 내려받기",
+    description: "검사·알림·벌점 통합 리포트 생성",
+    href: "/admin/manage/reports",
+    icon: "file",
+  },
+]
+
+export const mockResources: AdminResource[] = [
+  {
+    id: "fridge-3a",
+    facility: "fridge",
+    name: "냉장 A동 3층-1",
+    location: "기숙사 A동 3층",
+    status: "ACTIVE",
+    capacity: "7/8",
+    manager: "박층장",
+    rooms: "301~304",
+    labelRange: "A301~A340",
+    lastInspection: "2025-10-31",
+  },
+  {
+    id: "fridge-3b",
+    facility: "fridge",
+    name: "냉장 A동 3층-2",
+    location: "기숙사 A동 3층",
+    status: "SUSPENDED",
+    capacity: "2/8",
+    manager: "박층장",
+    rooms: "305~308",
+    issue: "정전 후 온도 미복구",
+    labelRange: "A341~A380",
+    lastInspection: "2025-10-30",
+  },
+  {
+    id: "laundry-1",
+    facility: "laundry",
+    name: "세탁 1호기",
+    location: "세탁실 1층",
+    status: "ACTIVE",
+    capacity: "예약 6/12",
+    manager: "시설팀",
+    rooms: "A/B동 공용",
+    lastInspection: "2025-10-29",
+  },
+  {
+    id: "library-1",
+    facility: "library",
+    name: "도서관 1 구역",
+    location: "도서관 2층",
+    status: "REPORTED",
+    capacity: "도서 512권",
+    manager: "사서팀",
+    rooms: "전 학년",
+    issue: "도서 대출 오류 신고",
+    lastInspection: "2025-10-28",
+  },
+  {
+    id: "multipurpose-1",
+    facility: "multipurpose",
+    name: "다목적실 A",
+    location: "커뮤니티 센터 1층",
+    status: "ACTIVE",
+    capacity: "예약 4/6",
+    manager: "행정팀",
+    rooms: "A동",
+    lastInspection: "2025-10-25",
+  },
+]
+
+export const mockUsers: AdminUser[] = [
+  {
+    id: "user-301",
+    name: "박층장",
+    room: "A-301",
+    role: "FLOOR_MANAGER",
+    status: "ACTIVE",
+    lastLogin: "2025-11-01 08:40",
+    inspectionsInProgress: 1,
+    penalties: 0,
+  },
+  {
+    id: "user-302",
+    name: "김도미",
+    room: "A-302",
+    role: "RESIDENT",
+    status: "ACTIVE",
+    lastLogin: "2025-10-31 23:18",
+    penalties: 1,
+  },
+  {
+    id: "user-admin",
+    name: "관리자",
+    room: "행정실",
+    role: "ADMIN",
+    status: "ACTIVE",
+    lastLogin: "2025-11-01 07:55",
+  },
+  {
+    id: "user-401",
+    name: "이훈",
+    room: "B-401",
+    role: "FLOOR_MANAGER",
+    status: "ACTIVE",
+    lastLogin: "2025-10-29 19:12",
+    inspectionsInProgress: 0,
+    penalties: 2,
+  },
+]

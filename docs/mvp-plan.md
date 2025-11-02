@@ -93,7 +93,7 @@
   - [ ] 임박/만료 배지를 `freshness`(`ok/expiring/expired`) 기반으로 통합 표시하고 UI 문구·색상을 정책에 맞춰 조정.
   - [ ] `FridgeIntegrationTest` 및 `npm test -- fridge-badge`로 임박/만료·라벨 플로우 회귀 테스트.
   - [ ] 라벨 시퀀스 기본 범위(001~999) 및 `max_bundle_count` 관리자 조정 정책을 서버 단에서 검증하고 통합 테스트로 보호.
-  - [ ] 냉장고 증설 시 `compartment_room_access` 자동 재배분 로직을 구현하고, 호실 매핑이 기대대로 변경되는지 검증한다.
+  - [x] 냉장고 증설 시 `compartment_room_access` 자동 재배분 로직을 구현하고, 호실 매핑이 기대대로 변경되는지 검증한다.
   - [ ] 포장 목록 페이징(`page`,`size`)과 `freshness` 필터가 조합될 때도 라벨 재사용·배지 상태가 일관되는지 QA 체크리스트를 확정한다.
 - **Feature 링크**: [Feature Inventory §2 냉장고 – 일반 기숙사생](feature-inventory.md#2-냉장고--일반-기숙사생)
 - **목표**: 임박/만료 상태가 즉시 반영되고 삭제 후 라벨을 재사용할 수 있다.
@@ -207,7 +207,7 @@
 - **Status ID**: NO-403
 - **체크리스트**
   - [ ] 알림 설정 화면에서 냉장고 알림 ON/OFF 토글을 현재 사용 중인 훅/컨텍스트 상태와 연동한다.
-  - [ ] 토글 변경 시 백엔드 `notification_preference`와 동기화되는지 검증하고, 백그라운드 알림 허용 옵션을 추가한다.
+  - [x] 토글 변경 시 백엔드 `notification_preference`와 동기화되는지 검증하고, 백그라운드 알림 허용 옵션을 추가한다.
   - [ ] 알림 설정 저장용 백엔드 API를 구현해 종류별 ON/OFF, 백그라운드 허용 여부를 업데이트하고 단위·통합 테스트로 검증한다.
   - [ ] 설정 화면에서 최근 발송 알림의 `correlationId`·상세 링크가 올바르게 작동하는지 수동/E2E 테스트 절차를 마련한다.
 - **Feature 링크**: [Feature Inventory §3 냉장고 – 알림 & 일정](feature-inventory.md#3-냉장고--알림--일정)
@@ -243,8 +243,9 @@
 ### NO-501 배치 알림 생성
 - **Status ID**: NO-501
 - **체크리스트**
-  - [ ] Spring Scheduling cron(09:00) 설정 확인 및 개발용 수동 트리거 Bean 작성.
-  - [ ] `FRIDGE_EXPIRY`·`FRIDGE_EXPIRED` dedupe 키와 TTL(24h) 적용 검증, 중복 방지 로직을 단위 테스트로 보호.
+  - [x] Spring Scheduling cron(09:00) 설정 확인 및 개발용 수동 트리거 Bean 작성.
+  - [x] `FRIDGE_EXPIRY`·`FRIDGE_EXPIRED` dedupe 키와 TTL(24h) 적용 검증, 중복 방지 로직을 단위 테스트로 보호.
+  - [ ] 배치 재시도/오류 코드 정책을 정리하고 [`docs/ops/batch-notifications.md`](ops/batch-notifications.md)와 코드에 반영한다.
   - [ ] 스케줄러 통합 테스트(가짜 Clock/TaskScheduler) 작성하고, 배치 실패 시 `notification_dispatch_log`에 기록되는지 확인.
   - [ ] 임박/만료 배치 알림 생성 로직을 구현해 거주자에게 실제 발송하고, dedupe·TTL 정책이 문서와 일치하는지 점검한다.
 - **Feature 링크**: [Feature Inventory §3 냉장고 – 알림 & 일정](feature-inventory.md#3-냉장고--알림--일정)
@@ -276,14 +277,16 @@
 
 ## S5 관리자 운영 통제 (mvp-scenario.md §3.5)
 
+- **IA 합의 메모 (2025-11-01)**: 관리자 화면은 거주자·층별장과 동일한 하단 탭 구성을 유지하되, 운영 플로우(세탁/냉장고/도서관/다목적실)와 중앙 관리 플로우를 분리한다. 모듈 탭에는 현황 위젯과 “관리로 이동” 딥링크만 남기고, 자원/권한/알림/벌점/보고 등 횡단 기능은 `관리(⚙️)` 허브에서만 편집한다. 이를 통해 냉장고 증설·라벨 범위 조정, 층별장 승격/복귀, 09:00 임박 알림 정책, 누적 10점 제재 같은 공통 로직을 SSOT로 유지하며 `docs/feature-inventory.md §5`, `docs/mvp-scenario.md §3.5` 요구사항과 일치시킨다.
+
 ### AD-601 칸 설정·통계
 - **Status ID**: AD-601
 - **체크리스트**
   - [x] `PATCH /admin/fridge/compartments/{id}`로 `max_bundle_count` 조정 기능 검증.
   - [x] 칸 상태 `SUSPENDED` 전환 시 거주자 접근 제한 및 메시지 반환 확인.
   - [ ] 관리자 대시보드에서 층별 통계가 노출되도록 프런트 UI를 보강.
-  - [ ] 냉장고 증설/재배분 시 `compartment_room_access`가 자동 재계산되고 UI에서 재배분 결과를 확인할 수 있도록 백엔드/프런트 검증 루틴을 마련한다.
-  - [ ] 냉장고 증설/재배분용 관리자 API와 서비스 로직을 구현해 정책대로 `compartment_room_access`를 갱신하고, 회귀 테스트 및 운영 절차 문서를 추가한다.
+  - [ ] 냉장고 증설/재배분 시 `compartment_room_access`가 자동 재계산되고 UI에서 재배분 결과를 확인할 수 있도록 백엔드/프런트 검증 루틴을 마련한다. *(프런트 연동 TODO)*
+  - [x] 냉장고 증설/재배분용 관리자 API와 서비스 로직을 구현해 정책대로 `compartment_room_access`를 갱신하고, 회귀 테스트 및 운영 절차 문서를 추가한다.
   - [ ] 관리자 검사·포장 목록 API가 `slotId`·`status`·`limit`·`page` 필터를 지원하고, 대시보드에서 해당 필터를 적용해 사례를 조회하는 절차를 QA 체크리스트로 정리한다.
 - **Feature 링크**: [Feature Inventory §5 냉장고 – 관리자](feature-inventory.md#5-냉장고--관리자), [Feature Inventory §2 냉장고 – 일반 기숙사생 · 증설 정책](feature-inventory.md#냉장고-증설재배분)
 - **목표**: 관리자가 칸 용량·상태를 조정하고 통계를 확인할 수 있다.

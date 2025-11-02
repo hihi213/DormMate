@@ -21,6 +21,8 @@ tags:
     description: 폴링 기반 실시간 이벤트 전파
   - name: FridgeAdmin
     description: 관리자 냉장고 자원 제어
+  - name: Notifications
+    description: 사용자 알림 조회 및 설정
 components:
   securitySchemes:
     BearerAuth:
@@ -282,6 +284,152 @@ components:
           items: { $ref: '#/components/schemas/FridgeBundleSummary' }
         totalCount: { type: integer, format: int64 }
       required: [items, totalCount]
+    ReallocationPreviewRequest:
+      type: object
+      properties:
+        floor:
+          type: integer
+          format: int32
+          minimum: 1
+      required: [floor]
+    ReallocationPreviewResponse:
+      type: object
+      properties:
+        floor:
+          type: integer
+          format: int32
+        rooms:
+          type: array
+          items: { $ref: '#/components/schemas/ReallocationRoomSummary' }
+        allocations:
+          type: array
+          items: { $ref: '#/components/schemas/ReallocationCompartmentAllocation' }
+        chillCompartmentCount:
+          type: integer
+          format: int32
+      required: [floor, rooms, allocations, chillCompartmentCount]
+    ReallocationRoomSummary:
+      type: object
+      properties:
+        roomId: { type: string, format: uuid }
+        roomNumber: { type: string }
+        roomType: { type: string }
+        floor: { type: integer, format: int32 }
+      required: [roomId, roomNumber, roomType, floor]
+    ReallocationCompartmentAllocation:
+      type: object
+      properties:
+        compartmentId: { type: string, format: uuid }
+        fridgeUnitId: { type: string, format: uuid }
+        slotIndex: { type: integer, format: int32 }
+        slotLabel: { type: string }
+        compartmentType:
+          type: string
+          enum: [CHILL, FREEZE]
+        status:
+          type: string
+          enum: [ACTIVE, SUSPENDED, REPORTED, RETIRED]
+        locked: { type: boolean }
+        currentRoomIds:
+          type: array
+          items: { type: string, format: uuid }
+        recommendedRoomIds:
+          type: array
+          items: { type: string, format: uuid }
+        warnings:
+          type: array
+          items: { type: string }
+      required:
+        [compartmentId, fridgeUnitId, slotIndex, slotLabel, compartmentType, status, locked, currentRoomIds, recommendedRoomIds, warnings]
+    ReallocationApplyRequest:
+      type: object
+      properties:
+        floor:
+          type: integer
+          format: int32
+          minimum: 1
+        allocations:
+          type: array
+          items: { $ref: '#/components/schemas/ReallocationApplyAllocation' }
+      required: [floor, allocations]
+    ReallocationApplyAllocation:
+      type: object
+      properties:
+        compartmentId: { type: string, format: uuid }
+        roomIds:
+          type: array
+          items: { type: string, format: uuid }
+      required: [compartmentId, roomIds]
+    ReallocationApplyResponse:
+      type: object
+      properties:
+        floor: { type: integer, format: int32 }
+        affectedCompartments: { type: integer, format: int32 }
+        releasedAssignments: { type: integer, format: int32 }
+        createdAssignments: { type: integer, format: int32 }
+        appliedAt: { type: string, format: date-time }
+      required: [floor, affectedCompartments, releasedAssignments, createdAssignments, appliedAt]
+    NotificationState:
+      type: string
+      enum: [UNREAD, READ, EXPIRED]
+    NotificationItem:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kindCode: { type: string }
+        title: { type: string }
+        body: { type: string }
+        state: { $ref: '#/components/schemas/NotificationState' }
+        createdAt: { type: string, format: date-time }
+        readAt:
+          type: string
+          format: date-time
+          nullable: true
+        ttlAt:
+          type: string
+          format: date-time
+          nullable: true
+        correlationId:
+          type: string
+          format: uuid
+          nullable: true
+        metadata:
+          type: object
+          additionalProperties: true
+      required: [id, kindCode, title, body, state, createdAt]
+    NotificationListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/NotificationItem' }
+        page: { type: integer, format: int32 }
+        size: { type: integer, format: int32 }
+        totalElements: { type: integer, format: int64 }
+        unreadCount: { type: integer, format: int64 }
+      required: [items, page, size, totalElements, unreadCount]
+    NotificationPreferenceItem:
+      type: object
+      properties:
+        kindCode: { type: string }
+        displayName: { type: string }
+        description: { type: string }
+        enabled: { type: boolean }
+        allowBackground: { type: boolean }
+      required: [kindCode, displayName, description, enabled, allowBackground]
+    NotificationPreferenceResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items: { $ref: '#/components/schemas/NotificationPreferenceItem' }
+      required: [items]
+    UpdateNotificationPreferenceRequest:
+      type: object
+      properties:
+        enabled: { type: boolean }
+        allowBackground: { type: boolean }
+      required: [enabled, allowBackground]
     CreateBundleItemInput:
       type: object
       properties:
@@ -733,6 +881,167 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
         '422': { $ref: '#/components/responses/UnprocessableEntity' }
+  /admin/fridge/bundles/deleted:
+    get:
+      tags: [FridgeAdmin]
+      summary: 삭제된 포장 이력 조회
+      description: 기본적으로 최근 3개월 이내 삭제된 포장을 반환하며, `since` 파라미터로 기간을 확장할 수 있습니다.
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: query
+          name: since
+          schema: { type: string, format: date-time }
+          description: 조회 기준 시각(UTC). 지정하지 않으면 현재 시각 기준 3개월 전으로 자동 설정됩니다.
+        - in: query
+          name: page
+          schema: { type: integer, minimum: 0, default: 0 }
+        - in: query
+          name: size
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: 삭제된 포장 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/BundleListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /admin/fridge/reallocations/preview:
+    post:
+      tags: [FridgeAdmin]
+      summary: 층별 칸-호실 재배분 추천안 조회
+      description: 현재 배정 현황을 바탕으로 균등 분배한 추천안을 생성합니다. 실제 반영 전 검토용으로 사용하세요.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReallocationPreviewRequest' }
+      responses:
+        '200':
+          description: 추천안 생성 성공
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReallocationPreviewResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /admin/fridge/reallocations/apply:
+    post:
+      tags: [FridgeAdmin]
+      summary: 층별 칸-호실 재배분 확정 반영
+      description: 검토·수정한 배정안을 저장하고 기존 배정을 종료합니다.
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ReallocationApplyRequest' }
+      responses:
+        '200':
+          description: 재배분 적용 성공
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ReallocationApplyResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /notifications:
+    get:
+      tags: [Notifications]
+      summary: 내 알림 목록 조회
+      description: 미읽음 우선 정렬로 알림을 반환합니다. TTL이 지난 알림은 자동으로 만료 처리됩니다.
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: query
+          name: state
+          schema:
+            type: string
+            enum: [all, unread, read]
+            default: all
+          description: 조회할 알림 상태
+        - in: query
+          name: page
+          schema: { type: integer, format: int32, minimum: 0, default: 0 }
+        - in: query
+          name: size
+          schema: { type: integer, format: int32, minimum: 1, maximum: 50, default: 20 }
+      responses:
+        '200':
+          description: 알림 목록
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationListResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /notifications/{notificationId}/read:
+    patch:
+      tags: [Notifications]
+      summary: 특정 알림 읽음 처리
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: notificationId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '204':
+          description: 읽음 처리 완료
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /notifications/read-all:
+    patch:
+      tags: [Notifications]
+      summary: 모든 미읽음 알림 읽음 처리
+      security: [{ BearerAuth: [] }]
+      responses:
+        '204':
+          description: 처리 완료
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /notifications/preferences:
+    get:
+      tags: [Notifications]
+      summary: 알림 수신 설정 조회
+      security: [{ BearerAuth: [] }]
+      responses:
+        '200':
+          description: 알림 선호 설정
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPreferenceResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /notifications/preferences/{kindCode}:
+    patch:
+      tags: [Notifications]
+      summary: 알림 수신 설정 변경
+      security: [{ BearerAuth: [] }]
+      parameters:
+        - in: path
+          name: kindCode
+          description: "알림 종류 코드 (예: FRIDGE_RESULT)"
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateNotificationPreferenceRequest' }
+      responses:
+        '200':
+          description: 변경된 설정
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NotificationPreferenceItem' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /fridge/bundles/{bundleId}:
     parameters:
       - in: path
