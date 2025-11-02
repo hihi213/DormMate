@@ -13,57 +13,83 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { BulkEditor, DangerZoneModal, DetailsDrawer, PaginatedTable } from "@/components/admin"
-import { cn } from "@/lib/utils"
 import { useAdminUsers } from "@/features/admin/hooks/use-admin-users"
 import type { AdminUser } from "@/features/admin/types"
+import { cn } from "@/lib/utils"
+import { useToast } from "@/hooks/use-toast"
 
-type UserRoleFilter = "RESIDENT" | "ADMIN"
 type UserStatusFilter = "ACTIVE" | "INACTIVE"
+
+type FilterState = {
+  search: string
+  floor: string
+  status: UserStatusFilter
+}
+
+type SelectionMode = "PROMOTE" | "DEACTIVATE" | null
 
 export default function AdminUsersPage() {
   const { data, loading } = useAdminUsers()
   const userItems = useMemo(() => data?.items ?? [], [data?.items])
 
-  const [filters, setFilters] = useState<{ search: string; role: UserRoleFilter; status: UserStatusFilter; includeFloorManager: boolean }>({
+  const [filters, setFilters] = useState<FilterState>({
     search: "",
-    role: "RESIDENT",
+    floor: "ALL",
     status: "ACTIVE",
-    includeFloorManager: false,
   })
   const [page, setPage] = useState(1)
   const pageSize = 6
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [drawerUser, setDrawerUser] = useState<AdminUser | null>(null)
   const [searchInput, setSearchInput] = useState("")
-
-  const filtered = useMemo(() => {
-    const keyword = filters.search.trim().toLowerCase()
-    return userItems.filter((user) => {
-      const matchesSearch =
-        keyword.length === 0 ||
-        user.name.toLowerCase().includes(keyword) ||
-        user.room.toLowerCase().includes(keyword)
-
-      const roleMatchesResident = filters.role === "RESIDENT" && user.role === "RESIDENT"
-      const roleMatchesAdmin = filters.role === "ADMIN" && user.role === "ADMIN"
-
-      const includeFloor = filters.includeFloorManager && user.role === "FLOOR_MANAGER"
-      const matchesRole = filters.role === "RESIDENT" ? roleMatchesResident || includeFloor : roleMatchesAdmin
-
-      const matchesStatus = user.status === filters.status
-
-      return matchesSearch && matchesRole && matchesStatus
-    })
-  }, [filters, userItems])
-
-  const totalItems = filtered.length
-  const paginated = filtered.slice((page - 1) * pageSize, page * pageSize)
+  const [selectionMode, setSelectionMode] = useState<SelectionMode>(null)
+  const { toast } = useToast()
 
   useEffect(() => {
     setSearchInput(filters.search)
   }, [filters.search])
 
+  const floors = useMemo(() => {
+    const set = new Set<number>()
+    userItems.forEach((user) => {
+      const floor = resolveUserFloor(user)
+      if (floor !== null) set.add(floor)
+    })
+    return Array.from(set).sort((a, b) => a - b)
+  }, [userItems])
+
+  const filteredUsers = useMemo(() => {
+    const keyword = filters.search.trim().toLowerCase()
+    return userItems.filter((user) => {
+      const roomLabel = user.room?.toLowerCase() ?? ""
+      const roomCode = user.roomCode?.toLowerCase() ?? ""
+      const personalNo = user.personalNo != null ? String(user.personalNo) : ""
+      const roomWithPersonal = formatRoomWithPersonal(user).toLowerCase()
+      const matchesSearch =
+        keyword.length === 0 ||
+        user.name.toLowerCase().includes(keyword) ||
+        roomLabel.includes(keyword) ||
+        roomCode.includes(keyword) ||
+        roomWithPersonal.includes(keyword) ||
+        personalNo.includes(keyword) ||
+        user.id.toLowerCase().includes(keyword)
+
+      const statusMatches = user.status === filters.status
+      const userFloor = resolveUserFloor(user)
+      const floorMatches =
+        filters.floor === "ALL" || (userFloor !== null && String(userFloor) === filters.floor)
+
+      return matchesSearch && statusMatches && floorMatches
+    })
+  }, [filters, userItems])
+
+  const totalItems = filteredUsers.length
+  const paginated = filteredUsers.slice((page - 1) * pageSize, page * pageSize)
+
+  const isSelectionEnabled = selectionMode !== null
+
   const toggleSelection = (id: string, checked: boolean) => {
+    if (!isSelectionEnabled) return
     setSelectedIds((prev) => (checked ? Array.from(new Set([...prev, id])) : prev.filter((value) => value !== id)))
   }
 
@@ -77,112 +103,160 @@ export default function AdminUsersPage() {
     setPage(1)
   }
 
+  const handleFloorChange = (value: string) => {
+    setFilters((prev) => ({ ...prev, floor: value }))
+    setPage(1)
+  }
+
+  const handleStatusChange = (status: UserStatusFilter) => {
+    setFilters((prev) => ({ ...prev, status }))
+    setPage(1)
+  }
+
+  const startSelection = (mode: Exclude<SelectionMode, null>) => {
+    if (selectionMode === mode) {
+      cancelSelection()
+      return
+    }
+    setSelectionMode(mode)
+    resetSelection()
+  }
+
+  const cancelSelection = () => {
+    setSelectionMode(null)
+    resetSelection()
+  }
+
+  const handleRowClick = (user: AdminUser) => {
+    if (selectionMode) {
+      const nextChecked = !selectedIds.includes(user.id)
+      toggleSelection(user.id, nextChecked)
+      return
+    }
+    openDrawer(user)
+  }
+
+  const confirmSelection = () => {
+    if (!selectionMode || selectedIds.length === 0) return
+    const actionLabel = selectionMode === "PROMOTE" ? "층별장 임명" : "비활성화"
+    toast({
+      title: `${actionLabel} 준비 완료`,
+      description: `${selectedIds.length}명의 사용자를 대상으로 ${actionLabel}을 진행하세요.`,
+    })
+    cancelSelection()
+  }
+
   return (
     <>
       <div data-admin-slot="main" className="space-y-6">
-        <section className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm space-y-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={filters.role === "RESIDENT" ? "default" : "ghost"}
-                className={cn(
-                  "px-3 text-xs font-medium",
-                  filters.role === "RESIDENT"
-                    ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
-                    : "text-slate-600 hover:text-emerald-600",
-                )}
-                onClick={() => {
-                  setFilters((prev) => ({ ...prev, role: "RESIDENT", includeFloorManager: false }))
-                  setPage(1)
-                }}
-              >
-                거주자
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={filters.role === "ADMIN" ? "default" : "ghost"}
-                className={cn(
-                  "px-3 text-xs font-medium",
-                  filters.role === "ADMIN"
-                    ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
-                    : "text-slate-600 hover:text-emerald-600",
-                )}
-                onClick={() => {
-                  setFilters((prev) => ({ ...prev, role: "ADMIN", includeFloorManager: false }))
-                  setPage(1)
-                }}
-              >
-                관리자
-              </Button>
-              {filters.role === "RESIDENT" ? (
-                <Button
-                  type="button"
-                  size="sm"
-                  variant={filters.includeFloorManager ? "default" : "outline"}
-                  className={cn(
-                    "px-3 text-xs font-medium",
-                    filters.includeFloorManager
-                      ? "bg-emerald-200/80 text-emerald-800 hover:bg-emerald-200/80"
-                      : "border-emerald-200 text-emerald-600 hover:border-emerald-300",
-                  )}
-                  onClick={() => {
-                    setFilters((prev) => ({ ...prev, includeFloorManager: !prev.includeFloorManager }))
-                    setPage(1)
-                  }}
-                >
-                  층별장 포함
-                </Button>
-              ) : null}
+        <section className="rounded-3xl border border-emerald-100 bg-white/90 p-6 shadow-sm">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-2">
+              <Badge variant="outline" className="w-fit border-emerald-200 bg-emerald-50 text-emerald-700">
+                권한·계정
+              </Badge>
+              <h1 className="text-2xl font-semibold text-slate-900">층별장 및 관리자 계정 관리</h1>
+              <p className="text-sm text-slate-600">
+                층별장 승격/복귀, 관리자 임명, 계정 비활성화를 처리합니다. 진행 중 검사 세션이 있는 경우 승계·종료 절차를
+                먼저 확인하세요.
+              </p>
             </div>
-            <form onSubmit={handleSearchSubmit} className="flex w-full gap-2 lg:w-auto">
-              <Input
-                value={searchInput}
-                onChange={(event) => setSearchInput(event.target.value)}
-                placeholder="이름, 호실 검색"
-                className="h-10 flex-1 rounded-xl border border-slate-200 bg-white/90"
-              />
-              <Button type="submit" className="px-4">검색</Button>
+            <Badge variant="secondary" className="h-fit rounded-full bg-emerald-100 px-4 py-1 text-sm font-medium text-emerald-700">
+              총 {totalItems.toLocaleString()}명
+            </Badge>
+          </div>
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm space-y-4">
+          <div className="grid gap-3 lg:grid-cols-[minmax(0,0.6fr)_minmax(0,1fr)_auto]">
+            <div className="space-y-1.5">
+              <Label className="text-xs font-semibold uppercase tracking-wide text-slate-600">층 선택</Label>
+              <Select value={filters.floor} onValueChange={handleFloorChange}>
+                <SelectTrigger className="h-10 rounded-xl border border-slate-200 bg-white/90">
+                  <SelectValue placeholder="층 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="ALL">전체</SelectItem>
+                  {floors.map((floor) => (
+                    <SelectItem key={floor} value={String(floor)}>
+                      {floor}층
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <form onSubmit={handleSearchSubmit} className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 lg:w-auto">
+              <div className="space-y-1.5">
+                <Label htmlFor="user-search" className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+                  검색
+                </Label>
+                <Input
+                  id="user-search"
+                  value={searchInput}
+                  onChange={(event) => setSearchInput(event.target.value)}
+                  placeholder="이름·호실(예: 301-1)·개인번호 검색"
+                  className="h-10 rounded-xl border border-slate-200 bg-white/90"
+                />
+              </div>
+              <div className="flex items-end">
+                <Button type="submit" className="h-10 px-4">
+                  검색
+                </Button>
+              </div>
             </form>
+            <div className="flex items-end justify-end">
+              <Button asChild variant="ghost" className="text-slate-600">
+                <Link href="/admin/audit?module=roles">권한 변경 로그</Link>
+              </Button>
+            </div>
           </div>
           <Separator />
-          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
-            <span className="font-medium text-slate-700">
-              사용자 목록 · 총 {totalItems.toLocaleString()}명
-            </span>
-            <Separator orientation="vertical" className="hidden h-4 md:block" />
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">상태</span>
-              <div className="flex gap-1 rounded-full border border-slate-200 bg-slate-50/80 p-1">
-                {[
-                  { value: "ACTIVE", label: "활성" },
-                  { value: "INACTIVE", label: "비활성" },
-                ].map((status) => {
-                  const isActive = filters.status === status.value
-                  return (
-                    <Button
-                      key={status.value}
-                      type="button"
-                      size="sm"
-                      variant={isActive ? "default" : "ghost"}
-                      className={cn(
-                        "px-3 text-xs font-medium",
-                        isActive
-                          ? "bg-emerald-200/80 text-emerald-800 hover:bg-emerald-200/80"
-                          : "text-slate-600 hover:text-emerald-600",
-                      )}
-                      onClick={() => {
-                        setFilters((prev) => ({ ...prev, status: status.value }))
-                        setPage(1)
-                      }}
-                    >
-                      {status.label}
-                    </Button>
-                  )
-                })}
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-2 text-xs text-slate-600">
+              <span className="text-sm font-semibold text-slate-800">
+                사용자 목록 · 총 {totalItems.toLocaleString()}명
+              </span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">상태</span>
+                <div className="flex gap-1 rounded-full border border-slate-200 bg-slate-50/80 p-1">
+                  {(["ACTIVE", "INACTIVE"] as UserStatusFilter[]).map((status) => {
+                    const isActive = filters.status === status
+                    return (
+                      <Button
+                        key={status}
+                        type="button"
+                        size="sm"
+                        variant={isActive ? "default" : "ghost"}
+                        className={cn(
+                          "px-3 text-xs font-medium",
+                          isActive
+                            ? "bg-emerald-200/80 text-emerald-800 hover:bg-emerald-200/80"
+                            : "text-slate-600 hover:text-emerald-600",
+                        )}
+                        onClick={() => handleStatusChange(status)}
+                      >
+                        {status === "ACTIVE" ? "활성" : "비활성"}
+                      </Button>
+                    )
+                  })}
+                </div>
               </div>
+            </div>
+            <div className="flex flex-wrap justify-end gap-2">
+              <Button
+                type="button"
+                variant={selectionMode === "PROMOTE" ? "default" : "outline"}
+                onClick={() => startSelection("PROMOTE")}
+              >
+                {selectionMode === "PROMOTE" ? "선택 취소" : "층별장 임명"}
+              </Button>
+              <Button
+                type="button"
+                variant={selectionMode === "DEACTIVATE" ? "default" : "outline"}
+                onClick={() => startSelection("DEACTIVATE")}
+              >
+                {selectionMode === "DEACTIVATE" ? "선택 취소" : "비활성화"}
+              </Button>
             </div>
           </div>
         </section>
@@ -190,118 +264,147 @@ export default function AdminUsersPage() {
         <section className="space-y-4">
           <Card className="shadow-sm">
             <CardContent>
-                <PaginatedTable
-                  columns={[
-                    {
-                      key: "select",
-                      header: "",
-                      width: "40px",
-                      render: (row) => (
-                        <Checkbox
-                          aria-label={`${row.name} 선택`}
-                          checked={selectedIds.includes(row.id)}
-                          onCheckedChange={(checked) => toggleSelection(row.id, Boolean(checked))}
-                        />
-                      ),
+              <PaginatedTable
+                columns={[
+                  {
+                    key: "select",
+                    header: "",
+                    width: "40px",
+                    render: (row) => (
+                      <Checkbox
+                        aria-label={`${row.name} 선택`}
+                        checked={selectedIds.includes(row.id)}
+                        onCheckedChange={(checked) => toggleSelection(row.id, Boolean(checked))}
+                        disabled={!isSelectionEnabled}
+                        onClick={(event) => event.stopPropagation()}
+                      />
+                    ),
+                  },
+                  {
+                    key: "room",
+                    header: "호실",
+                    render: (row) => {
+                      const code = resolveRoomCode(row)
+                      return code ? (
+                        <span className="font-medium text-slate-800">{code}</span>
+                      ) : (
+                        <span className="text-slate-400">-</span>
+                      )
                     },
-                    {
-                      key: "name",
-                      header: "사용자",
-                      render: (row) => (
-                        <div className="flex flex-col">
-                          <span className="font-medium text-slate-900">{row.name}</span>
-                          <span className="text-xs text-muted-foreground">{row.room}</span>
-                        </div>
-                      ),
-                    },
-                    {
-                      key: "baseRole",
-                      header: "역할",
-                      render: (row) => (row.role === "ADMIN" ? "관리자" : "거주자"),
-                    },
-                    {
-                      key: "extra",
-                      header: "추가 권한",
-                      render: (row) =>
-                        row.role === "FLOOR_MANAGER" ? (
-                          <Badge variant="outline" className="border-emerald-200 text-emerald-700">
-                            층별장
-                          </Badge>
-                        ) : (
-                          <span className="text-slate-400">-</span>
-                        ),
-                    },
-                    {
-                      key: "status",
-                      header: "상태",
-                      render: (row) => (
-                        <Badge
-                          variant="outline"
-                          className={row.status === "ACTIVE" ? "border-emerald-200 text-emerald-700" : "border-slate-200 text-slate-500"}
-                        >
-                          {row.status}
+                  },
+                  {
+                    key: "personal",
+                    header: "개인번호",
+                    render: (row) =>
+                      row.personalNo != null ? (
+                        <Badge variant="outline" className="border-slate-200 bg-slate-50 px-2 font-semibold text-slate-700">
+                          {row.personalNo}
                         </Badge>
+                      ) : (
+                        <span className="text-slate-400">-</span>
                       ),
-                    },
-                    {
-                      key: "lastLogin",
-                      header: "최근 로그인",
-                    },
-                    {
-                      key: "actions",
-                      header: "",
-                      render: (row) => (
-                        <Button type="button" size="sm" variant="ghost" onClick={() => openDrawer(row)}>
-                          상세
-                        </Button>
+                  },
+                  {
+                    key: "name",
+                    header: "사용자",
+                    render: (row) => (
+                      <div className="flex flex-col">
+                        <span className="font-medium text-slate-900">{row.name}</span>
+                        <span className="text-xs text-muted-foreground">{formatRoomWithPersonal(row)}</span>
+                      </div>
+                    ),
+                  },
+                  {
+                    key: "extra",
+                    header: "추가 권한",
+                    render: (row) =>
+                      row.role === "FLOOR_MANAGER" ? (
+                        <Badge variant="outline" className="border-emerald-200 text-emerald-700">
+                          층별장
+                        </Badge>
+                      ) : (
+                        <span className="text-slate-400">-</span>
                       ),
-                    },
-                  ]}
-                  data={paginated}
-                  pagination={{
-                    page,
-                    pageSize,
-                    totalItems,
-                    onPageChange: setPage,
-                  }}
-                  getRowId={(row) => row.id}
-                />
-                {loading && paginated.length === 0 ? (
-                  <p className="mt-4 text-xs text-muted-foreground">사용자 데이터를 불러오는 중입니다…</p>
-                ) : null}
-              </CardContent>
-            </Card>
+                  },
+                  {
+                    key: "penalties",
+                    header: "벌점",
+                    render: (row) => (
+                      <span
+                        className={
+                          row.penalties && row.penalties > 0 ? "font-medium text-rose-600" : "text-slate-600"
+                        }
+                      >
+                        {(row.penalties ?? 0).toLocaleString()}점
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "lastLogin",
+                    header: "최근 로그인",
+                  },
+                  {
+                    key: "status",
+                    header: "상태",
+                    render: (row) => (
+                      <Badge
+                        variant="outline"
+                        className={row.status === "ACTIVE" ? "border-emerald-200 text-emerald-700" : "border-slate-200 text-slate-500"}
+                      >
+                        {row.status}
+                      </Badge>
+                    ),
+                  },
+                ]}
+                data={paginated}
+                onRowClick={(row) => handleRowClick(row)}
+                pagination={{
+                  page,
+                  pageSize,
+                  totalItems,
+                  onPageChange: setPage,
+                }}
+                getRowId={(row) => row.id}
+              />
+              {loading && paginated.length === 0 ? (
+                <p className="mt-4 text-xs text-muted-foreground">사용자 데이터를 불러오는 중입니다…</p>
+              ) : null}
+            </CardContent>
+          </Card>
 
+          {selectionMode ? (
             <BulkEditor
               selectedCount={selectedIds.length}
               onClearSelection={resetSelection}
               secondaryActions={[
                 {
-                  id: "demote",
-                  label: "층별장 해제",
-                  variant: "outline",
-                  onSelect: () => {
-                    const target = userItems.find((user) => selectedIds.includes(user.id))
-                    if (target) openDrawer(target)
-                  },
+                  id: "cancel",
+                  label: "선택 취소",
+                  variant: "ghost",
+                  onSelect: cancelSelection,
                 },
               ]}
               primaryAction={{
-                id: "promote",
-                label: "층별장 임명",
-                onSelect: () => {
-                  const target = userItems.find((user) => selectedIds.includes(user.id))
-                  if (target) openDrawer(target)
-                },
+                id: "confirm",
+                label: selectionMode === "PROMOTE" ? "임명 확정" : "비활성화 확정",
+                onSelect: confirmSelection,
               }}
             >
-              <span className="text-xs text-muted-foreground">층별장 변경 시 진행 중 검사 세션 승계/종료 절차를 확인하세요.</span>
+              <span className="text-xs text-muted-foreground">
+                선택한 사용자 {selectedIds.length}명 · {selectionMode === "PROMOTE" ? "층별장 임명" : "계정 비활성화"}을 진행하려면 확정
+                버튼을 누르세요.
+              </span>
             </BulkEditor>
-          </section>
+          ) : null}
+        </section>
 
         <DetailsDrawer
           title={drawerUser?.name ?? ""}
-          description={drawerUser ? `${drawerUser.room} · 최근 로그인 ${drawerUser.lastLogin}` : ""}
+          description={
+            drawerUser
+              ? `${formatRoomWithPersonal(drawerUser)} · 최근 로그인 ${drawerUser.lastLogin}`
+              : ""
+          }
           open={Boolean(drawerUser)}
           onOpenChange={(open) => {
             if (!open) closeDrawer()
@@ -315,14 +418,12 @@ export default function AdminUsersPage() {
                   <p className="font-medium text-slate-900">{drawerUser.role === "ADMIN" ? "관리자" : "거주자"}</p>
                 </div>
                 <div>
-                  <Label className="text-xs text-muted-foreground">추가 권한</Label>
-                  <p className="font-medium text-slate-900">
-                    {drawerUser.role === "FLOOR_MANAGER" ? "층별장" : "-"}
-                  </p>
+                  <Label className="text-xs text-muted-foreground">호실·개인번호</Label>
+                  <p className="font-medium text-slate-900">{formatRoomWithPersonal(drawerUser)}</p>
                 </div>
                 <div>
-                  <Label className="text-xs text-muted-foreground">계정 상태</Label>
-                  <p className="font-medium text-slate-900">{drawerUser.status}</p>
+                  <Label className="text-xs text-muted-foreground">추가 권한</Label>
+                  <p className="font-medium text-slate-900">{drawerUser.role === "FLOOR_MANAGER" ? "층별장" : "-"}</p>
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">진행 중 검사</Label>
@@ -419,4 +520,40 @@ function QuickLink({ href, label }: { href: string; label: string }) {
       <span className="text-sm font-semibold text-slate-900">{label}</span>
     </Link>
   )
+}
+
+function resolveUserFloor(user: AdminUser): number | null {
+  if (typeof user.floor === "number") {
+    return Number.isNaN(user.floor) ? null : user.floor
+  }
+  if (user.room) {
+    const match = user.room.match(/(\d+)F/i)
+    if (match) {
+      const parsed = Number.parseInt(match[1], 10)
+      return Number.isNaN(parsed) ? null : parsed
+    }
+  }
+  return null
+}
+
+function resolveRoomCode(user: AdminUser): string | null {
+  if (user.roomCode) return user.roomCode
+  if (user.room) {
+    const match = user.room.match(/(\d+)F\s*(\d{1,2})/i)
+    if (match) {
+      const floor = match[1]
+      const room = match[2].padStart(2, "0")
+      return `${floor}${room}`
+    }
+  }
+  return null
+}
+
+function formatRoomWithPersonal(user: AdminUser): string {
+  const roomCode = resolveRoomCode(user)
+  if (roomCode && user.personalNo != null) {
+    return `${roomCode}-${user.personalNo}`
+  }
+  if (roomCode) return roomCode
+  return user.room ?? "호실 미배정"
 }

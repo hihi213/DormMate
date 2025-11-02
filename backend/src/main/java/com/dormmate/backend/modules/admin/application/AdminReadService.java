@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -265,14 +266,26 @@ public class AdminReadService {
 
         String primaryRole = determinePrimaryRole(activeRoles);
 
-        String roomDisplay = user.getRoomAssignments().stream()
+        Optional<RoomAssignment> activeAssignment = user.getRoomAssignments().stream()
                 .filter(RoomAssignment::isActive)
+                .findFirst();
+
+        String roomDisplay = activeAssignment
                 .map(assignment -> assignment.getRoom().getDisplayName())
-                .sorted()
-                .collect(Collectors.joining(", "));
-        if (roomDisplay.isBlank()) {
-            roomDisplay = "-";
-        }
+                .orElse("호실 미배정");
+        Integer floor = activeAssignment
+                .map(assignment -> (int) assignment.getRoom().getFloor())
+                .orElse(null);
+        String roomCode = activeAssignment
+                .map(assignment -> {
+                    int floorNo = assignment.getRoom().getFloor();
+                    String roomNumber = assignment.getRoom().getRoomNumber();
+                    return floorNo + roomNumber;
+                })
+                .orElse(null);
+        Short personalNo = activeAssignment
+                .map(RoomAssignment::getPersonalNo)
+                .orElse(null);
 
         String lastLogin = user.getSessions().stream()
                 .filter(session -> session.getRevokedAt() == null)
@@ -285,6 +298,9 @@ public class AdminReadService {
                 user.getId().toString(),
                 user.getFullName(),
                 roomDisplay,
+                floor,
+                roomCode,
+                personalNo,
                 primaryRole,
                 activeRoles,
                 user.getStatus().name(),

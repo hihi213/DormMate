@@ -210,6 +210,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 관리자 사용자 목록 조회 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 사용자 목록 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminUsersResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/fridge/compartments/{compartmentId}": {
         parameters: {
             query?: never;
@@ -478,10 +516,19 @@ export interface paths {
                         "application/json": components["schemas"]["ReallocationApplyResponse"];
                     };
                 };
-                400: components["responses"]["BadRequest"];
+                /** @description 잘못된 재배분 요청 (예: ROOM_NOT_ON_FLOOR, ROOM_DISTRIBUTION_IMBALANCED, SHARED_COMPARTMENT_MUST_INCLUDE_ALL_ROOMS) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
                 404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
             };
         };
         delete?: never;
@@ -669,7 +716,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    /** @description 알림 종류 코드 (예: FRIDGE_RESULT) */
+                    /** @description 알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등) */
                     kindCode: string;
                 };
                 cookie?: never;
@@ -1204,68 +1251,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/events/poll": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 폴링 커서 조회
-         * @description sinceId 이후 이벤트를 event_id 오름차순으로 반환한다.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description 마지막으로 수신한 eventId. 빈 값이면 최신 50개를 반환한다. */
-                    sinceId?: number;
-                    /** @description 한번에 받을 이벤트 수 상한 */
-                    limit?: number;
-                    /** @description 특정 리소스(event_log.resource_id) 필터 */
-                    resourceId?: number;
-                    /** @description 층 코드 필터 (예: 2F) */
-                    floor?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description 이벤트 목록 */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PollResponse"];
-                    };
-                };
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                409: components["responses"]["Conflict"];
-                422: components["responses"]["UnprocessableEntity"];
-                /** @description 세션 잠금 상태 */
-                423: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/problem+json": components["schemas"]["Problem"];
-                    };
-                };
-                429: components["responses"]["TooManyRequests"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -1276,6 +1261,8 @@ export interface components {
             status?: number;
             detail?: string;
             instance?: string;
+            /** @description 서비스 정의 오류 코드(예: `CAPACITY_EXCEEDED`) */
+            code?: string;
         };
         /** @enum {string} */
         RoleCode: "RESIDENT" | "FLOOR_MANAGER" | "ADMIN";
@@ -1343,6 +1330,25 @@ export interface components {
             createdAt: string;
             /** Format: date-time */
             updatedAt: string;
+        };
+        AdminUser: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            room?: string | null;
+            floor?: number | null;
+            roomCode?: string | null;
+            personalNo?: number | null;
+            role: components["schemas"]["RoleCode"];
+            roles?: components["schemas"]["RoleCode"][];
+            /** @enum {string} */
+            status: "ACTIVE" | "INACTIVE";
+            lastLogin: string;
+            inspectionsInProgress: number;
+            penalties: number;
+        };
+        AdminUsersResponse: {
+            items: components["schemas"]["AdminUser"][];
         };
         /** @enum {string} */
         SlotType: "CHILL" | "FREEZE";
@@ -1491,6 +1497,7 @@ export interface components {
         NotificationItem: {
             /** Format: uuid */
             id: string;
+            /** @description 알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등) */
             kindCode: string;
             title: string;
             body: string;
@@ -1519,6 +1526,7 @@ export interface components {
             unreadCount: number;
         };
         NotificationPreferenceItem: {
+            /** @description 알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등) */
             kindCode: string;
             displayName: string;
             description: string;
@@ -1572,7 +1580,7 @@ export interface components {
             removedAt?: string | null;
         };
         /** @enum {string} */
-        InspectionStatus: "IN_PROGRESS" | "SUBMITTED" | "CANCELED" | "CANCELLED";
+        InspectionStatus: "IN_PROGRESS" | "SUBMITTED" | "CANCELED";
         /** @enum {string} */
         InspectionAction: "WARN_INFO_MISMATCH" | "WARN_STORAGE_POOR" | "DISPOSE_EXPIRED" | "PASS" | "UNREGISTERED_DISPOSE";
         InspectionActionSummary: {
@@ -1635,8 +1643,6 @@ export interface components {
             summary: components["schemas"]["InspectionActionSummary"][];
             actions?: components["schemas"]["InspectionActionDetail"][];
             notes?: string | null;
-            initialBundleCount?: number | null;
-            totalBundleCount?: number | null;
         };
         InspectionActionEntry: {
             /** Format: uuid */
@@ -1651,23 +1657,6 @@ export interface components {
         };
         SubmitInspectionRequest: {
             notes?: string | null;
-        };
-        PollEvent: {
-            /** Format: int64 */
-            eventId: number;
-            type: string;
-            /** Format: int64 */
-            resourceId?: number | null;
-            floorCode?: string | null;
-            data: string;
-            correlationId?: string | null;
-            /** Format: date-time */
-            createdAt?: string | null;
-        };
-        PollResponse: {
-            /** Format: int64 */
-            lastId: number;
-            events: components["schemas"]["PollEvent"][];
         };
     };
     responses: {
