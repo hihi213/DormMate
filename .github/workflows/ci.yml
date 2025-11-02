@@ -93,8 +93,10 @@ jobs:
           done
           if [ "${READY:-0}" -ne 1 ]; then
             echo "Backend failed to become ready" >&2
-            cat backend-openapi.log || true
-            kill $(cat backend.pid) || true
+            cat "$LOG_FILE" || true
+            if [ -f "$PID_FILE" ]; then
+              kill "$(cat "$PID_FILE")" || true
+            fi
             exit 1
           fi
 
