@@ -166,6 +166,41 @@
   - `npm run lint`
     - (PASS, 2025-10-31 — SlotSelector 리팩터링 후 TS/ESLint 경고 없음)
 
+### AD-201 관리자 사용자 목록 정합성 — WIP (2025-11-24, Codex)
+- **근거 문서**: `docs/design/admin-wireframes.md §6`, `docs/data-model.md §4.1`, `docs/feature-inventory.md §상벌점 및 감사`
+- **범위**
+  1. `/admin/users` 상태 필터(`status=ACTIVE|INACTIVE|ALL`) 추가 및 응답에 활성 세션·검사 진행 건·유효 벌점 합계 반영.
+  2. `AdminReadService`에서 DormUser·RoomAssignment·UserSession EntityGraph를 사용해 N+1을 제거하고, `penalty_history`·`inspection_session` 집계를 통합.
+  3. 프런트 관리자 사용자 페이지가 API 오류를 배너로 안내하고 재시도 버튼을 제공하도록 `useAdminUsers` 훅을 개선.
+  4. 2~5층 모든 호실·개인번호 조합에 대해 기본 거주자 계정을 시드(`V21__seed_residents_floor_2_to_5.sql`)로 확보.
+- **세부 작업**
+  - DormUser 조회용 EntityGraph 구성(`roles.role`, `roomAssignments.room`, `sessions`) 후 `AdminReadService`에서 필터별 집계 및 DTO 매핑 구현.
+  - `inspection_session`에서 진행 중 세션과 활성 참여자를 조회해 사용자별 진행 건수를 계산하고, `penalty_history`에서 만료되지 않은 벌점 합계를 projection으로 수집.
+  - `fetchAdminUsers`가 상태 쿼리 파라미터를 붙여 호출하도록 수정하고, `useAdminUsers`는 실패 시 오류 상태와 refetch 콜백을 노출.
+  - 프런트 사용자 목록 섹션에 오류 배너/재시도 버튼 추가, 상태 전환 시 선택/드로어 초기화 처리.
+  - 빈 슬롯에 대해서만 거주자 계정·RESIDENT 역할·room_assignment를 생성해 기존 데모 계정을 유지한 채 전 호실 커버.
+  - 관리자 역할 관리/계정 비활성화 REST 엔드포인트 및 알림·벌점 정책 저장 API를 추가하고, UI 버튼과 Danger Zone이 실제 요청을 호출하도록 연결.
+- **테스트 계획**
+  - `./gradlew test --tests com.dormmate.backend.modules.admin.*`
+  - `./gradlew test --tests com.dormmate.backend.modules.inspection.*`
+  - `./gradlew test --tests com.dormmate.backend.modules.penalty.*`
+  - `./gradlew flywayMigrate`
+  - `npm run lint`
+  - 수동: `/admin/users?status=ACTIVE/INACTIVE/ALL` 응답 필드 검증, 관리자 UI에서 상태 전환/에러 배너 확인.
+- **테스트 로그**
+  - `./gradlew test --tests com.dormmate.backend.modules.admin.*`
+    - (PASS, 2025-11-03 — 관리자 읽기 통합 테스트 포함 모듈 테스트 통과)
+  - `./gradlew test --tests com.dormmate.backend.modules.inspection.*`
+    - (PASS, 2025-11-03 — 진행 중 검사 조회 보조 쿼리 도입 후 회귀 통과)
+  - `./gradlew test --tests com.dormmate.backend.modules.penalty.*`
+    - (SKIP, 2025-11-03 — 모듈 내 개별 테스트 미정의로 실행 대상 없음)
+  - `npm run lint`
+    - (PASS, 2025-11-03 — 프런트 상태 필터/에러 배너 추가 후 ESLint 통과)
+  - `./gradlew flywayMigrate`
+    - (FAIL, 2025-11-03 — 기존 환경의 V19 체크섬 불일치로 Flyway 검증 실패. `flyway repair` 또는 DB 초기화 후 재실행 필요)
+  - `./gradlew test --tests com.dormmate.backend.modules.admin.*`
+    - (PASS, 2025-11-03 — 역할/정책 엔드포인트 통합 테스트 추가 후 회귀 통과)
+
 
 ### FR-204 검사 후 수정 추적·벌점 안내 — In Progress (2025-11-01, Codex)
 - **근거 문서**: `mvp-plan.md:FR-204`, `mvp-scenario.md §3.3`

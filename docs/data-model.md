@@ -65,7 +65,7 @@ DormMate의 거주자는 호실과 개인 번호를 기반으로 가입 요청�
 
 > **현재 구현 vs 확장 계획**
 > - **현재**: 로그인/세션 유지, 역할 부여/회수, 비밀번호 변경 시 전체 세션 폐기. 리프레시 토큰은 SHA-256 해시로 저장되며 TTL은 환경별 7일로 통일된다.
-> - **향후**: 가입 승인/탈퇴, 벌점 연계, 감사 로그 UI 등은 Phase 2에서 다룬다. 문서에 명시된 `audit_log`, `penalty_history`는 아직 placeholder 상태다.
+> - **현황**: `penalty_history`는 냉장고 검사·운영 모듈에서 누적 벌점 합계를 산출하고, 관리자 사용자 목록(`/admin/users`)의 벌점 합계 표시에 활용된다. `audit_log`는 여전히 Phase 2에서 UI를 연계할 예정이므로 구현 시 본 문서를 갱신해야 한다.
 
 | 엔터티               | 주요 필드                                                                                                                                                              | 설명 및 정책 근거                                                                                                            |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------- |
@@ -76,9 +76,10 @@ DormMate의 거주자는 호실과 개인 번호를 기반으로 가입 요청�
 | `role`            | `code`, `name`, `description`, `created_at`, `updated_at`                                                                                                         | `RESIDENT`, `FLOOR_MANAGER`, `ADMIN` 기본 제공                                                                            |
 | `user_role`       | `id`, `dorm_user_id`, `role_code`, `granted_at`, `granted_by`, `revoked_at`, `created_at`, `updated_at`                                                          | 층별장 임명/해제 즉시 반영(`docs/feature-inventory.md:118`). 생성/갱신 시각으로 권한 부여 이력을 추적한다.                           |
 | `user_session`    | `id`, `dorm_user_id`, `refresh_token_hash`, `device_id`, `issued_at`, `expires_at`, `created_at`, `updated_at`, `revoked_at`, `revoked_reason`                   | 7일 세션 유지 및 비밀번호 변경 시 세션 무효화(`docs/feature-inventory.md:37`). 리프레시 토큰은 SHA-256 해시로 저장되며(`backend/modules/auth/application/AuthService`), `device_id`로 기기별 세션을 추적한다. |
+| `admin_policy`    | `id`, `notification_batch_time`, `notification_daily_limit`, `notification_ttl_hours`, `penalty_limit`, `penalty_template`                                       | 관리자 알림 배치 · 벌점 임계치 정책. `/admin/policies` GET/PUT에서 읽고 저장하며, 기본값은 배치 09:00/하루 20회/TTL 24시간/벌점 임계치 10점이다. |
 
 > **Placeholder 엔터티**  
-> `audit_log`, `penalty_history` 등은 Phase 2에서 사용할 예정으로, 현재 릴리스에는 테이블만 정의되어 있거나 stub 상태다. 구현 시 본 문서를 갱신해 실제 필드·정책을 반영해야 한다.
+> `penalty_history`는 벌점 합계·알림 트리거에 실사용 중이다. `audit_log`는 Phase 2 UI 연계 전까지 스키마만 준비된 상태이므로, 기능 구현 시 필드·정책을 본 문서에 반영한다.
 
 #### 운영 정책 메모
 - **층 구성**: 2층은 남성, 3~5층은 여성 전용으로 운영하며 각 층에는 201~224 형태의 24개 호실이 존재한다.  
@@ -152,7 +153,7 @@ DormMate의 거주자는 호실과 개인 번호를 기반으로 가입 요청�
 | 엔터티 | 주요 필드 | 설명 및 정책 근거 |
 | --- | --- | --- |
 | `audit_log` | `id`, `actor_user_id`, `action`, `resource_type`, `resource_id`, `metadata`, `created_at` | `DormUser` 계정 관련 로그인·잠금/해제, 냉장고 조치, 알림 설정 등 민감 이벤트를 추적(`docs/ops/security-checklist.md:12`). `actor_user_id`는 시스템 이벤트 시 NULL 허용 |
-| `penalty_history` | `id`, `user_id`, `source`(`FRIDGE_INSPECTION`/`LAUNDRY`/`MULTIPURPOSE`/`LIBRARY`), `points`, `reason`, `issued_at`, `expired_at`, `issuer_id` | 벌점이 일정 기준을 넘었을 때 알림 발송과 모듈 제한을 구현하기 위한 기반(`docs/feature-inventory.md:125`). 냉장고 검사의 경우 경고=0점, 폐기=1점으로 누적한다 |
+| `penalty_history` | `id`, `user_id`, `source`(`FRIDGE_INSPECTION`/`LAUNDRY`/`MULTIPURPOSE`/`LIBRARY`), `points`, `reason`, `issued_at`, `expired_at`, `issuer_id` | 벌점이 일정 기준을 넘었을 때 알림 발송과 모듈 제한을 구현하기 위한 기반(`docs/feature-inventory.md:125`). 냉장고 검사의 경우 경고=0점, 폐기=1점으로 누적하며, 누적 합계는 관리자 사용자 목록의 벌점 칼럼에 노출된다. |
 
 ## 5. Feature Inventory TODO 싱크 체크리스트
 - [x] 가입 승인/반려 로그(승인자·사유·시간) 보존 (`signup_request.status`, `reviewed_by`, `reviewed_at`, `decision_note`) – `docs/feature-inventory.md:31`

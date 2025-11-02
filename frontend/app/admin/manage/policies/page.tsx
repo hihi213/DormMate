@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react"
 import { Bell, ShieldAlert } from "lucide-react"
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -11,7 +12,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { DangerZoneModal } from "@/components/admin"
+import { updateAdminPolicies } from "@/features/admin/api"
 import { useAdminPolicies } from "@/features/admin/hooks/use-admin-policies"
+import { useToast } from "@/hooks/use-toast"
 
 export default function AdminPoliciesPage() {
   const [batchTime, setBatchTime] = useState("09:00")
@@ -22,7 +25,16 @@ export default function AdminPoliciesPage() {
     "DormMate 벌점 누적 {점수}점으로 세탁실/다목적실/도서관 이용이 7일간 제한됩니다. 냉장고 기능은 유지됩니다."
   )
   const [autoNotify, setAutoNotify] = useState(true)
-  const { data, loading } = useAdminPolicies()
+  const { data, loading, error, refetch } = useAdminPolicies()
+  const [saving, setSaving] = useState(false)
+  const { toast } = useToast()
+
+  const DEFAULT_TEMPLATE =
+    "DormMate 벌점 누적 {점수}점으로 세탁실/다목적실/도서관 이용이 7일간 제한됩니다. 냉장고 기능은 유지됩니다."
+  const DEFAULT_POLICY = {
+    notification: { batchTime: "09:00", dailyLimit: 20, ttlHours: 24 },
+    penalty: { limit: 10, template: DEFAULT_TEMPLATE },
+  } as const
 
   useEffect(() => {
     if (!data) return
@@ -32,6 +44,74 @@ export default function AdminPoliciesPage() {
     setPenaltyLimit(String(data.penalty.limit))
     setPenaltyTemplate(data.penalty.template)
   }, [data])
+
+  const handleSavePolicies = async () => {
+    const dailyLimitValue = Number(dailyLimit)
+    const ttlValue = Number(ttl)
+    const penaltyLimitValue = Number(penaltyLimit)
+
+    if ([dailyLimitValue, ttlValue, penaltyLimitValue].some((value) => Number.isNaN(value))) {
+      toast({
+        title: "입력값을 확인하세요",
+        description: "숫자 필드는 숫자만 입력할 수 있습니다.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setSaving(true)
+    try {
+      await updateAdminPolicies({
+        notification: {
+          batchTime,
+          dailyLimit: dailyLimitValue,
+          ttlHours: ttlValue,
+        },
+        penalty: {
+          limit: penaltyLimitValue,
+          template: penaltyTemplate.trim(),
+        },
+      })
+      toast({
+        title: "정책이 저장되었습니다",
+        description: "알림 및 벌점 정책이 즉시 적용되었습니다.",
+      })
+      await refetch()
+    } catch (err) {
+      toast({
+        title: "정책 저장 실패",
+        description: err instanceof Error ? err.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handleResetPolicies = async () => {
+    setSaving(true)
+    try {
+      await updateAdminPolicies(DEFAULT_POLICY)
+      toast({
+        title: "정책이 초기화되었습니다",
+        description: "알림·벌점 정책이 기본값으로 되돌아갔습니다.",
+      })
+      await refetch()
+      setBatchTime(DEFAULT_POLICY.notification.batchTime)
+      setDailyLimit(String(DEFAULT_POLICY.notification.dailyLimit))
+      setTtl(String(DEFAULT_POLICY.notification.ttlHours))
+      setPenaltyLimit(String(DEFAULT_POLICY.penalty.limit))
+      setPenaltyTemplate(DEFAULT_POLICY.penalty.template)
+    } catch (err) {
+      toast({
+        title: "정책 초기화 실패",
+        description: err instanceof Error ? err.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
 
   return (
     <section className="space-y-6">
@@ -43,6 +123,14 @@ export default function AdminPoliciesPage() {
       </header>
 
       <div className="grid gap-4 lg:grid-cols-2">
+        {error ? (
+          <Alert variant="destructive">
+            <AlertTitle>정책을 불러오지 못했습니다</AlertTitle>
+            <AlertDescription>
+              설정 정보를 다시 불러오려면 잠시 후 재시도하세요.
+            </AlertDescription>
+          </Alert>
+        ) : null}
         <Card className="shadow-sm">
           <CardHeader className="flex flex-row items-center gap-3">
             <span className="rounded-full bg-emerald-100 p-2">
@@ -106,7 +194,7 @@ export default function AdminPoliciesPage() {
             </div>
 
             <div className="flex gap-2">
-              <Button type="button" size="sm">
+              <Button type="button" size="sm" disabled={saving} onClick={() => void handleSavePolicies()}>
                 정책 저장
               </Button>
               <Button type="button" size="sm" variant="outline">
@@ -148,7 +236,7 @@ export default function AdminPoliciesPage() {
               />
             </div>
             <div className="flex gap-2">
-              <Button type="button" size="sm">
+              <Button type="button" size="sm" disabled={saving} onClick={() => void handleSavePolicies()}>
                 변경 저장
               </Button>
               <Button type="button" size="sm" variant="outline">
@@ -159,7 +247,7 @@ export default function AdminPoliciesPage() {
               title="벌점 규칙을 초기화하시겠습니까?"
               description="임계치·알림 템플릿이 기본값으로 되돌아가며, 기존 벌점 기록은 유지됩니다."
               confirmLabel="초기화"
-              onConfirm={async () => undefined}
+              onConfirm={handleResetPolicies}
             />
           </CardContent>
         </Card>

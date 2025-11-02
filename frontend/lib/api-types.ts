@@ -220,7 +220,10 @@ export interface paths {
         /** 관리자 사용자 목록 조회 */
         get: {
             parameters: {
-                query?: never;
+                query?: {
+                    /** @description 조회할 사용자 상태 필터 (기본 ACTIVE) */
+                    status?: "ACTIVE" | "INACTIVE" | "ALL";
+                };
                 header?: never;
                 path?: never;
                 cookie?: never;
@@ -241,6 +244,180 @@ export interface paths {
             };
         };
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/roles/floor-manager": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 층별장 임명 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 임명 성공 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        /** 층별장 해제 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 해제 성공 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 사용자 상태 변경 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateUserStatusRequest"];
+                };
+            };
+            responses: {
+                /** @description 상태 변경 성공 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        trace?: never;
+    };
+    "/admin/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 관리자 정책 조회 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 정책 정보 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminPoliciesResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        /** 관리자 정책 저장 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateAdminPoliciesRequest"];
+                };
+            };
+            responses: {
+                /** @description 저장 성공 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -1349,6 +1526,34 @@ export interface components {
         };
         AdminUsersResponse: {
             items: components["schemas"]["AdminUser"][];
+        };
+        AdminPoliciesResponse: {
+            notification: {
+                batchTime: string;
+                dailyLimit: number;
+                ttlHours: number;
+            };
+            penalty: {
+                limit: number;
+                template: string;
+            };
+        };
+        UpdateUserStatusRequest: {
+            /** @enum {string} */
+            status: "INACTIVE";
+        };
+        UpdateAdminPoliciesRequest: {
+            notification: components["schemas"]["UpdateNotificationPolicy"];
+            penalty: components["schemas"]["UpdatePenaltyPolicy"];
+        };
+        UpdateNotificationPolicy: {
+            batchTime: string;
+            dailyLimit: number;
+            ttlHours: number;
+        };
+        UpdatePenaltyPolicy: {
+            limit: number;
+            template: string;
         };
         /** @enum {string} */
         SlotType: "CHILL" | "FREEZE";

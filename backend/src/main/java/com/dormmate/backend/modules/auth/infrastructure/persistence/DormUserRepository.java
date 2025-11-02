@@ -7,6 +7,7 @@ import java.util.UUID;
 import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.auth.domain.DormUserStatus;
 
+import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -16,12 +17,14 @@ public interface DormUserRepository extends JpaRepository<DormUser, UUID> {
     @Query("select du from DormUser du where lower(du.loginId) = lower(:loginId)")
     Optional<DormUser> findByLoginIdIgnoreCase(@Param("loginId") String loginId);
 
+    @EntityGraph(attributePaths = {
+            "roles",
+            "roles.role"
+    })
     @Query("""
             select distinct du
               from DormUser du
-              left join fetch du.roles ur
-              left join fetch ur.role r
-             where du.status = :status
+             where (:status is null or du.status = :status)
             """)
-    List<DormUser> findActiveUsersWithRoles(@Param("status") DormUserStatus status);
+    List<DormUser> findUsersWithAssociations(@Param("status") DormUserStatus status);
 }

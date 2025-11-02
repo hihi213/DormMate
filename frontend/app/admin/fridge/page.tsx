@@ -51,7 +51,8 @@ import {
   type AdminFridgeSlot,
   type AdminInspectionSession,
 } from "@/features/admin/utils/fridge-adapter"
-import type { ResourceStatus } from "@/features/fridge/types"
+import { updateFridgeCompartment } from "@/features/fridge/api"
+import type { ResourceStatus, Slot, UpdateCompartmentConfigPayload } from "@/features/fridge/types"
 
 const FLOOR_OPTIONS = [2, 3, 4, 5]
 const BUNDLE_PAGE_SIZE = 8
@@ -76,6 +77,8 @@ const INSPECTION_STATUS_LABEL: Record<AdminInspectionSession["status"], string> 
   SUBMITTED: "제출 완료",
   CANCELED: "취소됨",
 }
+
+const RESOURCE_STATUS_OPTIONS: ResourceStatus[] = ["ACTIVE", "SUSPENDED", "REPORTED", "RETIRED"]
 
 type ApiErrorLike = Error & { code?: string; status?: number }
 
@@ -191,6 +194,9 @@ export default function AdminFridgePage() {
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [slotsError, setSlotsError] = useState<string | null>(null)
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
+  const [slotStatusDraft, setSlotStatusDraft] = useState<ResourceStatus>("ACTIVE")
+  const [slotCapacityDraft, setSlotCapacityDraft] = useState<string>("")
+  const [slotSaving, setSlotSaving] = useState(false)
 
   const [bundleState, setBundleState] = useState<BundleState>(INITIAL_BUNDLE_STATE)
   const [bundleSearchInput, setBundleSearchInput] = useState("")
@@ -255,6 +261,20 @@ export default function AdminFridgePage() {
     () => slots.find((slot) => slot.slotId === selectedSlotId) ?? null,
     [slots, selectedSlotId],
   )
+
+  useEffect(() => {
+    if (!selectedSlot) {
+      setSlotStatusDraft("ACTIVE")
+      setSlotCapacityDraft("")
+      return
+    }
+    setSlotStatusDraft(selectedSlot.resourceStatus)
+    setSlotCapacityDraft(
+      typeof selectedSlot.capacity === "number" && selectedSlot.capacity > 0
+        ? String(selectedSlot.capacity)
+        : "",
+    )
+  }, [selectedSlot])
 
   const actionShortcuts = useMemo(
     () => [
@@ -544,6 +564,13 @@ export default function AdminFridgePage() {
     void loadDeletedBundles(nextPage, deletedState.sinceMonths)
   }
 
+  const computeUtilization = (capacity?: number | null, occupied?: number | null) => {
+    if (typeof capacity !== "number" || capacity <= 0 || typeof occupied !== "number") {
+      return null
+    }
+    return Math.min(1, Math.max(0, occupied / capacity))
+  }
+
   const handleDeletedRangeChange = (value: number) => {
     void loadDeletedBundles(0, value)
   }
@@ -569,6 +596,94 @@ export default function AdminFridgePage() {
       [compartmentId]: [...allocation.recommendedRoomIds],
     }))
   }
+
+  const handleSaveSlotConfig = async () => {
+    if (!selectedSlot) return
+
+    const desiredStatus = slotStatusDraft
+    const trimmedCapacity = slotCapacityDraft.trim()
+    const parsedCapacity = trimmedCapacity.length > 0 ? Number(trimmedCapacity) : undefined
+
+    if (parsedCapacity !== undefined && (Number.isNaN(parsedCapacity) || parsedCapacity <= 0)) {
+      toast({
+        title: "용량을 확인하세요",
+        description: "칸 용량은 1 이상의 숫자로 입력해야 합니다.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    const payload: Partial<UpdateCompartmentConfigPayload> = {}
+    if (desiredStatus !== selectedSlot.resourceStatus) {
+      payload.status = desiredStatus
+    }
+    const currentCapacity = typeof selectedSlot.capacity === "number" ? selectedSlot.capacity : undefined
+    if (parsedCapacity !== undefined && parsedCapacity !== currentCapacity) {
+      payload.maxBundleCount = parsedCapacity
+    }
+
+    if (Object.keys(payload).length === 0) {
+      toast({
+        title: "변경 사항이 없습니다",
+        description: "상태 또는 용량을 수정한 뒤 저장을 눌러주세요.",
+      })
+      return
+    }
+
+    setSlotSaving(true)
+    try {
+      const updated = await updateFridgeCompartment(selectedSlot.slotId, payload)
+      setSlots((prev) =>
+        prev.map((slot) => {
+          if (slot.slotId !== updated.slotId) return slot
+          const capacity = typeof updated.capacity === "number" ? updated.capacity : slot.capacity ?? null
+          const occupied =
+            typeof updated.occupiedCount === "number"
+              ? updated.occupiedCount
+              : slot.occupiedCount ?? null
+          return {
+            ...slot,
+            resourceStatus: updated.resourceStatus,
+            capacity,
+            locked: updated.locked,
+            lockedUntil: updated.lockedUntil ?? null,
+            displayName: updated.displayName ?? slot.displayName,
+            occupiedCount: occupied,
+            utilization: computeUtilization(capacity, occupied),
+          }
+        }),
+      )
+      toast({
+        title: "칸 설정이 저장되었습니다",
+        description: `${selectedSlot.displayName ?? `${selectedSlot.floorNo}F ${selectedSlot.slotLetter}`} 설정을 갱신했습니다.`,
+      })
+      setSlotStatusDraft(updated.resourceStatus)
+      setSlotCapacityDraft(
+        typeof updated.capacity === "number" && updated.capacity > 0 ? String(updated.capacity) : "",
+      )
+    } catch (error) {
+      toast({
+        title: "칸 설정 저장 실패",
+        description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      })
+    } finally {
+      setSlotSaving(false)
+    }
+  }
+
+  const slotHasChanges = selectedSlot
+    ? slotStatusDraft !== selectedSlot.resourceStatus ||
+      (() => {
+        const trimmed = slotCapacityDraft.trim()
+        if (trimmed.length === 0) {
+          return false
+        }
+        const parsed = Number(trimmed)
+        if (Number.isNaN(parsed)) return false
+        return parsed !== selectedSlot.capacity
+      })()
+    : false
 
   const handleReallocationOpenChange = (open: boolean) => {
     setReallocationOpen(open)
@@ -1476,6 +1591,42 @@ export default function AdminFridgePage() {
                 감사 로그 상세 보기
               </Link>
             </Button>
+            <div className="mt-4 space-y-3 text-xs text-slate-600">
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">상태</Label>
+                <Select value={slotStatusDraft} onValueChange={(value) => setSlotStatusDraft(value as ResourceStatus)}>
+                  <SelectTrigger className="h-9">
+                    <SelectValue placeholder="상태 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {RESOURCE_STATUS_OPTIONS.map((status) => (
+                      <SelectItem key={status} value={status}>
+                        {status}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1">
+                <Label className="text-xs text-muted-foreground">최대 포장 용량</Label>
+                <Input
+                  value={slotCapacityDraft}
+                  onChange={(event) => setSlotCapacityDraft(event.target.value)}
+                  inputMode="numeric"
+                  pattern="[0-9]*"
+                  placeholder="예: 12"
+                />
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                className="w-full"
+                disabled={slotSaving || !slotHasChanges}
+                onClick={() => void handleSaveSlotConfig()}
+              >
+                {slotSaving ? "저장 중..." : "칸 설정 저장"}
+              </Button>
+            </div>
           </section>
         ) : null}
     </aside>
