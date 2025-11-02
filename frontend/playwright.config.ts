@@ -1,5 +1,8 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
 
+process.env.NEXT_PUBLIC_FIXTURE = process.env.NEXT_PUBLIC_FIXTURE || '1';
+process.env.NEXT_PUBLIC_API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:3000/api/__fixtures__/backend';
+
 const isCI = !!process.env.CI;
 const devServerCommand =
   'node ./node_modules/next/dist/bin/next dev --hostname 0.0.0.0 --port 3000';
@@ -12,6 +15,10 @@ const webServerConfig: PlaywrightTestConfig['webServer'] = process.env.PLAYWRIGH
       url: 'http://127.0.0.1:3000',
       reuseExistingServer: !isCI,
       timeout: 120 * 1000,
+      env: {
+        NEXT_PUBLIC_FIXTURE: '1',
+        NEXT_PUBLIC_API_BASE: 'http://127.0.0.1:3000/api/__fixtures__/backend',
+      },
     };
 
 export default defineConfig({

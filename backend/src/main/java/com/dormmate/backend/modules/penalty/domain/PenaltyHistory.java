@@ -53,6 +53,9 @@ public class PenaltyHistory extends AbstractTimestampedEntity {
     @Column(name = "expires_at")
     private OffsetDateTime expiresAt;
 
+    @Column(name = "correlation_id", columnDefinition = "uuid")
+    private UUID correlationId;
+
     public UUID getId() {
         return id;
     }
@@ -119,5 +122,13 @@ public class PenaltyHistory extends AbstractTimestampedEntity {
 
     public void setExpiresAt(OffsetDateTime expiresAt) {
         this.expiresAt = expiresAt;
+    }
+
+    public UUID getCorrelationId() {
+        return correlationId;
+    }
+
+    public void setCorrelationId(UUID correlationId) {
+        this.correlationId = correlationId;
     }
 }

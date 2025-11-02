@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import Link from "next/link"
 import { AlertTriangle } from "lucide-react"
 
@@ -8,31 +8,33 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
-import { BulkEditor, DangerZoneModal, DetailsDrawer, FilterBar, PaginatedTable } from "@/components/admin"
+import { BulkEditor, DangerZoneModal, DetailsDrawer, PaginatedTable } from "@/components/admin"
+import { cn } from "@/lib/utils"
 import { useAdminUsers } from "@/features/admin/hooks/use-admin-users"
 import type { AdminUser } from "@/features/admin/types"
 
-const ROLE_BADGE: Record<AdminUser["role"], string> = {
-  RESIDENT: "거주자",
-  FLOOR_MANAGER: "층별장",
-  ADMIN: "관리자",
-}
+type UserRoleFilter = "RESIDENT" | "ADMIN"
+type UserStatusFilter = "ACTIVE" | "INACTIVE"
 
 export default function AdminUsersPage() {
   const { data, loading } = useAdminUsers()
   const userItems = useMemo(() => data?.items ?? [], [data?.items])
 
-  const [filters, setFilters] = useState<Record<string, string>>({
+  const [filters, setFilters] = useState<{ search: string; role: UserRoleFilter; status: UserStatusFilter; includeFloorManager: boolean }>({
     search: "",
-    role: "all",
+    role: "RESIDENT",
     status: "ACTIVE",
+    includeFloorManager: false,
   })
   const [page, setPage] = useState(1)
   const pageSize = 6
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [drawerUser, setDrawerUser] = useState<AdminUser | null>(null)
+  const [searchInput, setSearchInput] = useState("")
 
   const filtered = useMemo(() => {
     const keyword = filters.search.trim().toLowerCase()
@@ -41,15 +43,25 @@ export default function AdminUsersPage() {
         keyword.length === 0 ||
         user.name.toLowerCase().includes(keyword) ||
         user.room.toLowerCase().includes(keyword)
-      const matchesRole = filters.role === "all" ? true : user.role === (filters.role as AdminUser["role"])
-      const matchesStatus =
-        filters.status === "all" ? true : user.status === (filters.status as AdminUser["status"])
+
+      const roleMatchesResident = filters.role === "RESIDENT" && user.role === "RESIDENT"
+      const roleMatchesAdmin = filters.role === "ADMIN" && user.role === "ADMIN"
+
+      const includeFloor = filters.includeFloorManager && user.role === "FLOOR_MANAGER"
+      const matchesRole = filters.role === "RESIDENT" ? roleMatchesResident || includeFloor : roleMatchesAdmin
+
+      const matchesStatus = user.status === filters.status
+
       return matchesSearch && matchesRole && matchesStatus
     })
   }, [filters, userItems])
 
   const totalItems = filtered.length
   const paginated = filtered.slice((page - 1) * pageSize, page * pageSize)
+
+  useEffect(() => {
+    setSearchInput(filters.search)
+  }, [filters.search])
 
   const toggleSelection = (id: string, checked: boolean) => {
     setSelectedIds((prev) => (checked ? Array.from(new Set([...prev, id])) : prev.filter((value) => value !== id)))
@@ -59,79 +71,125 @@ export default function AdminUsersPage() {
   const openDrawer = (user: AdminUser) => setDrawerUser(user)
   const closeDrawer = () => setDrawerUser(null)
 
+  const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    setFilters((prev) => ({ ...prev, search: searchInput.trim() }))
+    setPage(1)
+  }
+
   return (
     <>
       <div data-admin-slot="main" className="space-y-6">
-        <header className="rounded-3xl border border-emerald-100 bg-white/90 p-6 shadow-sm">
-          <div className="flex flex-col gap-2">
-            <Badge variant="outline" className="w-fit border-emerald-200 bg-emerald-50 text-emerald-700">
-              권한·계정
-            </Badge>
-            <h1 className="text-2xl font-semibold text-slate-900">층별장 및 관리자 계정 관리</h1>
-            <p className="text-sm text-slate-600">
-              층별장 승격/복귀, 관리자 임명, 계정 비활성화를 처리합니다. 진행 중 검사 세션이 있는 경우 안전 종료 또는 승계를 안내하세요.
-            </p>
-          </div>
-        </header>
-
-        <div className="grid gap-6 xl:grid-cols-[280px_minmax(0,1fr)]">
-          <aside className="space-y-4 rounded-3xl border border-slate-200 bg-white/80 p-4 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-900">필터</h2>
-            <FilterBar
-              className="flex-col items-stretch gap-3"
-              fields={[
-                {
-                  id: "search",
-                  label: "검색",
-                  type: "search",
-                  placeholder: "이름, 호실 검색",
-                },
-                {
-                  id: "role",
-                  label: "역할",
-                  type: "segmented",
-                  options: [
-                    { label: "전체", value: "all" },
-                    { label: "거주자", value: "RESIDENT" },
-                    { label: "층별장", value: "FLOOR_MANAGER" },
-                    { label: "관리자", value: "ADMIN" },
-                  ],
-                },
-                {
-                  id: "status",
-                  label: "상태",
-                  type: "select",
-                  options: [
-                    { label: "활성", value: "ACTIVE" },
-                    { label: "비활성", value: "INACTIVE" },
-                    { label: "전체", value: "all" },
-                  ],
-                },
-              ]}
-              values={filters}
-              onChange={(id, value) => {
-                setFilters((prev) => ({ ...prev, [id]: value }))
-                setPage(1)
-              }}
-            />
-            <Separator />
-            <div className="space-y-3 text-xs text-slate-600">
-              <p className="font-semibold text-slate-900">운영 안내</p>
-              <p>층별장 임명/해제는 진행 중 검사 세션이 없는지 확인 후 진행하세요.</p>
-              <p>계정 비활성화 시 DormMate 접근이 차단되며, 예약/검사 세션이 모두 정리됩니다.</p>
-              <Button asChild variant="link" size="sm" className="px-0 text-emerald-600">
-                <Link href="/admin/audit?module=roles">권한 변경 감사 로그</Link>
+        <section className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm space-y-4">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant={filters.role === "RESIDENT" ? "default" : "ghost"}
+                className={cn(
+                  "px-3 text-xs font-medium",
+                  filters.role === "RESIDENT"
+                    ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+                    : "text-slate-600 hover:text-emerald-600",
+                )}
+                onClick={() => {
+                  setFilters((prev) => ({ ...prev, role: "RESIDENT", includeFloorManager: false }))
+                  setPage(1)
+                }}
+              >
+                거주자
               </Button>
+              <Button
+                type="button"
+                size="sm"
+                variant={filters.role === "ADMIN" ? "default" : "ghost"}
+                className={cn(
+                  "px-3 text-xs font-medium",
+                  filters.role === "ADMIN"
+                    ? "bg-emerald-100 text-emerald-700 hover:bg-emerald-100"
+                    : "text-slate-600 hover:text-emerald-600",
+                )}
+                onClick={() => {
+                  setFilters((prev) => ({ ...prev, role: "ADMIN", includeFloorManager: false }))
+                  setPage(1)
+                }}
+              >
+                관리자
+              </Button>
+              {filters.role === "RESIDENT" ? (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={filters.includeFloorManager ? "default" : "outline"}
+                  className={cn(
+                    "px-3 text-xs font-medium",
+                    filters.includeFloorManager
+                      ? "bg-emerald-200/80 text-emerald-800 hover:bg-emerald-200/80"
+                      : "border-emerald-200 text-emerald-600 hover:border-emerald-300",
+                  )}
+                  onClick={() => {
+                    setFilters((prev) => ({ ...prev, includeFloorManager: !prev.includeFloorManager }))
+                    setPage(1)
+                  }}
+                >
+                  층별장 포함
+                </Button>
+              ) : null}
             </div>
-          </aside>
+            <form onSubmit={handleSearchSubmit} className="flex w-full gap-2 lg:w-auto">
+              <Input
+                value={searchInput}
+                onChange={(event) => setSearchInput(event.target.value)}
+                placeholder="이름, 호실 검색"
+                className="h-10 flex-1 rounded-xl border border-slate-200 bg-white/90"
+              />
+              <Button type="submit" className="px-4">검색</Button>
+            </form>
+          </div>
+          <Separator />
+          <div className="flex flex-wrap items-center gap-3 text-xs text-slate-600">
+            <span className="font-medium text-slate-700">
+              사용자 목록 · 총 {totalItems.toLocaleString()}명
+            </span>
+            <Separator orientation="vertical" className="hidden h-4 md:block" />
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">상태</span>
+              <div className="flex gap-1 rounded-full border border-slate-200 bg-slate-50/80 p-1">
+                {[
+                  { value: "ACTIVE", label: "활성" },
+                  { value: "INACTIVE", label: "비활성" },
+                ].map((status) => {
+                  const isActive = filters.status === status.value
+                  return (
+                    <Button
+                      key={status.value}
+                      type="button"
+                      size="sm"
+                      variant={isActive ? "default" : "ghost"}
+                      className={cn(
+                        "px-3 text-xs font-medium",
+                        isActive
+                          ? "bg-emerald-200/80 text-emerald-800 hover:bg-emerald-200/80"
+                          : "text-slate-600 hover:text-emerald-600",
+                      )}
+                      onClick={() => {
+                        setFilters((prev) => ({ ...prev, status: status.value }))
+                        setPage(1)
+                      }}
+                    >
+                      {status.label}
+                    </Button>
+                  )
+                })}
+              </div>
+            </div>
+          </div>
+        </section>
 
-          <section className="space-y-4">
-            <Card className="shadow-sm">
-              <CardHeader className="flex flex-row items-center justify-between pb-2">
-                <CardTitle className="text-sm font-semibold text-slate-900">사용자 목록</CardTitle>
-                <span className="text-xs text-slate-500">{loading ? "불러오는 중" : `총 ${totalItems}명`}</span>
-              </CardHeader>
-              <CardContent>
+        <section className="space-y-4">
+          <Card className="shadow-sm">
+            <CardContent>
                 <PaginatedTable
                   columns={[
                     {
@@ -157,9 +215,21 @@ export default function AdminUsersPage() {
                       ),
                     },
                     {
-                      key: "role",
+                      key: "baseRole",
                       header: "역할",
-                      render: (row) => <Badge variant="outline">{ROLE_BADGE[row.role]}</Badge>,
+                      render: (row) => (row.role === "ADMIN" ? "관리자" : "거주자"),
+                    },
+                    {
+                      key: "extra",
+                      header: "추가 권한",
+                      render: (row) =>
+                        row.role === "FLOOR_MANAGER" ? (
+                          <Badge variant="outline" className="border-emerald-200 text-emerald-700">
+                            층별장
+                          </Badge>
+                        ) : (
+                          <span className="text-slate-400">-</span>
+                        ),
                     },
                     {
                       key: "status",
@@ -228,7 +298,6 @@ export default function AdminUsersPage() {
               <span className="text-xs text-muted-foreground">층별장 변경 시 진행 중 검사 세션 승계/종료 절차를 확인하세요.</span>
             </BulkEditor>
           </section>
-        </div>
 
         <DetailsDrawer
           title={drawerUser?.name ?? ""}
@@ -242,8 +311,14 @@ export default function AdminUsersPage() {
             <div className="space-y-4 text-sm">
               <div className="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <Label className="text-xs text-muted-foreground">현재 역할</Label>
-                  <p className="font-medium text-slate-900">{ROLE_BADGE[drawerUser.role]}</p>
+                  <Label className="text-xs text-muted-foreground">기본 역할</Label>
+                  <p className="font-medium text-slate-900">{drawerUser.role === "ADMIN" ? "관리자" : "거주자"}</p>
+                </div>
+                <div>
+                  <Label className="text-xs text-muted-foreground">추가 권한</Label>
+                  <p className="font-medium text-slate-900">
+                    {drawerUser.role === "FLOOR_MANAGER" ? "층별장" : "-"}
+                  </p>
                 </div>
                 <div>
                   <Label className="text-xs text-muted-foreground">계정 상태</Label>

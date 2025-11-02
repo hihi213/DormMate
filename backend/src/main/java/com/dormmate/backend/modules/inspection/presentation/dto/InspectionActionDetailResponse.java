@@ -15,6 +15,7 @@ public record InspectionActionDetailResponse(
         OffsetDateTime recordedAt,
         UUID recordedBy,
         String note,
+        UUID correlationId,
         List<InspectionActionItemResponse> items,
         List<PenaltyHistoryResponse> penalties
 ) {

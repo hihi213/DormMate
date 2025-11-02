@@ -42,6 +42,9 @@ public class InspectionActionItem extends AbstractTimestampedEntity {
     @Column(name = "quantity_at_action")
     private Integer quantityAtAction;
 
+    @Column(name = "correlation_id", nullable = false, columnDefinition = "uuid")
+    private UUID correlationId;
+
     public Long getId() {
         return id;
     }
@@ -84,5 +87,13 @@ public class InspectionActionItem extends AbstractTimestampedEntity {
 
     public void setQuantityAtAction(Integer quantityAtAction) {
         this.quantityAtAction = quantityAtAction;
+    }
+
+    public UUID getCorrelationId() {
+        return correlationId;
+    }
+
+    public void setCorrelationId(UUID correlationId) {
+        this.correlationId = correlationId;
     }
 }

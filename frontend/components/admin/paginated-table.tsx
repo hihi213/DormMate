@@ -14,7 +14,6 @@ import {
 import {
   Table,
   TableBody,
-  TableCaption,
   TableCell,
   TableHead,
   TableHeader,
@@ -171,17 +170,12 @@ export function PaginatedTable<TData>({
         </TableBody>
       </Table>
       {pagination ? (
-        <footer className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-          <TableCaption className="text-left sm:text-sm">
-            페이지 {pagination.page}/{totalPages} · 총{" "}
-            {pagination.totalItems.toLocaleString()}건
-          </TableCaption>
-          <Pagination className="sm:justify-end">
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious
-                  href="#"
-                  onClick={changePage((pagination?.page ?? 1) - 1)}
+        <Pagination className="sm:justify-end">
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious
+                href="#"
+                onClick={changePage((pagination?.page ?? 1) - 1)}
                 />
               </PaginationItem>
               {renderPageLinks}
@@ -193,7 +187,6 @@ export function PaginatedTable<TData>({
               </PaginationItem>
             </PaginationContent>
           </Pagination>
-        </footer>
       ) : null}
     </div>
   )

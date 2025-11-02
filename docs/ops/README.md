@@ -51,3 +51,4 @@
 - **알림 설정 이력**: `notification_preference`의 `updated_at`을 기준으로 ON/OFF 변경 이력을 살펴보고, 동일 계정이 여러 기기에서 설정을 변경했을 때 즉시 일관되게 반영되는지 확인한다.
 - **발송 실패 로그**: `notification_dispatch_log`에서 최근 알림 실패 건을 조회하고, `error_code`·`error_message`를 기반으로 재시도 또는 장애 전파가 가능한지 점검한다.
 - **검사 조치 감사**: `inspection_action_item`의 스냅샷 데이터를 점검해 폐기·경고 근거가 남아 있는지 확인하고, `unregistered_item_event`가 누락되지 않았는지 주기적으로 모니터링한다.
+- **DB 인덱스 점검**: Flyway `V18__add_fridge_search_indexes.sql`이 성공했는지 `pg_indexes`에서 `idx_room_assignment_user_released`, `idx_room_room_number_lower` 존재 여부를 확인하고, 관리자 검색이 느려질 경우 재적용 여부를 검토한다.

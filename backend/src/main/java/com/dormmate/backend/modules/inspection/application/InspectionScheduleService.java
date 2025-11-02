@@ -16,6 +16,11 @@ import com.dormmate.backend.modules.inspection.presentation.dto.InspectionSchedu
 import com.dormmate.backend.modules.inspection.presentation.dto.UpdateInspectionScheduleRequest;
 import com.dormmate.backend.modules.inspection.domain.InspectionSession;
 import com.dormmate.backend.global.security.SecurityUtils;
+import com.dormmate.backend.modules.auth.domain.RoomAssignment;
+import com.dormmate.backend.modules.auth.infrastructure.persistence.RoomAssignmentRepository;
+import com.dormmate.backend.modules.fridge.domain.FridgeCompartment;
+import com.dormmate.backend.modules.fridge.domain.LabelFormatter;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeCompartmentRepository;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -28,16 +33,22 @@ public class InspectionScheduleService {
 
     private final InspectionScheduleRepository inspectionScheduleRepository;
     private final InspectionSessionRepository inspectionSessionRepository;
+    private final RoomAssignmentRepository roomAssignmentRepository;
     private final Clock clock;
+    private final FridgeCompartmentRepository fridgeCompartmentRepository;
 
     public InspectionScheduleService(
             InspectionScheduleRepository inspectionScheduleRepository,
             InspectionSessionRepository inspectionSessionRepository,
-            Clock clock
+            RoomAssignmentRepository roomAssignmentRepository,
+            Clock clock,
+            FridgeCompartmentRepository fridgeCompartmentRepository
     ) {
         this.inspectionScheduleRepository = inspectionScheduleRepository;
         this.inspectionSessionRepository = inspectionSessionRepository;
+        this.roomAssignmentRepository = roomAssignmentRepository;
         this.clock = clock;
+        this.fridgeCompartmentRepository = fridgeCompartmentRepository;
     }
 
     @Transactional(readOnly = true)
@@ -74,11 +85,13 @@ public class InspectionScheduleService {
 
     public InspectionScheduleResponse createSchedule(CreateInspectionScheduleRequest request) {
         ensureManagerRole();
+        FridgeCompartment compartment = loadCompartmentForManager(request.fridgeCompartmentId());
         InspectionSchedule schedule = new InspectionSchedule();
         schedule.setScheduledAt(request.scheduledAt());
         schedule.setTitle(trimToNull(request.title()));
         schedule.setNotes(trimToNull(request.notes()));
         schedule.setStatus(InspectionScheduleStatus.SCHEDULED);
+        schedule.setFridgeCompartment(compartment);
         InspectionSchedule saved = inspectionScheduleRepository.save(schedule);
         return toResponse(saved);
     }
@@ -121,6 +134,13 @@ public class InspectionScheduleService {
             schedule.setInspectionSession(null);
         }
 
+        if (request.fridgeCompartmentId() != null) {
+            FridgeCompartment compartment = loadCompartmentForManager(request.fridgeCompartmentId());
+            schedule.setFridgeCompartment(compartment);
+        } else {
+            ensureAssignedCompartmentAccessible(schedule);
+        }
+
         InspectionSchedule saved = inspectionScheduleRepository.save(schedule);
         return toResponse(saved);
     }
@@ -156,6 +176,17 @@ public class InspectionScheduleService {
 
     private InspectionScheduleResponse toResponse(InspectionSchedule schedule) {
         UUID sessionId = schedule.getInspectionSession() != null ? schedule.getInspectionSession().getId() : null;
+        FridgeCompartment compartment = schedule.getFridgeCompartment();
+        UUID compartmentId = compartment != null ? compartment.getId() : null;
+        Integer slotIndex = compartment != null ? compartment.getSlotIndex() : null;
+        String slotLetter = compartment != null ? LabelFormatter.toSlotLetter(compartment.getSlotIndex()) : null;
+        Integer floorNo = null;
+        String floorCode = null;
+        if (compartment != null) {
+            int floorValue = compartment.getFridgeUnit().getFloorNo();
+            floorNo = floorValue;
+            floorCode = floorValue + "F";
+        }
         return new InspectionScheduleResponse(
                 schedule.getId(),
                 schedule.getScheduledAt(),
@@ -164,6 +195,11 @@ public class InspectionScheduleService {
                 schedule.getStatus().name(),
                 schedule.getCompletedAt(),
                 sessionId,
+                compartmentId,
+                slotIndex,
+                slotLetter,
+                floorNo,
+                floorCode,
                 schedule.getCreatedAt(),
                 schedule.getUpdatedAt()
         );
@@ -174,5 +210,40 @@ public class InspectionScheduleService {
             return;
         }
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_MANAGER_ONLY");
+    }
+
+    private FridgeCompartment loadCompartmentForManager(UUID compartmentId) {
+        if (compartmentId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "COMPARTMENT_REQUIRED");
+        }
+        FridgeCompartment compartment = fridgeCompartmentRepository.findById(compartmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SLOT_NOT_FOUND"));
+        ensureManagerAssignmentOnFloor(compartment);
+        if (!compartment.getStatus().isActive()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "COMPARTMENT_INACTIVE");
+        }
+        return compartment;
+    }
+
+    private void ensureAssignedCompartmentAccessible(InspectionSchedule schedule) {
+        FridgeCompartment compartment = schedule.getFridgeCompartment();
+        if (compartment == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "COMPARTMENT_REQUIRED");
+        }
+        ensureManagerAssignmentOnFloor(compartment);
+    }
+
+    private void ensureManagerAssignmentOnFloor(FridgeCompartment compartment) {
+        UUID userId = SecurityUtils.getCurrentUserId();
+        Optional<RoomAssignment> assignmentOpt = roomAssignmentRepository.findActiveAssignment(userId);
+        if (assignmentOpt.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED");
+        }
+        RoomAssignment assignment = assignmentOpt.get();
+        short managerFloor = assignment.getRoom().getFloor();
+        short compartmentFloor = (short) compartment.getFridgeUnit().getFloorNo();
+        if (managerFloor != compartmentFloor) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_SCOPE_VIOLATION");
+        }
     }
 }

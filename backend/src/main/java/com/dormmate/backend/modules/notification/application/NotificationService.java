@@ -226,14 +226,28 @@ public class NotificationService {
                     .map(InspectionAction::getId)
                     .filter(Objects::nonNull)
                     .toList();
+            List<UUID> actionCorrelationIds = actionsForUser.stream()
+                    .map(InspectionAction::getCorrelationId)
+                    .filter(Objects::nonNull)
+                    .toList();
             List<Long> actionItemIds = actionsForUser.stream()
                     .flatMap(action -> action.getItems().stream())
                     .map(InspectionActionItem::getId)
                     .filter(Objects::nonNull)
                     .toList();
+            List<UUID> actionItemCorrelationIds = actionsForUser.stream()
+                    .flatMap(action -> action.getItems().stream())
+                    .map(InspectionActionItem::getCorrelationId)
+                    .filter(Objects::nonNull)
+                    .toList();
             List<UUID> penaltyIds = actionsForUser.stream()
                     .flatMap(action -> action.getPenalties().stream())
                     .map(PenaltyHistory::getId)
+                    .filter(Objects::nonNull)
+                    .toList();
+            List<UUID> penaltyCorrelationIds = actionsForUser.stream()
+                    .flatMap(action -> action.getPenalties().stream())
+                    .map(PenaltyHistory::getCorrelationId)
                     .filter(Objects::nonNull)
                     .toList();
 
@@ -242,6 +256,9 @@ public class NotificationService {
             metadata.put("actionIds", actionIds);
             metadata.put("actionItemIds", actionItemIds);
             metadata.put("penaltyHistoryIds", penaltyIds);
+            metadata.put("actionCorrelationIds", actionCorrelationIds);
+            metadata.put("actionItemCorrelationIds", actionItemCorrelationIds);
+            metadata.put("penaltyCorrelationIds", penaltyCorrelationIds);
 
             createNotification(
                     user,

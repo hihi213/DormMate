@@ -11,6 +11,7 @@ public record PenaltyHistoryResponse(
         int points,
         String reason,
         OffsetDateTime issuedAt,
-        OffsetDateTime expiresAt
+        OffsetDateTime expiresAt,
+        UUID correlationId
 ) {
 }

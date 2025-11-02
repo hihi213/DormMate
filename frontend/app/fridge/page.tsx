@@ -33,7 +33,7 @@ export default function FridgePage() {
 }
 
 function FridgeInner() {
-  const { items, slots, bundles, initialLoadError } = useFridge()
+  const { items, slots, bundles, initialLoadError, refreshAll } = useFridge()
   const { toast } = useToast()
   const currentUser = getCurrentUser()
   const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
@@ -92,6 +92,16 @@ function FridgeInner() {
       initializedSlotRef.current = true
     }
   }, [ownedSlotIds, slots.length])
+
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const intervalId = window.setInterval(() => {
+      void refreshAll()
+    }, 60000)
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [refreshAll])
 
   useEffect(() => {
     let cancelled = false

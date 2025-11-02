@@ -11,6 +11,11 @@ public record InspectionScheduleResponse(
         String status,
         OffsetDateTime completedAt,
         UUID inspectionSessionId,
+        UUID fridgeCompartmentId,
+        Integer slotIndex,
+        String slotLetter,
+        Integer floorNo,
+        String floorCode,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {

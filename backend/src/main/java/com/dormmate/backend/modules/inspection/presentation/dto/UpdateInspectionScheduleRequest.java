@@ -8,11 +8,12 @@ import jakarta.validation.constraints.Size;
 public record UpdateInspectionScheduleRequest(
         OffsetDateTime scheduledAt,
         @Size(max = 120, message = "TITLE_TOO_LONG")
-        String title,
-        String notes,
-        String status,
-        OffsetDateTime completedAt,
-        UUID inspectionSessionId,
-        boolean detachInspectionSession
+    String title,
+    String notes,
+    String status,
+    OffsetDateTime completedAt,
+    UUID inspectionSessionId,
+    boolean detachInspectionSession,
+    UUID fridgeCompartmentId
 ) {
 }

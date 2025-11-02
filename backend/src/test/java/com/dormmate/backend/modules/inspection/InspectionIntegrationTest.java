@@ -12,12 +12,14 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.dormmate.backend.modules.fridge.domain.FridgeItemStatus;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
+import com.dormmate.backend.modules.inspection.application.InspectionService;
 import com.dormmate.backend.modules.inspection.domain.InspectionScheduleStatus;
 import com.dormmate.backend.modules.inspection.domain.InspectionStatus;
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -57,6 +59,9 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private FridgeItemRepository fridgeItemRepository;
+
+    @Autowired
+    private InspectionService inspectionService;
 
     private String managerToken;
     private String residentToken;
@@ -128,11 +133,6 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
         mockMvc.perform(delete("/fridge/inspections/%s".formatted(sessionId))
                         .header("Authorization", "Bearer " + adminToken))
-                .andExpect(status().isForbidden());
-
-        // Clean up session for subsequent assertions
-        mockMvc.perform(delete("/fridge/inspections/%s".formatted(sessionId))
-                        .header("Authorization", "Bearer " + managerToken))
                 .andExpect(status().isNoContent());
     }
 
@@ -184,6 +184,75 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                                 }
                                 """.formatted(slot2FAId)))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void lockIsExtendedWhenActionsAreRecorded() throws Exception {
+        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
+        UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
+
+        JsonNode session = startInspection(managerToken, slot2FAId);
+        UUID sessionId = UUID.fromString(session.path("sessionId").asText());
+
+        OffsetDateTime initialLockedUntil = jdbcTemplate.queryForObject(
+                "SELECT locked_until FROM fridge_compartment WHERE id = ?",
+                OffsetDateTime.class,
+                slot2FAId
+        );
+
+        assertThat(initialLockedUntil).isNotNull();
+        Duration initialDuration = Duration.between(OffsetDateTime.now(ZoneOffset.UTC), initialLockedUntil);
+        assertThat(initialDuration.toMinutes()).isGreaterThanOrEqualTo(25);
+
+        recordDisposeAction(managerToken, sessionId, bundleId, itemId);
+
+        OffsetDateTime extendedLockedUntil = jdbcTemplate.queryForObject(
+                "SELECT locked_until FROM fridge_compartment WHERE id = ?",
+                OffsetDateTime.class,
+                slot2FAId
+        );
+
+        assertThat(extendedLockedUntil).isNotNull();
+        assertThat(extendedLockedUntil).isAfter(initialLockedUntil);
+    }
+
+    @Test
+    void expiredLocksAreReleasedByMaintenance() throws Exception {
+        JsonNode session = startInspection(managerToken, slot2FAId);
+        UUID sessionId = UUID.fromString(session.path("sessionId").asText());
+
+        OffsetDateTime past = OffsetDateTime.now(ZoneOffset.UTC).minusMinutes(10);
+        jdbcTemplate.update("UPDATE fridge_compartment SET locked_until = ?, is_locked = TRUE WHERE id = ?",
+                past,
+                slot2FAId);
+
+        jdbcTemplate.update("UPDATE inspection_session SET started_at = ?, status = 'IN_PROGRESS' WHERE id = ?",
+                past,
+                sessionId);
+
+        int released = inspectionService.releaseExpiredSessions();
+        assertThat(released).isGreaterThanOrEqualTo(1);
+
+        Boolean locked = jdbcTemplate.queryForObject(
+                "SELECT is_locked FROM fridge_compartment WHERE id = ?",
+                Boolean.class,
+                slot2FAId
+        );
+        assertThat(locked).isFalse();
+
+        OffsetDateTime sessionEndedAt = jdbcTemplate.queryForObject(
+                "SELECT ended_at FROM inspection_session WHERE id = ?",
+                OffsetDateTime.class,
+                sessionId
+        );
+        String sessionStatus = jdbcTemplate.queryForObject(
+                "SELECT status FROM inspection_session WHERE id = ?",
+                String.class,
+                sessionId
+        );
+        assertThat(sessionStatus).isEqualTo(InspectionStatus.CANCELLED.name());
+        assertThat(sessionEndedAt).isNotNull();
     }
 
     @Test
@@ -281,12 +350,14 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                         .content("""
                                 {
                                   "scheduledAt": "%s",
-                                  "title": "층별 정기 점검"
+                                  "title": "층별 정기 점검",
+                                  "fridgeCompartmentId": "%s"
                                 }
-                                """.formatted(scheduledAt)))
+                                """.formatted(scheduledAt, slot2FAId)))
                 .andExpect(status().isCreated())
                 .andReturn();
         JsonNode createdSchedule = objectMapper.readTree(scheduleResult.getResponse().getContentAsString());
+        assertThat(createdSchedule.path("fridgeCompartmentId").asText()).isEqualTo(slot2FAId.toString());
         UUID scheduleId = UUID.fromString(createdSchedule.path("scheduleId").asText());
 
         JsonNode session = startInspection(managerToken, slot2FAId, scheduleId);
@@ -325,12 +396,14 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                         .content("""
                                 {
                                   "scheduledAt": "%s",
-                                  "title": "취소 테스트 일정"
+                                  "title": "취소 테스트 일정",
+                                  "fridgeCompartmentId": "%s"
                                 }
-                                """.formatted(scheduledAt)))
+                                """.formatted(scheduledAt, slot2FAId)))
                 .andExpect(status().isCreated())
                 .andReturn();
         JsonNode createdSchedule = objectMapper.readTree(scheduleResult.getResponse().getContentAsString());
+        assertThat(createdSchedule.path("fridgeCompartmentId").asText()).isEqualTo(slot2FAId.toString());
         UUID scheduleId = UUID.fromString(createdSchedule.path("scheduleId").asText());
 
         JsonNode session = startInspection(managerToken, slot2FAId, scheduleId);

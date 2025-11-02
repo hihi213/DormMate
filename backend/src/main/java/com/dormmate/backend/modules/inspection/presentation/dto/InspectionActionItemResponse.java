@@ -11,6 +11,7 @@ public record InspectionActionItemResponse(
         UUID fridgeItemId,
         String snapshotName,
         LocalDate snapshotExpiresOn,
-        Integer quantityAtAction
+        Integer quantityAtAction,
+        UUID correlationId
 ) {
 }

@@ -31,6 +31,9 @@ import org.springframework.test.web.servlet.MvcResult;
 @AutoConfigureMockMvc
 class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest {
 
+    private static final int FLOOR_2 = 2;
+    private static final int SLOT_INDEX_A = 0;
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -43,6 +46,7 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
     private String managerToken;
     private String residentToken;
     private String adminToken;
+    private UUID slot2FAId;
 
     @BeforeEach
     void setUp() throws Exception {
@@ -50,6 +54,21 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
         managerToken = login("bob", "bob123!");
         residentToken = login("alice", "alice123!");
         adminToken = login("admin", "password");
+        slot2FAId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+    }
+
+    private UUID fetchSlotId(int floorNo, int slotIndex) {
+        return jdbcTemplate.queryForObject(
+                """
+                        SELECT fc.id
+                        FROM fridge_compartment fc
+                        JOIN fridge_unit fu ON fu.id = fc.fridge_unit_id
+                        WHERE fu.floor_no = ? AND fc.slot_index = ?
+                        """,
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                floorNo,
+                slotIndex
+        );
     }
 
     @AfterEach
@@ -64,9 +83,10 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
                 {
                   "scheduledAt": "%s",
                   "title": "11월 정기 점검",
-                  "notes": "층별장 회의 이후 진행 예정"
+                  "notes": "층별장 회의 이후 진행 예정",
+                  "fridgeCompartmentId": "%s"
                 }
-                """.formatted(scheduledAt);
+                """.formatted(scheduledAt, slot2FAId);
 
         MvcResult createdResult = mockMvc.perform(post("/fridge/inspection-schedules")
                         .header("Authorization", "Bearer " + managerToken)
@@ -75,6 +95,7 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("SCHEDULED"))
                 .andExpect(jsonPath("$.scheduleId").isNotEmpty())
+                .andExpect(jsonPath("$.fridgeCompartmentId").value(slot2FAId.toString()))
                 .andReturn();
 
         JsonNode created = objectMapper.readTree(createdResult.getResponse().getContentAsString());
@@ -123,9 +144,10 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "scheduledAt": "%s"
+                                  "scheduledAt": "%s",
+                                  "fridgeCompartmentId": "%s"
                                 }
-                                """.formatted(scheduledAt)))
+                                """.formatted(scheduledAt, slot2FAId)))
                 .andExpect(status().isForbidden());
     }
 
@@ -139,9 +161,10 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
                         .content("""
                                 {
                                   "scheduledAt": "%s",
-                                  "title": "관리자 시도"
+                                  "title": "관리자 시도",
+                                  "fridgeCompartmentId": "%s"
                                 }
-                                """.formatted(scheduledAt)))
+                                """.formatted(scheduledAt, slot2FAId)))
                 .andExpect(status().isForbidden());
 
         MvcResult createdResult = mockMvc.perform(post("/fridge/inspection-schedules")
@@ -150,9 +173,10 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
                         .content("""
                                 {
                                   "scheduledAt": "%s",
-                                  "title": "층별장 일정"
+                                  "title": "층별장 일정",
+                                  "fridgeCompartmentId": "%s"
                                 }
-                                """.formatted(scheduledAt)))
+                                """.formatted(scheduledAt, slot2FAId)))
                 .andExpect(status().isCreated())
                 .andReturn();
 

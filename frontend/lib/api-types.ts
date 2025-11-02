@@ -1572,7 +1572,7 @@ export interface components {
             removedAt?: string | null;
         };
         /** @enum {string} */
-        InspectionStatus: "IN_PROGRESS" | "SUBMITTED" | "CANCELED";
+        InspectionStatus: "IN_PROGRESS" | "SUBMITTED" | "CANCELED" | "CANCELLED";
         /** @enum {string} */
         InspectionAction: "WARN_INFO_MISMATCH" | "WARN_STORAGE_POOR" | "DISPOSE_EXPIRED" | "PASS" | "UNREGISTERED_DISPOSE";
         InspectionActionSummary: {
@@ -1635,6 +1635,8 @@ export interface components {
             summary: components["schemas"]["InspectionActionSummary"][];
             actions?: components["schemas"]["InspectionActionDetail"][];
             notes?: string | null;
+            initialBundleCount?: number | null;
+            totalBundleCount?: number | null;
         };
         InspectionActionEntry: {
             /** Format: uuid */

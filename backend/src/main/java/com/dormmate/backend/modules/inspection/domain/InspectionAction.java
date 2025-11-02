@@ -3,6 +3,7 @@ package com.dormmate.backend.modules.inspection.domain;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 import com.dormmate.backend.global.jpa.AbstractTimestampedEntity;
 import com.dormmate.backend.modules.auth.domain.DormUser;
@@ -60,6 +61,9 @@ public class InspectionAction extends AbstractTimestampedEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "recorded_by", nullable = false)
     private DormUser recordedBy;
+
+    @Column(name = "correlation_id", nullable = false, columnDefinition = "uuid")
+    private UUID correlationId;
 
     @OneToMany(mappedBy = "inspectionAction", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = true)
     private List<InspectionActionItem> items = new ArrayList<>();
@@ -133,6 +137,14 @@ public class InspectionAction extends AbstractTimestampedEntity {
 
     public void setRecordedBy(DormUser recordedBy) {
         this.recordedBy = recordedBy;
+    }
+
+    public UUID getCorrelationId() {
+        return correlationId;
+    }
+
+    public void setCorrelationId(UUID correlationId) {
+        this.correlationId = correlationId;
     }
 
     public List<InspectionActionItem> getItems() {

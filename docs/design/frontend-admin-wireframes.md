@@ -43,7 +43,7 @@
 │ FilterBar                                                   │
 │  - 시설 유형 Select (냉장고/세탁/도서관/다목적실)          │
 │  - 상태 Segmented (Active/Suspended/Reported/Retired)       │
-│  - 검색 Input (라벨·호실·담당자)                            │
+│  - 검색 Input (라벨·슬롯 코드·보관자·호실)                  │
 ├────────────────────────────────────────────────────────────┤
 │ PaginatedTable (공통)                                       │
 │  Columns: 시설 · 위치 · 상태 · 용량/허용량 · 이슈 · 버튼    │
@@ -64,6 +64,7 @@
 - `재배분 마법사`는 Drawer 내부 Stepper(1. 현재 요약 → 2. 새 배정 → 3. 검증)를 활용.
 - DangerZoneModal은 prod 빌드에서 비활성화(Feature Flag 필요).
 - 테이블 선택 상태는 `BulkEditor`가 관리하며 Playwright @admin-resource 시나리오에서 검증.
+- 삭제 이력이 있는 포장은 목록에서 `라벨 재사용` 배지로 강조하고, Hover 시 최근 삭제 시각을 Tooltip으로 보여 준다.
 
 ---
 

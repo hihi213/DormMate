@@ -1,5 +1,6 @@
 package com.dormmate.backend.modules.fridge.infrastructure.persistence;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -42,4 +43,12 @@ public interface FridgeCompartmentRepository extends JpaRepository<FridgeCompart
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select c from FridgeCompartment c join fetch c.fridgeUnit u where c.id in :ids")
     List<FridgeCompartment> findByIdInForUpdate(@Param("ids") List<UUID> ids);
+
+    @Query("""
+            select c from FridgeCompartment c
+            where c.locked = true
+              and c.lockedUntil is not null
+              and c.lockedUntil < :now
+            """)
+    List<FridgeCompartment> findExpiredLocks(@Param("now") OffsetDateTime now);
 }
