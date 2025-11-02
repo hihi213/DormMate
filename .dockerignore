@@ -62,6 +62,7 @@ frontend/.next/
 frontend/out/
 frontend/.vercel/
 frontend/.swc/
+frontend/test-artifacts/
 
 # 테스트 결과
 coverage/

@@ -1,17 +1,19 @@
 "use client"
 
 import Link from "next/link"
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   AlertCircle,
   AlertTriangle,
   ArrowLeftRight,
   ArrowRight,
+  Check,
   History,
   Loader2,
   Lock,
   LockOpen,
   Search,
+  Settings2,
   Shuffle,
   Snowflake,
 } from "lucide-react"
@@ -21,7 +23,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
@@ -153,6 +155,20 @@ function formatFreshness(freshness?: string | null) {
   return entry
 }
 
+function sortRoomLabels(labels: string[]): string[] {
+  return [...labels].sort((a, b) => a.localeCompare(b, "ko", { numeric: true, sensitivity: "base" }))
+}
+
+function formatRoomLabelList(labels: string[], emptyLabel: string): string {
+  const cleaned = labels.map((label) => label.trim()).filter((label) => label.length > 0)
+  const sorted = sortRoomLabels(cleaned)
+  if (sorted.length === 0) return emptyLabel
+  if (sorted.length <= 2) return sorted.join(", ")
+  const visible = sorted.slice(0, 2).join(", ")
+  const remaining = sorted.length - 2
+  return `${visible} 외 ${remaining}칸`
+}
+
 type DeletedState = {
   open: boolean
   loading: boolean
@@ -189,6 +205,7 @@ type InspectionState = {
 
 export default function AdminFridgePage() {
   const { toast } = useToast()
+  const slotConfigRef = useRef<HTMLDivElement | null>(null)
   const [selectedFloor, setSelectedFloor] = useState<number>(FLOOR_OPTIONS[0]!)
   const [slots, setSlots] = useState<AdminFridgeSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
@@ -197,6 +214,7 @@ export default function AdminFridgePage() {
   const [slotStatusDraft, setSlotStatusDraft] = useState<ResourceStatus>("ACTIVE")
   const [slotCapacityDraft, setSlotCapacityDraft] = useState<string>("")
   const [slotSaving, setSlotSaving] = useState(false)
+  const [statusUpdatingMap, setStatusUpdatingMap] = useState<Record<string, boolean>>({})
 
   const [bundleState, setBundleState] = useState<BundleState>(INITIAL_BUNDLE_STATE)
   const [bundleSearchInput, setBundleSearchInput] = useState("")
@@ -295,13 +313,22 @@ export default function AdminFridgePage() {
           })),
       },
       {
-        id: "audit",
-        label: "감사 로그",
-        description: "칸 상태 변경 및 재배분 기록을 감사 로그에서 추적합니다.",
-        href: "/admin/audit?module=fridge",
+        id: "slot-config",
+        label: "칸 설정 편집",
+        description: "선택된 칸의 상태와 최대 포장 용량을 빠르게 설정합니다.",
+        onClick: () => {
+          if (!selectedSlot) {
+            toast({
+              title: "칸을 먼저 선택하세요",
+              description: "상태 또는 용량을 수정할 칸을 목록에서 선택해주세요.",
+            })
+            return
+          }
+          slotConfigRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+        },
       },
     ],
-    [selectedFloor],
+    [selectedFloor, selectedSlot, toast],
   )
 
   const loadSlots = useCallback(
@@ -600,7 +627,6 @@ export default function AdminFridgePage() {
   const handleSaveSlotConfig = async () => {
     if (!selectedSlot) return
 
-    const desiredStatus = slotStatusDraft
     const trimmedCapacity = slotCapacityDraft.trim()
     const parsedCapacity = trimmedCapacity.length > 0 ? Number(trimmedCapacity) : undefined
 
@@ -614,8 +640,8 @@ export default function AdminFridgePage() {
     }
 
     const payload: Partial<UpdateCompartmentConfigPayload> = {}
-    if (desiredStatus !== selectedSlot.resourceStatus) {
-      payload.status = desiredStatus
+    if (slotStatusDraft !== selectedSlot.resourceStatus) {
+      payload.status = slotStatusDraft
     }
     const currentCapacity = typeof selectedSlot.capacity === "number" ? selectedSlot.capacity : undefined
     if (parsedCapacity !== undefined && parsedCapacity !== currentCapacity) {
@@ -673,17 +699,89 @@ export default function AdminFridgePage() {
   }
 
   const slotHasChanges = selectedSlot
-    ? slotStatusDraft !== selectedSlot.resourceStatus ||
-      (() => {
+    ? (() => {
         const trimmed = slotCapacityDraft.trim()
         if (trimmed.length === 0) {
-          return false
+          return slotStatusDraft !== selectedSlot.resourceStatus
         }
         const parsed = Number(trimmed)
         if (Number.isNaN(parsed)) return false
-        return parsed !== selectedSlot.capacity
+        const currentCapacity =
+          typeof selectedSlot.capacity === "number" ? selectedSlot.capacity : undefined
+        const capacityChanged = parsed !== currentCapacity
+        const statusChanged = slotStatusDraft !== selectedSlot.resourceStatus
+        return capacityChanged || statusChanged
       })()
     : false
+
+  const handleQuickStatusUpdate = async (slot: AdminFridgeSlot, status: ResourceStatus) => {
+    if (status === slot.resourceStatus) {
+      return
+    }
+    if (statusUpdatingMap[slot.slotId]) {
+      return
+    }
+
+    setStatusUpdatingMap((prev) => ({ ...prev, [slot.slotId]: true }))
+    const previousStatus = slot.resourceStatus
+
+    setSlots((prev) =>
+      prev.map((item) =>
+        item.slotId === slot.slotId
+          ? {
+              ...item,
+              resourceStatus: status,
+            }
+          : item,
+      ),
+    )
+
+    try {
+      const updated = await updateFridgeCompartment(slot.slotId, { status })
+      setSlots((prev) =>
+        prev.map((item) => {
+          if (item.slotId !== updated.slotId) return item
+          const capacity = typeof updated.capacity === "number" ? updated.capacity : item.capacity ?? null
+          const occupied =
+            typeof updated.occupiedCount === "number"
+              ? updated.occupiedCount
+              : item.occupiedCount ?? null
+          return {
+            ...item,
+            resourceStatus: updated.resourceStatus,
+            capacity,
+            locked: updated.locked,
+            lockedUntil: updated.lockedUntil ?? null,
+            displayName: updated.displayName ?? item.displayName,
+            occupiedCount: occupied,
+            utilization: computeUtilization(capacity, occupied),
+          }
+        }),
+      )
+      const statusLabel = STATUS_BADGE[updated.resourceStatus]?.label ?? updated.resourceStatus
+      toast({
+        title: "칸 상태가 변경되었습니다",
+        description: `${updated.displayName ?? `${slot.floorNo}F ${slot.slotLetter}`} → ${statusLabel}`,
+      })
+    } catch (error) {
+      setSlots((prev) =>
+        prev.map((item) =>
+          item.slotId === slot.slotId ? { ...item, resourceStatus: previousStatus } : item,
+        ),
+      )
+      toast({
+        title: "칸 상태 변경 실패",
+        description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
+        variant: "destructive",
+      })
+    } finally {
+      setStatusUpdatingMap((prev) => {
+        const next = { ...prev }
+        delete next[slot.slotId]
+        return next
+      })
+    }
+  }
 
   const handleReallocationOpenChange = (open: boolean) => {
     setReallocationOpen(open)
@@ -832,7 +930,7 @@ export default function AdminFridgePage() {
                 호실 재배분
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-4xl">
+            <DialogContent className="w-full max-w-4xl sm:max-w-5xl">
               <DialogHeader>
                 <DialogTitle>{selectedFloor}층 칸-호실 재배분</DialogTitle>
                 <DialogDescription>
@@ -851,25 +949,29 @@ export default function AdminFridgePage() {
                 </div>
               ) : reallocationPreview ? (
                 <>
-                  <ScrollArea className="max-h-[420px] pr-4">
+                  <ScrollArea className="max-h-[420px] w-full pr-4">
                     <div className="space-y-4">
                       {reallocationPreview.allocations.map((allocation) => {
                         const selectedRooms = reallocationSelections[allocation.compartmentId] ?? []
                         const recommendedRooms = allocation.recommendedRoomIds ?? []
                         const warnings = allocation.warnings ?? []
                         const statusBadge = STATUS_BADGE[allocation.status as ResourceStatus]
-                        const roomNumbers = selectedRooms
-                          .map((roomId) => roomsMap.get(roomId) ?? roomId.slice(0, 8))
-                          .join(", ") || "미배정"
-                        const recommendedNumbers = recommendedRooms
-                          .map((roomId) => roomsMap.get(roomId) ?? roomId.slice(0, 8))
-                          .join(", ") || "없음"
+                        const selectedRoomLabels = selectedRooms.map(
+                          (roomId) => roomsMap.get(roomId) ?? roomId.slice(0, 8),
+                        )
+                        const recommendedRoomLabels = recommendedRooms.map(
+                          (roomId) => roomsMap.get(roomId) ?? roomId.slice(0, 8),
+                        )
+                        const sortedSelectedLabels = sortRoomLabels(selectedRoomLabels)
+                        const sortedRecommendedLabels = sortRoomLabels(recommendedRoomLabels)
+                        const roomNumbers = formatRoomLabelList(sortedSelectedLabels, "미배정")
+                        const recommendedNumbers = formatRoomLabelList(sortedRecommendedLabels, "없음")
                         return (
                           <div
                             key={allocation.compartmentId}
                             className="rounded-lg border border-slate-200 p-4 shadow-sm"
                           >
-                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-start sm:justify-between">
                               <div className="space-y-1">
                                 <div className="flex items-center gap-2">
                                   <p className="text-sm font-semibold text-slate-900">
@@ -900,20 +1002,27 @@ export default function AdminFridgePage() {
                                 </div>
                                 <p className="text-xs text-slate-500">
                                   현재 배정:{" "}
-                                  {allocation.currentRoomIds
-                                    .map((roomId) => roomsMap.get(roomId) ?? roomId.slice(0, 8))
-                                    .join(", ") || "없음"}
+                                  {sortRoomLabels(
+                                    allocation.currentRoomIds.map(
+                                      (roomId) => roomsMap.get(roomId) ?? roomId.slice(0, 8),
+                                    ),
+                                  ).join(", ") || "없음"}
                                 </p>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex flex-wrap items-center gap-2">
                                 <DropdownMenu>
                                   <DropdownMenuTrigger asChild>
-                                    <Button variant="outline" size="sm" className="gap-2">
+                                    <Button
+                                      variant="outline"
+                                      size="sm"
+                                      className="w-[220px] justify-between gap-2"
+                                      title={sortedSelectedLabels.join(", ") || "미배정"}
+                                    >
                                       <ArrowLeftRight className="size-3.5" aria-hidden />
-                                      {roomNumbers}
+                                      <span className="truncate text-left">{roomNumbers}</span>
                                     </Button>
                                   </DropdownMenuTrigger>
-                                  <DropdownMenuContent className="max-h-64 overflow-y-auto">
+                                  <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
                                     <DropdownMenuLabel>배정 호실 선택</DropdownMenuLabel>
                                     <DropdownMenuSeparator />
                                     {reallocationPreview.rooms.map((room) => (
@@ -944,7 +1053,13 @@ export default function AdminFridgePage() {
                             </div>
                             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                               <span>
-                                추천 배정: <span className="font-medium text-slate-700">{recommendedNumbers}</span>
+                                추천 배정:{" "}
+                                <span
+                                  className="font-medium text-slate-700"
+                                  title={sortedRecommendedLabels.join(", ") || "없음"}
+                                >
+                                  {recommendedNumbers}
+                                </span>
                               </span>
                               {warnings.map((warning) => {
                                 const label = REALLOCATION_WARNING_LABELS[warning] ?? warning
@@ -1027,19 +1142,28 @@ export default function AdminFridgePage() {
                 const isSelected = slot.slotId === selectedSlotId
                 const utilization =
                   typeof slot.utilization === "number" ? Math.round(slot.utilization * 100) : null
+                const isStatusUpdating = Boolean(statusUpdatingMap[slot.slotId])
                 return (
-                  <button
+                  <div
                     key={slot.slotId}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={isSelected}
                     onClick={() => handleSlotSelect(slot.slotId)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        handleSlotSelect(slot.slotId)
+                      }
+                    }}
                     className={cn(
-                      "flex h-full flex-col rounded-2xl border bg-white p-5 text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2",
+                      "flex h-full flex-col cursor-pointer rounded-2xl border bg-white p-5 text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2",
                       isSelected
                         ? "border-emerald-400 ring-1 ring-emerald-200"
                         : "border-slate-200 hover:border-emerald-200 hover:shadow-md",
                     )}
                   >
-                    <div className="flex items-start justify-between">
+                    <div className="flex items-start justify-between gap-3">
                       <div>
                         <p className="text-sm font-semibold text-slate-900">
                           {slot.displayName ?? `${slot.floorNo}F · ${slot.slotLetter}`}
@@ -1048,7 +1172,7 @@ export default function AdminFridgePage() {
                           {slot.compartmentType} · 인덱스 {slot.slotIndex}
                         </p>
                       </div>
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-2">
                         {badge ? (
                           <Badge className={badge.className}>{badge.label}</Badge>
                         ) : null}
@@ -1073,6 +1197,59 @@ export default function AdminFridgePage() {
                             </>
                           )}
                         </Badge>
+                        <DropdownMenu>
+                          <DropdownMenuTrigger asChild>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="h-8 min-w-[112px]"
+                              onClick={(event) => event.stopPropagation()}
+                              onKeyDown={(event) => event.stopPropagation()}
+                              disabled={isStatusUpdating}
+                            >
+                              {isStatusUpdating ? (
+                                <>
+                                  <Loader2 className="size-3 animate-spin" aria-hidden />
+                                  변경 중
+                                </>
+                              ) : (
+                                <>
+                                  <Settings2 className="size-3.5" aria-hidden />
+                                  상태 변경
+                                </>
+                              )}
+                            </Button>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent align="end" className="min-w-[180px]">
+                            <DropdownMenuLabel>상태 선택</DropdownMenuLabel>
+                            <DropdownMenuSeparator />
+                            {RESOURCE_STATUS_OPTIONS.map((status) => {
+                              const optionLabel = STATUS_BADGE[status]?.label ?? status
+                              const isCurrent = status === slot.resourceStatus
+                              return (
+                                <DropdownMenuItem
+                                  key={status}
+                                  disabled={isStatusUpdating || isCurrent}
+                                  className="flex items-center gap-2"
+                                  onSelect={() => {
+                                    if (isStatusUpdating || isCurrent) return
+                                    handleQuickStatusUpdate(slot, status)
+                                  }}
+                                >
+                                  {isCurrent ? (
+                                    <Check className="size-3.5 text-emerald-600" aria-hidden />
+                                  ) : (
+                                    <span className="inline-flex size-3.5 shrink-0" aria-hidden="true" />
+                                  )}
+                                  <span>{optionLabel}</span>
+                                  {isCurrent ? (
+                                    <span className="ml-auto text-xs text-emerald-600">현재</span>
+                                  ) : null}
+                                </DropdownMenuItem>
+                              )
+                            })}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
                       </div>
                     </div>
                     <Separator className="my-4" />
@@ -1108,7 +1285,7 @@ export default function AdminFridgePage() {
                         <span className="text-emerald-600">상세 보기</span>
                       )}
                     </div>
-                  </button>
+                  </div>
                 )
               })}
             </div>
@@ -1523,7 +1700,7 @@ export default function AdminFridgePage() {
         <section className="rounded-2xl border border-emerald-100 bg-white/90 p-5 shadow-sm">
           <h2 className="text-sm font-semibold text-slate-900">빠른 실행</h2>
           <p className="mt-1 text-xs text-slate-500">
-            재배분과 감사 로그를 즉시 열 수 있습니다. Cmd/Ctrl + K로 전역 검색창에 집중하세요.
+            재배분, 삭제 이력 확인, 칸 설정 편집을 빠르게 수행할 수 있습니다. Cmd/Ctrl + K로 전역 검색창에 집중하세요.
           </p>
           <ul className="mt-4 space-y-3 text-sm text-slate-700">
             {actionShortcuts.map((item) => (
@@ -1556,7 +1733,11 @@ export default function AdminFridgePage() {
           </ul>
         </section>
         {selectedSlot ? (
-          <section className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm" aria-label="선택된 칸 요약">
+          <section
+            ref={slotConfigRef}
+            className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm"
+            aria-label="선택된 칸 요약"
+          >
             <h2 className="text-sm font-semibold text-slate-900">선택된 칸</h2>
             <dl className="mt-3 space-y-2 text-xs text-slate-600">
               <div className="flex items-center justify-between">
@@ -1567,7 +1748,9 @@ export default function AdminFridgePage() {
               </div>
               <div className="flex items-center justify-between">
                 <dt>상태</dt>
-                <dd className="font-medium text-slate-900">{selectedSlot.resourceStatus}</dd>
+                <dd className="font-medium text-slate-900">
+                  {STATUS_BADGE[selectedSlot.resourceStatus]?.label ?? selectedSlot.resourceStatus}
+                </dd>
               </div>
               <div className="flex items-center justify-between">
                 <dt>점유</dt>
@@ -1601,7 +1784,7 @@ export default function AdminFridgePage() {
                   <SelectContent>
                     {RESOURCE_STATUS_OPTIONS.map((status) => (
                       <SelectItem key={status} value={status}>
-                        {status}
+                        {STATUS_BADGE[status]?.label ?? status}
                       </SelectItem>
                     ))}
                   </SelectContent>

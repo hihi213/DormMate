@@ -37,6 +37,7 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { getCurrentUser, logout, subscribeAuth, type AuthUser } from "@/lib/auth"
+import HeaderNotifications from "@/components/admin/header-notifications"
 
 type NavItem = {
   label: string
@@ -290,11 +291,7 @@ export default function AdminShell({ children }: AdminShellProps) {
                 />
               </form>
               <div className="ml-auto flex items-center gap-3">
-                <Button variant="ghost" size="icon" className="relative">
-                  <BellDot className="size-5 text-emerald-600" aria-hidden />
-                  <span className="sr-only">알림 확인</span>
-                  <span className="absolute right-1 top-1 inline-flex size-2 rounded-full bg-emerald-500" />
-                </Button>
+                <HeaderNotifications />
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="flex items-center gap-3 rounded-full px-2 py-1">

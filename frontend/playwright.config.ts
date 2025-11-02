@@ -21,6 +21,11 @@ const webServerConfig: PlaywrightTestConfig['webServer'] = process.env.PLAYWRIGH
       },
     };
 
+const envWorkerRaw = process.env.PLAYWRIGHT_WORKERS;
+const parsedWorkers = envWorkerRaw ? Number.parseInt(envWorkerRaw, 10) : Number.NaN;
+const hasEnvWorkers = Number.isFinite(parsedWorkers) && parsedWorkers > 0;
+const resolvedWorkers = hasEnvWorkers ? parsedWorkers : isCI ? 3 : undefined;
+
 export default defineConfig({
   testDir: './tests',
   timeout: 30 * 1000,
@@ -29,7 +34,7 @@ export default defineConfig({
   },
   fullyParallel: true,
   retries: isCI ? 2 : 0,
-  workers: isCI ? 1 : undefined,
+  workers: resolvedWorkers,
   reporter: isCI
     ? [
         ['dot'],
