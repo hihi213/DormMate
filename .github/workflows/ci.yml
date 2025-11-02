@@ -80,8 +80,10 @@ jobs:
       - name: Start backend for OpenAPI drift check
         working-directory: backend
         run: |
-          ./gradlew bootRun > ../backend-openapi.log 2>&1 &
-          echo $! > ../backend.pid
+          LOG_FILE="$GITHUB_WORKSPACE/backend-openapi.log"
+          PID_FILE="$GITHUB_WORKSPACE/backend.pid"
+          ./gradlew bootRun > "$LOG_FILE" 2>&1 &
+          echo $! > "$PID_FILE"
           for i in {1..30}; do
             if curl -fsS http://localhost:8080/actuator/health >/dev/null; then
               READY=1
@@ -113,13 +115,15 @@ jobs:
       - name: Stop backend after OpenAPI check
         if: always()
         run: |
-          if [ -f backend.pid ]; then
-            PID=$(cat backend.pid)
+          PID_FILE="$GITHUB_WORKSPACE/backend.pid"
+          LOG_FILE="$GITHUB_WORKSPACE/backend-openapi.log"
+          if [ -f "$PID_FILE" ]; then
+            PID=$(cat "$PID_FILE")
             kill "$PID" || true
             wait "$PID" 2>/dev/null || true
-            rm -f backend.pid
+            rm -f "$PID_FILE"
           fi
-          rm -f backend-openapi.log runtime-openapi.json spec-openapi.json
+          rm -f "$LOG_FILE" runtime-openapi.json spec-openapi.json
 
       - name: Run frontend tests (lint)
         run: ./auto tests frontend
