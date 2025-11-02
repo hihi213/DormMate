@@ -11,6 +11,25 @@ import type {
   InspectionSubmitPayload,
 } from "@/features/inspections/types"
 
+const isFixtureEnabled = process.env.NEXT_PUBLIC_FIXTURE === "1"
+
+const isFixtureRuntime = () =>
+  typeof window !== "undefined" &&
+  (window.localStorage?.getItem("dm.fixture") === "1" || (window as any).__DM_FIXTURE__ === true)
+
+const isFixtureMode = () => isFixtureEnabled || isFixtureRuntime()
+
+async function fetchFixture<T>(resource: "slots" | "active" | "history"): Promise<T | undefined> {
+  const response = await fetch(`/api/__fixtures__/fridge/inspections?resource=${resource}`)
+  if (response.status === 204) {
+    return undefined
+  }
+  if (!response.ok) {
+    throw new Error(`Fixture 요청 실패 (${resource})`)
+  }
+  return (await response.json()) as T
+}
+
 type InspectionActionSummaryDto = {
   action: InspectionAction
   count: number
@@ -22,6 +41,7 @@ type InspectionActionItemDto = {
   snapshotName?: string | null
   snapshotExpiresOn?: string | null
   quantityAtAction?: number | null
+  correlationId?: string | null
 }
 
 type PenaltyHistoryDto = {
@@ -30,6 +50,7 @@ type PenaltyHistoryDto = {
   reason?: string | null
   issuedAt: string
   expiresAt?: string | null
+  correlationId?: string | null
 }
 
 type InspectionActionDetailDto = {
@@ -40,6 +61,7 @@ type InspectionActionDetailDto = {
   recordedAt: string
   recordedBy?: string | null
   note?: string | null
+  correlationId?: string | null
   items?: InspectionActionItemDto[]
   penalties?: PenaltyHistoryDto[]
 }
@@ -59,6 +81,8 @@ type InspectionSessionDto = {
   summary: InspectionActionSummaryDto[]
   actions?: InspectionActionDetailDto[]
   notes?: string | null
+  initialBundleCount?: number | null
+  totalBundleCount?: number | null
 }
 
 type InspectionScheduleDto = {
@@ -105,6 +129,12 @@ export async function startInspection(payload: StartInspectionRequest): Promise<
 }
 
 export async function fetchActiveInspection(floor?: number): Promise<InspectionSession | null> {
+  if (isFixtureMode()) {
+    const fixture = await fetchFixture<InspectionSessionDto | undefined>("active")
+    if (!fixture) return null
+    return mapInspectionSessionDto(fixture)
+  }
+
   const search = new URLSearchParams()
   if (typeof floor === "number") {
     search.set("floor", String(floor))
@@ -199,6 +229,12 @@ type InspectionHistoryParams = {
 }
 
 export async function fetchInspectionHistory(params: InspectionHistoryParams = {}): Promise<InspectionSession[]> {
+  if (isFixtureMode()) {
+    const fixture = await fetchFixture<InspectionSessionDto[]>("history")
+    if (!fixture) return []
+    return fixture.map(mapInspectionSessionDto)
+  }
+
   const search = new URLSearchParams()
   if (params.slotId) search.set("slotId", params.slotId)
   if (params.status) search.set("status", params.status)
@@ -219,6 +255,12 @@ export async function fetchInspectionHistory(params: InspectionHistoryParams = {
 }
 
 export async function fetchInspectionSlots(): Promise<Slot[]> {
+  if (isFixtureMode()) {
+    const fixture = await fetchFixture<FridgeSlotListResponseDto>("slots")
+    const items = fixture?.items ?? []
+    return items.map(mapSlotFromDto)
+  }
+
   const { data, error } = await safeApiCall<FridgeSlotListResponseDto>(
     "/fridge/slots?view=full&page=0&size=200",
     { method: "GET" },
@@ -353,12 +395,14 @@ function mapInspectionSessionDto(dto: InspectionSessionDto): InspectionSession {
     recordedAt: action.recordedAt,
     recordedBy: action.recordedBy ?? null,
     note: action.note ?? null,
+    correlationId: action.correlationId ?? null,
     items: (action.items ?? []).map((item) => ({
       id: item.id,
       fridgeItemId: item.fridgeItemId ?? null,
       snapshotName: item.snapshotName ?? null,
       snapshotExpiresOn: item.snapshotExpiresOn ?? null,
       quantityAtAction: item.quantityAtAction ?? null,
+      correlationId: item.correlationId ?? null,
     })),
     penalties: (action.penalties ?? []).map((penalty) => ({
       id: penalty.id,
@@ -366,6 +410,7 @@ function mapInspectionSessionDto(dto: InspectionSessionDto): InspectionSession {
       reason: penalty.reason ?? null,
       issuedAt: penalty.issuedAt,
       expiresAt: penalty.expiresAt ?? null,
+      correlationId: penalty.correlationId ?? null,
     })),
   }))
 
@@ -386,6 +431,8 @@ function mapInspectionSessionDto(dto: InspectionSessionDto): InspectionSession {
     summary: dto.summary ?? [],
     actions,
     notes: dto.notes ?? null,
+    initialBundleCount: dto.initialBundleCount ?? bundles.length,
+    totalBundleCount: dto.totalBundleCount ?? bundles.length,
   }
 }
 

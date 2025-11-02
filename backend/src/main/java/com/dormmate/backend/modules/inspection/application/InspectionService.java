@@ -64,6 +64,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class InspectionService {
 
     private static final String PENALTY_SOURCE = "FRIDGE_INSPECTION";
+    private static final long LOCK_EXTENSION_MINUTES = 30L;
 
     private final InspectionSessionRepository inspectionSessionRepository;
     private final FridgeCompartmentRepository fridgeCompartmentRepository;
@@ -98,6 +99,14 @@ public class InspectionService {
         this.inspectionScheduleRepository = inspectionScheduleRepository;
         this.notificationService = notificationService;
         this.clock = clock;
+    }
+
+    private void extendCompartmentLock(FridgeCompartment compartment, OffsetDateTime baseline) {
+        if (compartment == null) {
+            return;
+        }
+        compartment.setLocked(true);
+        compartment.setLockedUntil(baseline.plusMinutes(LOCK_EXTENSION_MINUTES));
     }
 
     public InspectionSessionResponse startSession(StartInspectionRequest request) {
@@ -140,13 +149,15 @@ public class InspectionService {
         }
 
         InspectionSession session = new InspectionSession();
+        int initialBundleCount = fridgeBundleRepository
+                .findByFridgeCompartmentAndStatus(compartment, FridgeBundleStatus.ACTIVE).size();
+        session.setInitialBundleCount(initialBundleCount);
         session.setFridgeCompartment(compartment);
         session.setStartedBy(currentUser);
         session.setStatus(InspectionStatus.IN_PROGRESS);
         session.setStartedAt(now);
 
-        compartment.setLocked(true);
-        compartment.setLockedUntil(now.plusHours(2));
+        extendCompartmentLock(compartment, now);
 
         InspectionParticipant participant = new InspectionParticipant();
         participant.setInspectionSession(session);
@@ -238,7 +249,7 @@ public class InspectionService {
     public void cancelSession(UUID sessionId) {
         InspectionSession session = inspectionSessionRepository.findById(sessionId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND"));
-        ensureManagerRole();
+        ensureManagerOrAdmin();
         if (session.getStatus() != InspectionStatus.IN_PROGRESS) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "SESSION_NOT_ACTIVE");
         }
@@ -268,6 +279,7 @@ public class InspectionService {
         OffsetDateTime now = OffsetDateTime.now(clock);
         DormUser currentUser = loadCurrentUser();
 
+        boolean extended = false;
         for (InspectionActionEntryRequest entry : request.actions()) {
             InspectionActionType actionType = parseAction(entry.action());
             FridgeBundle bundle = null;
@@ -295,6 +307,7 @@ public class InspectionService {
             action.setFreeNote(entry.note());
             action.setRecordedAt(now);
             action.setRecordedBy(currentUser);
+            action.setCorrelationId(UUID.randomUUID());
             session.getActions().add(action);
 
             if (item != null) {
@@ -304,6 +317,7 @@ public class InspectionService {
                 actionItem.setSnapshotName(item.getItemName());
                 actionItem.setSnapshotExpiresOn(item.getExpiryDate());
                 actionItem.setQuantityAtAction(item.getQuantity());
+                actionItem.setCorrelationId(action.getCorrelationId());
                 action.getItems().add(actionItem);
 
                 item.setLastInspectedAt(now);
@@ -316,6 +330,11 @@ public class InspectionService {
             }
 
             maybeAttachPenalty(action, actionType, currentUser, now);
+            extended = true;
+        }
+
+        if (extended) {
+            extendCompartmentLock(session.getFridgeCompartment(), now);
         }
 
         inspectionSessionRepository.save(session);
@@ -362,11 +381,46 @@ public class InspectionService {
         return mapSession(saved, currentUser);
     }
 
+    public int releaseExpiredSessions() {
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        List<FridgeCompartment> expiredCompartments = fridgeCompartmentRepository.findExpiredLocks(now);
+        int released = 0;
+
+        for (FridgeCompartment compartment : expiredCompartments) {
+            List<InspectionSession> sessions =
+                    inspectionSessionRepository.findByFridgeCompartmentAndStatus(compartment, InspectionStatus.IN_PROGRESS);
+
+            for (InspectionSession session : sessions) {
+                session.setStatus(InspectionStatus.CANCELLED);
+                session.setEndedAt(now);
+                inspectionScheduleRepository.findByInspectionSessionId(session.getId()).ifPresent(schedule -> {
+                    schedule.setInspectionSession(null);
+                    schedule.setStatus(InspectionScheduleStatus.SCHEDULED);
+                    schedule.setCompletedAt(null);
+                    inspectionScheduleRepository.save(schedule);
+                });
+                released++;
+            }
+
+            compartment.setLocked(false);
+            compartment.setLockedUntil(null);
+        }
+
+        return released;
+    }
+
     private void ensureManagerRole() {
         if (SecurityUtils.hasRole("FLOOR_MANAGER")) {
             return;
         }
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_MANAGER_ONLY");
+    }
+
+    private void ensureManagerOrAdmin() {
+        if (SecurityUtils.hasRole("FLOOR_MANAGER") || SecurityUtils.hasRole("ADMIN")) {
+            return;
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_MANAGER_OR_ADMIN_ONLY");
     }
 
     private DormUser loadCurrentUser() {
@@ -418,7 +472,8 @@ public class InspectionService {
                                     item.getFridgeItem() != null ? item.getFridgeItem().getId() : null,
                                     item.getSnapshotName(),
                                     item.getSnapshotExpiresOn(),
-                                    item.getQuantityAtAction()
+                                    item.getQuantityAtAction(),
+                                    item.getCorrelationId()
                             ))
                             .toList();
                     List<PenaltyHistoryResponse> penaltyResponses = action.getPenalties().stream()
@@ -427,7 +482,8 @@ public class InspectionService {
                                     penalty.getPoints(),
                                     penalty.getReason(),
                                     penalty.getIssuedAt(),
-                                    penalty.getExpiresAt()
+                                    penalty.getExpiresAt(),
+                                    penalty.getCorrelationId()
                             ))
                             .toList();
                     return new InspectionActionDetailResponse(
@@ -438,6 +494,7 @@ public class InspectionService {
                             action.getRecordedAt(),
                             action.getRecordedBy() != null ? action.getRecordedBy().getId() : null,
                             action.getFreeNote(),
+                            action.getCorrelationId(),
                             itemResponses,
                             penaltyResponses
                     );
@@ -463,7 +520,9 @@ public class InspectionService {
                 bundleResponses,
                 summaries,
                 actionDetails,
-                session.getNotes()
+                session.getNotes(),
+                session.getInitialBundleCount(),
+                session.getTotalBundleCount()
         );
     }
 
@@ -498,6 +557,7 @@ public class InspectionService {
         penalty.setReason(type.name());
         penalty.setIssuedAt(issuedAt);
         penalty.setInspectionAction(action);
+        penalty.setCorrelationId(action.getCorrelationId());
         action.getPenalties().add(penalty);
     }
 

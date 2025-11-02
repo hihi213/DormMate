@@ -298,6 +298,12 @@ export function getAuthorizationHeader(): string | null {
 }
 
 export function redirectToLogin(redirectUrl?: string, reason?: string) {
+  if (
+    process.env.NEXT_PUBLIC_FIXTURE === "1" ||
+    (typeof window !== "undefined" && window.localStorage.getItem("dm.fixture") === "1")
+  ) {
+    return
+  }
   clearSession()
   if (typeof window === "undefined") {
     return

@@ -135,12 +135,15 @@ export function mapAdminInspectionSession(
       ? session.slotLabel
       : toSlotLetter(session.slotIndex ?? 0)
 
+  const rawStatus = session.status ?? "IN_PROGRESS"
+  const normalizedStatus = rawStatus === "CANCELLED" ? "CANCELED" : rawStatus
+
   return {
     sessionId: session.sessionId,
     slotId: session.slotId,
     slotLabel,
     floorNo: session.floorNo ?? 0,
-    status: (session.status ?? "IN_PROGRESS") as AdminInspectionSession["status"],
+    status: normalizedStatus as AdminInspectionSession["status"],
     startedAt: session.startedAt,
     endedAt: session.endedAt ?? null,
     startedBy: session.startedBy,

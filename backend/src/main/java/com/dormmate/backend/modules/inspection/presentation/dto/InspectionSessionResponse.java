@@ -22,6 +22,8 @@ public record InspectionSessionResponse(
         List<FridgeBundleResponse> bundles,
         List<InspectionActionSummaryResponse> summary,
         List<InspectionActionDetailResponse> actions,
-        String notes
+        String notes,
+        Integer initialBundleCount,
+        Integer totalBundleCount
 ) {
 }

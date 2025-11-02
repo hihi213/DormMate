@@ -7,6 +7,7 @@ DormMate의 냉장고 임박/만료 알림 배치 스케줄러 운영 기준을 
 - 실행 시각: 매일 09:00 KST에 `FridgeExpiryNotificationScheduler#runDailyBatch`가 한 번 실행된다.
 - 현재 버전에는 자동 재시도 로직이 없다. 실패 시 예외가 로깅되고 `notification_dispatch_log`에 `FAILED` 상태가 기록된다.
 - 알림 TTL은 24시간이며 dedupe 키는 `{kind}:{userId}:{yyyyMMdd}` 형식으로 하루 한 번 알림만 발송된다.
+- 신규 사용자 선호도는 `FRIDGE_EXPIRY`, `FRIDGE_EXPIRED` 알림을 기본 ON으로 생성되며, UI에서 비활성화할 수 있다.
 
 > **향후 계획**  
 > 자동 재시도(예: 5분 간격 3회)와 관리자 경보 발송은 미구현이다. 운영 요구가 생기면 재시도 스케줄러 및 경보 체계를 추가하고 본 가이드를 업데이트한다.

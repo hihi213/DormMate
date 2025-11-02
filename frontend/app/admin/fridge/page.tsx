@@ -337,10 +337,13 @@ export default function AdminFridgePage() {
         const prefix = `${slotId}::`
         setLabelReuseLookup((prev) => {
           const next = { ...prev }
-          Object.keys(next)
-            .filter((key) => key.startsWith(prefix))
-            .forEach((key) => delete next[key])
-          (response.items ?? []).forEach((item) => {
+          for (const key of Object.keys(next)) {
+            if (key.startsWith(prefix)) {
+              delete next[key]
+            }
+          }
+          const entries = Array.isArray(response.items) ? response.items : []
+          entries.forEach((item) => {
             if (!item) return
             if (item.slotId !== slotId) return
             const label = item.labelDisplay
@@ -357,9 +360,11 @@ export default function AdminFridgePage() {
         const prefix = `${slotId}::`
         setLabelReuseLookup((prev) => {
           const next = { ...prev }
-          Object.keys(next)
-            .filter((key) => key.startsWith(prefix))
-            .forEach((key) => delete next[key])
+          for (const key of Object.keys(next)) {
+            if (key.startsWith(prefix)) {
+              delete next[key]
+            }
+          }
           return next
         })
       }
@@ -457,13 +462,11 @@ export default function AdminFridgePage() {
   const stats = useMemo(() => {
     if (slots.length === 0) {
       return {
-        total: 0,
         active: 0,
         locked: 0,
         utilization: null as number | null,
       }
     }
-    const total = slots.length
     const active = slots.filter((slot) => slot.resourceStatus === "ACTIVE").length
     const locked = slots.filter((slot) => slot.locked).length
     const capacitySum = slots.reduce(
@@ -476,7 +479,7 @@ export default function AdminFridgePage() {
     )
     const utilization =
       capacitySum > 0 ? Math.round((occupiedSum / capacitySum) * 100) : null
-    return { total, active, locked, utilization }
+    return { active, locked, utilization }
   }, [slots])
 
   const totalBundlePages = useMemo(
@@ -665,28 +668,51 @@ export default function AdminFridgePage() {
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Select
-            value={String(selectedFloor)}
-            onValueChange={(value) => {
-              const parsed = Number(value)
-              handleFloorChange(Number.isNaN(parsed) ? FLOOR_OPTIONS[0]! : parsed)
-            }}
-          >
-            <SelectTrigger className="w-[140px]">
-              <SelectValue placeholder="층 선택" />
-            </SelectTrigger>
-            <SelectContent>
-              {FLOOR_OPTIONS.map((floor) => (
-                <SelectItem key={floor} value={String(floor)}>
-                  {floor}층
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-col gap-4 rounded-2xl border border-emerald-100 bg-white/80 p-5 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-6">
+            <div className="space-y-2">
+              <Label htmlFor="admin-floor-select" className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
+                층 선택
+              </Label>
+              <Select
+                value={String(selectedFloor)}
+                onValueChange={(value) => {
+                  const parsed = Number(value)
+                  handleFloorChange(Number.isNaN(parsed) ? FLOOR_OPTIONS[0]! : parsed)
+                }}
+              >
+                <SelectTrigger
+                  id="admin-floor-select"
+                  className="h-12 w-[200px] rounded-xl border-2 border-emerald-200 bg-emerald-50/60 px-4 font-semibold text-emerald-700 shadow-sm transition hover:border-emerald-300 focus:border-emerald-400 focus:ring-emerald-400"
+                >
+                  <SelectValue placeholder="층 선택" />
+                </SelectTrigger>
+                <SelectContent>
+                  {FLOOR_OPTIONS.map((floor) => (
+                    <SelectItem key={floor} value={String(floor)}>
+                      {floor}층
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-600">
+              <Badge variant="outline" className="border-emerald-200 bg-white/90 text-emerald-700">
+                운영 중 {stats.active}칸
+              </Badge>
+              <Badge variant="outline" className="border-amber-200 bg-white/90 text-amber-700">
+                잠금 {stats.locked}칸
+              </Badge>
+              {typeof stats.utilization === "number" ? (
+                <Badge variant="outline" className="border-slate-200 bg-white/90 text-slate-600">
+                  평균 활용률 {stats.utilization}%
+                </Badge>
+              ) : null}
+            </div>
+          </div>
           <Dialog open={reallocationOpen} onOpenChange={handleReallocationOpenChange}>
             <DialogTrigger asChild>
-              <Button variant="outline" className="gap-2">
+              <Button variant="outline" className="h-11 gap-2 rounded-xl border-emerald-200 text-emerald-700 hover:border-emerald-300">
                 <Shuffle className="size-4" aria-hidden />
                 호실 재배분
               </Button>
@@ -856,64 +882,15 @@ export default function AdminFridgePage() {
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">총 칸 수</CardTitle>
-            <Snowflake className="size-4 text-emerald-600" aria-hidden />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{stats.total}</p>
-            <p className="text-xs text-slate-500">선택한 {selectedFloor}층 기준</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">운영 중</CardTitle>
-            <Badge variant="outline" className="border-emerald-200 text-emerald-700">
-              ACTIVE
-            </Badge>
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{stats.active}</p>
-            <p className="text-xs text-slate-500">내부 상태가 정상인 칸</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">잠금 상태</CardTitle>
-            <Lock className="size-4 text-amber-600" aria-hidden />
-          </CardHeader>
-          <CardContent>
-            <p className="text-2xl font-bold text-slate-900">{stats.locked}</p>
-            <p className="text-xs text-slate-500">검사·고장 등으로 잠금</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <CardTitle className="text-sm font-medium">평균 활용률</CardTitle>
-            <ArrowRight className="size-4 text-slate-500" aria-hidden />
-          </CardHeader>
-          <CardContent>
-            {typeof stats.utilization === "number" ? (
-              <>
-                <p className="text-2xl font-bold text-slate-900">{stats.utilization}%</p>
-                <Progress value={stats.utilization} className="mt-2 h-2" />
-              </>
-            ) : (
-              <p className="text-sm text-slate-500">용량 정보가 없는 칸입니다.</p>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] xl:gap-8">
         <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">칸 목록</h2>
-            <p className="text-xs text-slate-500">
-              카드를 선택하면 포장/검사 상세가 우측 패널에 표시됩니다.
-            </p>
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">칸 목록</h2>
+              <p className="text-xs text-slate-500">
+                카드를 선택하면 포장/검사 상세가 우측 패널에 표시됩니다.
+              </p>
+            </div>
           </div>
           {slotsLoading ? (
             <div className="flex items-center justify-center rounded-lg border border-dashed border-emerald-200 bg-emerald-50/40 py-12 text-sm text-emerald-700">
@@ -929,7 +906,7 @@ export default function AdminFridgePage() {
               선택한 층에 표시할 칸이 없습니다.
             </div>
           ) : (
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            <div className="grid gap-5">
               {slots.map((slot) => {
                 const badge = STATUS_BADGE[slot.resourceStatus]
                 const isSelected = slot.slotId === selectedSlotId
@@ -941,7 +918,7 @@ export default function AdminFridgePage() {
                     type="button"
                     onClick={() => handleSlotSelect(slot.slotId)}
                     className={cn(
-                      "flex h-full flex-col rounded-xl border bg-white p-4 text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2",
+                      "flex h-full flex-col rounded-2xl border bg-white p-5 text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2",
                       isSelected
                         ? "border-emerald-400 ring-1 ring-emerald-200"
                         : "border-slate-200 hover:border-emerald-200 hover:shadow-md",
@@ -983,7 +960,7 @@ export default function AdminFridgePage() {
                         </Badge>
                       </div>
                     </div>
-                    <Separator className="my-3" />
+                    <Separator className="my-4" />
                     <div className="flex items-baseline justify-between">
                       <div>
                         <p className="text-2xl font-semibold text-slate-900">

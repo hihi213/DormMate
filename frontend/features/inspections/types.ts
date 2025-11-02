@@ -1,6 +1,12 @@
 import type { Bundle, Item, ItemUnit, Slot } from "@/features/fridge/types"
 
-export type InspectionStatus = "IN_PROGRESS" | "SUBMITTED" | "CANCELED"
+export type InspectionStatus = "IN_PROGRESS" | "SUBMITTED" | "CANCELED" | "CANCELLED"
+
+export type NormalizedInspectionStatus = "IN_PROGRESS" | "SUBMITTED" | "CANCELED"
+
+export function normalizeInspectionStatus(status: InspectionStatus): NormalizedInspectionStatus {
+  return status === "CANCELLED" ? "CANCELED" : status
+}
 
 export type InspectionAction =
   | "WARN_INFO_MISMATCH"
@@ -20,6 +26,7 @@ export type InspectionActionItemDetail = {
   snapshotName?: string | null
   snapshotExpiresOn?: string | null
   quantityAtAction?: number | null
+  correlationId?: string | null
 }
 
 export type InspectionPenalty = {
@@ -28,6 +35,7 @@ export type InspectionPenalty = {
   reason?: string | null
   issuedAt: string
   expiresAt?: string | null
+  correlationId?: string | null
 }
 
 export type InspectionActionDetail = {
@@ -38,6 +46,7 @@ export type InspectionActionDetail = {
   recordedAt: string
   recordedBy?: string | null
   note?: string | null
+  correlationId?: string | null
   items: InspectionActionItemDetail[]
   penalties: InspectionPenalty[]
 }
@@ -59,6 +68,8 @@ export type InspectionSession = {
   summary: InspectionActionSummary[]
   actions: InspectionActionDetail[]
   notes?: string | null
+  initialBundleCount?: number | null
+  totalBundleCount?: number | null
 }
 
 export type InspectionActionEntry = {
@@ -84,6 +95,11 @@ export type InspectionSchedule = {
   status: InspectionScheduleStatus
   completedAt?: string | null
   inspectionSessionId?: string | null
+  fridgeCompartmentId?: string | null
+  slotIndex?: number | null
+  slotLetter?: string | null
+  floorNo?: number | null
+  floorCode?: string | null
   createdAt: string
   updatedAt: string
 }

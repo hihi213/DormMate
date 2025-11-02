@@ -14,6 +14,7 @@ import jakarta.persistence.Id;
 import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
+import com.dormmate.backend.modules.fridge.domain.FridgeCompartment;
 
 import org.hibernate.annotations.UuidGenerator;
 
@@ -45,6 +46,10 @@ public class InspectionSchedule extends AbstractTimestampedEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "inspection_session_id")
     private InspectionSession inspectionSession;
+
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "fridge_compartment_id")
+    private FridgeCompartment fridgeCompartment;
 
     public UUID getId() {
         return id;
@@ -96,5 +101,13 @@ public class InspectionSchedule extends AbstractTimestampedEntity {
 
     public void setInspectionSession(InspectionSession inspectionSession) {
         this.inspectionSession = inspectionSession;
+    }
+
+    public FridgeCompartment getFridgeCompartment() {
+        return fridgeCompartment;
+    }
+
+    public void setFridgeCompartment(FridgeCompartment fridgeCompartment) {
+        this.fridgeCompartment = fridgeCompartment;
     }
 }

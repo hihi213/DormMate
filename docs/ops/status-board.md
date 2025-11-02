@@ -234,6 +234,7 @@
   6. `/admin/fridge/reallocations/preview|apply` 통합 테스트를 다층·검사 중 잠금·냉동 칸 공용·잔여 분배 케이스까지 확장하고, 회귀 시나리오를 `FridgeReallocationIntegrationTest`에 정리한다.
   7. `/fridge/bundles` 검색/페이징 테스트를 작성해 라벨/삭제 플래그/slot 확장 조합을 검증하고, 필요 시 JPA 쿼리 최적화 및 페이징 분기(`owner=all`)를 도입한다.
   8. `NotificationService`에 `FRIDGE_EXPIRY`/`FRIDGE_EXPIRED` 기본 선호를 정의하고 `docs/ops/batch-notifications.md` 재시도 정책과 API 응답 메타데이터(감사 로그 키, 타임스탬프)를 동기화한다.
+  9. Flyway `V18__add_fridge_search_indexes.sql`로 `room_assignment(dorm_user_id, released_at)`·`room(lower(room_number))` 보조 인덱스를 추가해 관리자 검색 확장 후에도 성능을 보장한다.
 - **테스트 계획**
   - `npm run lint`
   - `npx playwright test --grep @admin` (또는 수동으로 KPI/카드 뷰 렌더링 확인)
@@ -243,12 +244,10 @@
 - **테스트 로그**
   - `./gradlew test --tests *FridgeReallocationIntegrationTest`
     - (PASS, 2025-11-02 — ProblemException 전환 및 재배분 검증 경계 케이스 통과)
-  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.adminBundleSearchSupportsKeywordAndCaseInsensitiveMatch`
-    - (PASS, 2025-11-02 — 관리자 키워드 검색·대소문자 처리 회귀 확인)
-  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.adminBundleSearchSupportsLabelLookup`
-    - (PASS, 2025-11-02 — 라벨 검색 및 slot 확장 시 결과 정합성 확인)
-  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.adminBundleListWithDeletedFilterReturnsOnlyDeletedBundles`
-    - (PASS, 2025-11-02 — status=deleted 필터 시 삭제 건만 반환됨을 검증)
+  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.adminBundleSearchSupportsMultiLetterSlotCodeAndOwnerRoom`
+    - (PASS, 2025-11-02 — 다자릿 슬롯 코드·보관자 호실 검색 확장 회귀 확인)
+  - `./gradlew test --tests com.dormmate.backend.modules.fridge.FridgeIntegrationTest.deletedBundleListingCanFilterBySlotId`
+    - (PASS, 2025-11-02 — slotId 파라미터로 삭제 이력 필터 시 원하는 칸만 반환됨을 검증)
   - `./gradlew test --tests com.dormmate.backend.modules.notification.NotificationServiceTest --tests com.dormmate.backend.modules.notification.FridgeExpiryNotificationSchedulerIntegrationTest`
     - (PASS, 2025-11-02 — 임박/만료 알림 선호 기본값·배치 메타데이터·FAILED dispatch 로그 적재 검증)
   - `./gradlew test`

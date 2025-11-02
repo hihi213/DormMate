@@ -146,6 +146,12 @@
 - **Headers**: `Authorization: Bearer {expiredToken}`
 - **기대 결과**: 서버가 즉시 연결 종료, 감사 로그에 위조/만료 토큰 기록.
 
+### C5. 관리자 강제 종료
+- **Method & Path**: `DELETE /fridge/inspections/{sessionId}`
+- **Headers**: `Authorization: Bearer {adminAccessToken}`
+- **기대 결과**: 204 응답, 칸 잠금 해제(`is_locked=false`, `locked_until=NULL`). 층별장 권한으로 동일 요청 시 403 응답을 확인한다.
+- **추가 검증**: `/fridge/slots?view=full` 재호출 시 해당 칸의 `locked` 필드가 즉시 갱신되는지 확인한다.
+
 ---
 
 ## 4. 알림 정책 음성 검증

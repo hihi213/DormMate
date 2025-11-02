@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import {
   ClipboardCheck,
+  Copy,
   Filter,
   Loader2,
   Search,
@@ -26,6 +27,7 @@ import WarnMenu from "@/features/fridge/components/warn-menu"
 import type { Item, Slot } from "@/features/fridge/types"
 import type { InspectionAction, InspectionSession } from "@/features/inspections/types"
 import {
+  cancelInspection,
   fetchActiveInspection,
   fetchInspection,
   fetchInspectionSlots,
@@ -50,6 +52,9 @@ type ResultEntry = {
   name?: string
   note?: string
   origin?: "local" | "sync"
+  correlationId?: string | null
+  penaltyCount?: number
+  recordedAt?: string
 }
 
 type FilterType = "ALL" | InspectionAction
@@ -98,7 +103,7 @@ function InspectInner() {
   const [query, setQuery] = useState("")
   const [showExpired, setShowExpired] = useState(false)
   const [results, setResults] = useState<ResultEntry[]>([])
-  const [confirmOpen, setConfirmOpen] = useState(false)
+  const [submitDialogOpen, setSubmitDialogOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
   const [stickerDialogOpen, setStickerDialogOpen] = useState(false)
   const [stickerName, setStickerName] = useState("")
@@ -109,6 +114,7 @@ function InspectInner() {
   const persistErrorNotifiedRef = useRef(false)
   const prevStorageKeyRef = useRef<string | null>(null)
   const [lastDraftSavedAt, setLastDraftSavedAt] = useState<number | null>(null)
+  const [submitting, setSubmitting] = useState(false)
 
   const refreshSlots = useCallback(async () => {
     try {
@@ -175,6 +181,26 @@ function InspectInner() {
       ignore = true
     }
   }, [])
+
+  useEffect(() => {
+    if (!session || stage === "committed") return
+    if (typeof window === "undefined") return
+    const sessionId = session.sessionId
+    const intervalId = window.setInterval(() => {
+      void fetchInspection(sessionId)
+        .then((data) => {
+          if (data) {
+            setSession(data)
+          }
+        })
+        .catch((error) => {
+          console.error("Failed to sync inspection session", error)
+        })
+    }, 30000)
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [session, stage])
 
   const items = useMemo(() => session?.items ?? [], [session])
 
@@ -280,6 +306,7 @@ function InspectInner() {
     try {
       window.localStorage.setItem(storageKey, JSON.stringify(results))
       persistErrorNotifiedRef.current = false
+      setLastDraftSavedAt(Date.now())
     } catch (error) {
       console.warn("failed to persist inspection results", error)
       if (!persistErrorNotifiedRef.current) {
@@ -506,6 +533,7 @@ function InspectInner() {
   }) => {
     if (!session) return
     try {
+      const previousActionIds = new Set(session.actions?.map((action) => action.actionId))
       const response = await recordInspectionActions(session.sessionId, [
         {
           action: payload.action,
@@ -514,7 +542,13 @@ function InspectInner() {
           note: payload.note ?? null,
         },
       ])
+      const newAction =
+        response.actions?.find((action) => !previousActionIds.has(action.actionId)) ??
+        response.actions?.[response.actions.length - 1]
       setSession(response)
+      const correlationId = newAction?.correlationId ?? null
+      const penaltyCount = newAction?.penalties?.length ?? 0
+      const recordedAt = newAction?.recordedAt
       if (payload.item) {
         addResult({
           action: payload.action,
@@ -525,11 +559,17 @@ function InspectInner() {
           expiryDate: payload.item.expiryDate,
           name: payload.item.name,
           note: payload.note,
+          correlationId,
+          penaltyCount,
+          recordedAt,
         })
       } else {
         addResult({
           action: payload.action,
           note: payload.note,
+          correlationId,
+          penaltyCount,
+          recordedAt,
         })
       }
       toast({
@@ -558,9 +598,64 @@ function InspectInner() {
     setStickerDialogOpen(false)
   }
 
+  const summaryMetrics = useMemo(() => {
+    const summaryList = session?.summary ?? []
+    const findCount = (action: InspectionAction): number =>
+      summaryList.find((entry) => entry.action === action)?.count ?? 0
+
+    const passCount = findCount("PASS")
+    const warnCount = findCount("WARN_INFO_MISMATCH") + findCount("WARN_STORAGE_POOR")
+    const disposalCount = findCount("DISPOSE_EXPIRED") + findCount("UNREGISTERED_DISPOSE")
+    const totalActions = summaryList.reduce((acc, entry) => acc + (entry.count ?? 0), 0)
+    const totalBundleCount = session?.totalBundleCount ?? session?.bundles?.length ?? 0
+    const initialBundleCount = session?.initialBundleCount ?? session?.bundles?.length ?? 0
+    const bundleDelta = totalBundleCount - initialBundleCount
+
+    return {
+      passCount,
+      warnCount,
+      disposalCount,
+      totalActions,
+      initialBundleCount,
+      totalBundleCount,
+      bundleDelta,
+    }
+  }, [session])
+
+  const bundleDeltaLabel = summaryMetrics.bundleDelta > 0
+    ? `+${summaryMetrics.bundleDelta}`
+    : summaryMetrics.bundleDelta.toString()
+  const bundleDeltaClass =
+    summaryMetrics.bundleDelta > 0
+      ? "text-rose-700"
+      : summaryMetrics.bundleDelta < 0
+        ? "text-emerald-700"
+        : "text-slate-700"
+
+  const copyCorrelationId = useCallback(
+    async (value: string) => {
+      try {
+        await navigator.clipboard.writeText(value)
+        toast({
+          title: "Correlation ID를 복사했습니다.",
+          description: value,
+        })
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "알 수 없는 오류"
+        toast({
+          title: "복사에 실패했습니다.",
+          description: message,
+          variant: "destructive",
+        })
+      }
+    },
+    [toast],
+  )
+
   const finalizeInspection = async () => {
     if (!session) return
     try {
+      setSubmitting(true)
       const response = await submitInspection(session.sessionId, {})
       setSession(response)
       setStage("committed")
@@ -569,6 +664,7 @@ function InspectInner() {
       toast({
         title: "검사 결과가 제출되었습니다.",
       })
+      setSubmitDialogOpen(false)
       router.replace("/fridge/inspections")
     } catch (err) {
       const message = err instanceof Error ? err.message : "검사 제출에 실패했습니다."
@@ -577,6 +673,8 @@ function InspectInner() {
         description: message,
         variant: "destructive",
       })
+    } finally {
+      setSubmitting(false)
     }
   }
 
@@ -655,17 +753,14 @@ function InspectInner() {
               >
                 {"임시 저장"}
               </Button>
-            <Button
-              className="bg-emerald-600 hover:bg-emerald-700"
-              onClick={() => {
-                if (results.length === 0) setConfirmOpen(true)
-                else void finalizeInspection()
-              }}
-              aria-label="검사 결과 제출"
-              disabled={stage === "committed"}
-            >
-              {"제출"}
-            </Button>
+              <Button
+                className="bg-emerald-600 hover:bg-emerald-700"
+                onClick={() => setSubmitDialogOpen(true)}
+                aria-label="검사 결과 제출"
+                disabled={stage === "committed"}
+              >
+                {"제출"}
+              </Button>
             </div>
             {lastDraftSavedAt && (
               <span className="text-xs text-muted-foreground">
@@ -824,16 +919,112 @@ function InspectInner() {
                       </div>
                       <div className="mt-2 space-y-2">
                         {group.entries.map((entry) => (
-                          <ResultEntryView key={entry.id} entry={entry} compact />
+                          <ResultEntryView
+                            key={entry.id}
+                            entry={entry}
+                            compact
+                            onCopyCorrelation={copyCorrelationId}
+                          />
                         ))}
                       </div>
                     </div>
                   ))}
                   {groupedResults.singles.map((entry) => (
-                    <ResultEntryView key={entry.id} entry={entry} />
+                    <ResultEntryView
+                      key={entry.id}
+                      entry={entry}
+                      onCopyCorrelation={copyCorrelationId}
+                    />
                   ))}
                 </div>
               )}
+              {stage === "committed" && session.actions?.length ? (
+                <div className="mt-5 space-y-3 rounded-md border border-slate-200 px-3 py-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <h3 className="text-sm font-semibold text-slate-900">제출된 조치 상세</h3>
+                    <Badge variant="outline" className="border-slate-200 text-slate-600">
+                      {`${session.actions.length}건`}
+                    </Badge>
+                  </div>
+                  <div className="space-y-3 text-xs text-slate-600">
+                    {session.actions.map((action) => {
+                      const recordedAt = new Date(action.recordedAt)
+                      const recordedLabel = Number.isNaN(recordedAt.getTime())
+                        ? "시간 정보 없음"
+                        : `${formatShortDate(recordedAt)} ${recordedAt.toLocaleTimeString("ko-KR", {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          })}`
+                      const style = ACTION_ICON_COLOR[action.actionType]
+                      const penaltyCount = action.penalties.length
+                      return (
+                        <div key={action.actionId} className="rounded-md border border-slate-200 bg-white px-3 py-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ${style.bg} ${style.text}`}
+                              >
+                                {ACTION_LABEL[action.actionType]}
+                              </span>
+                              <span className="font-medium text-slate-900">{recordedLabel}</span>
+                            </div>
+                            {action.correlationId && (
+                              <div className="inline-flex items-center gap-2 text-[11px] text-slate-500">
+                                <span className="font-medium text-slate-600">Correlation</span>
+                                <code className="rounded bg-slate-100 px-2 py-[2px] text-[11px] text-slate-700">
+                                  {action.correlationId}
+                                </code>
+                                <button
+                                  type="button"
+                                  onClick={() => void copyCorrelationId(action.correlationId!)}
+                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+                                >
+                                  <Copy className="size-3" aria-hidden />
+                                  <span className="sr-only">Correlation ID 복사</span>
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                          {action.note && (
+                            <p className="mt-2 text-[13px] text-slate-700 whitespace-pre-wrap">{action.note}</p>
+                          )}
+                          {action.items.length > 0 && (
+                            <div className="mt-3 space-y-1">
+                              <p className="text-[11px] font-medium text-slate-500">스냅샷</p>
+                              <ul className="space-y-1 text-[11px] text-slate-600">
+                                {action.items.map((item) => (
+                                  <li key={item.id} className="flex flex-wrap items-center gap-2">
+                                    <span className="font-medium text-slate-700">{item.snapshotName ?? "무제"}</span>
+                                    {item.snapshotExpiresOn && (
+                                      <span className="text-slate-500">{`유통기한 ${item.snapshotExpiresOn}`}</span>
+                                    )}
+                                    {typeof item.quantityAtAction === "number" && (
+                                      <span className="text-slate-500">{`수량 ${item.quantityAtAction}`}</span>
+                                    )}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                          {penaltyCount > 0 && (
+                            <div className="mt-3 space-y-1">
+                              <p className="text-[11px] font-medium text-rose-600">{`벌점 ${penaltyCount}건`}</p>
+                              <ul className="space-y-1 text-[11px] text-rose-600">
+                                {action.penalties.map((penalty) => (
+                                  <li key={penalty.id} className="flex flex-wrap items-center gap-2">
+                                    <span>{`${penalty.points}점`}</span>
+                                    {penalty.reason && <span className="text-rose-500">{penalty.reason}</span>}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              ) : null}
             </CardContent>
           </Card>
         )}
@@ -868,20 +1059,64 @@ function InspectInner() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent className="sm:max-w-sm">
+      <Dialog
+        open={submitDialogOpen}
+        onOpenChange={(open) => {
+          if (!submitting) {
+            setSubmitDialogOpen(open)
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>{"검사 결과를 제출할까요?"}</DialogTitle>
-            <DialogDescription>{"제출 후에는 조치 결과가 즉시 알림으로 발송됩니다."}</DialogDescription>
+            <DialogTitle>{"검사 결과 제출 요약"}</DialogTitle>
+            <DialogDescription>{"제출 전 조치 요약을 확인해 주세요. 제출 즉시 관련 알림이 발송됩니다."}</DialogDescription>
           </DialogHeader>
-          <div className="flex justify-end gap-2">
-            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
-              {"돌아가기"}
-            </Button>
-            <Button onClick={() => void finalizeInspection()}>
-              <Check className="mr-1 size-4" />
-              {"제출"}
-            </Button>
+          <div className="space-y-4">
+            <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
+              <div className="flex items-center justify-between py-0.5">
+                <span>{"검사 시작 포장 수"}</span>
+                <span className="font-semibold text-slate-700">{`${summaryMetrics.initialBundleCount}개`}</span>
+              </div>
+              <div className="flex items-center justify-between py-0.5">
+                <span>{"제출 시 포장 수"}</span>
+                <span className="font-semibold text-slate-700">{`${summaryMetrics.totalBundleCount}개`}</span>
+              </div>
+              <div className="flex items-center justify-between py-0.5">
+                <span>{"증감"}</span>
+                <span className={`font-semibold ${bundleDeltaClass}`}>{`${bundleDeltaLabel}개`}</span>
+              </div>
+              <div className="flex items-center justify-between py-0.5">
+                <span>{"경고 조치"}</span>
+                <span className="font-semibold text-amber-700">{`${summaryMetrics.warnCount}건`}</span>
+              </div>
+              <div className="flex items-center justify-between py-0.5">
+                <span>{"폐기 조치"}</span>
+                <span className="font-semibold text-rose-700">{`${summaryMetrics.disposalCount}건`}</span>
+              </div>
+              <div className="flex items-center justify-between py-0.5">
+                <span>{"통과"}</span>
+                <span className="font-semibold text-emerald-700">{`${summaryMetrics.passCount}건`}</span>
+              </div>
+              <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2">
+                <span>{"기록된 총 조치"}</span>
+                <span className="font-semibold">{`${summaryMetrics.totalActions}건`}</span>
+              </div>
+            </div>
+            {summaryMetrics.totalActions === 0 && (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                {"기록된 조치가 없습니다. 그래도 제출하시겠습니까?"}
+              </p>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setSubmitDialogOpen(false)} disabled={submitting}>
+                {"돌아가기"}
+              </Button>
+              <Button onClick={() => void finalizeInspection()} disabled={submitting}>
+                {submitting ? <Loader2 className="mr-1 size-4 animate-spin" aria-hidden /> : <Check className="mr-1 size-4" />}
+                {"제출"}
+              </Button>
+            </div>
           </div>
         </DialogContent>
       </Dialog>
@@ -999,13 +1234,28 @@ function InspectionItemCard({
   )
 }
 
-function ResultEntryView({ entry, compact = false }: { entry: ResultEntry; compact?: boolean }) {
+function ResultEntryView({
+  entry,
+  compact = false,
+  onCopyCorrelation,
+}: {
+  entry: ResultEntry
+  compact?: boolean
+  onCopyCorrelation?: (value: string) => void
+}) {
   const actionStyle = ACTION_ICON_COLOR[entry.action]
-  const recordedAt = new Date(entry.time)
+  const recordedDate = entry.recordedAt ? new Date(entry.recordedAt) : new Date(entry.time)
+  const recordedAt = Number.isNaN(recordedDate.getTime()) ? new Date(entry.time) : recordedDate
   const recordedLabel = `${formatShortDate(recordedAt)} ${recordedAt.toLocaleTimeString("ko-KR", {
     hour: "2-digit",
     minute: "2-digit",
   })}`
+
+  const handleCopy = () => {
+    if (entry.correlationId && onCopyCorrelation) {
+      void onCopyCorrelation(entry.correlationId)
+    }
+  }
 
   return (
     <div
@@ -1029,6 +1279,27 @@ function ResultEntryView({ entry, compact = false }: { entry: ResultEntry; compa
         </span>
       </div>
       {entry.note && <p className="mt-1 text-xs text-muted-foreground">{entry.note}</p>}
+      {typeof entry.penaltyCount === "number" && entry.penaltyCount > 0 && (
+        <p className="mt-1 text-xs text-rose-600">{`벌점 ${entry.penaltyCount}건`}</p>
+      )}
+      {entry.correlationId && (
+        <div className="mt-2 inline-flex items-center gap-2 text-[11px] text-slate-500">
+          <span className="font-medium text-slate-600">Correlation</span>
+          <code className="rounded bg-slate-100 px-2 py-[2px] text-[11px] text-slate-700">
+            {entry.correlationId}
+          </code>
+          {onCopyCorrelation && (
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
+            >
+              <Copy className="size-3" aria-hidden />
+              <span className="sr-only">Correlation ID 복사</span>
+            </button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

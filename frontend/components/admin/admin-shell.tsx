@@ -351,32 +351,19 @@ export default function AdminShell({ children }: AdminShellProps) {
 
           <div className="flex flex-1">
             <main id="admin-main-content" className="flex-1 overflow-y-auto" role="main">
-              <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8 lg:px-10">
+              <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8 lg:px-10">
                 {mainContent}
               </div>
             </main>
-            <aside
-              className="hidden w-72 border-l border-slate-200 bg-white/80 px-6 py-8 xl:block"
-              role="complementary"
-              aria-label="관리자 퀵 액션"
-            >
-              {railContent ?? (
-                <div className="space-y-4">
-                  <h2 className="text-sm font-semibold text-slate-800">운영 퀵 액션</h2>
-                  <p className="text-xs text-slate-500">
-                    각 화면에서 제공하는 빠른 실행 카드가 없을 경우, 기본 안내를 표시합니다.
-                  </p>
-                  <Separator />
-                  <ul className="space-y-3 text-sm text-slate-600">
-                    <li>
-                      <span className="font-medium text-slate-800">TIP.</span> 좌측 메뉴에서 모듈을 선택하고 우측 패널로 상세 조치를 이어가세요.
-                    </li>
-                    <li>감사 로그에서 모든 조치 이력을 확인할 수 있습니다.</li>
-                    <li>위험 작업은 정책에 따라 2단계 확인을 요구합니다.</li>
-                  </ul>
-                </div>
-              )}
-            </aside>
+            {railContent ? (
+              <aside
+                className="hidden w-72 border-l border-slate-200 bg-white/80 px-6 py-8 xl:block"
+                role="complementary"
+                aria-label="관리자 보조 패널"
+              >
+                {railContent}
+              </aside>
+            ) : null}
           </div>
         </div>
       </div>

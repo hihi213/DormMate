@@ -137,7 +137,7 @@ export async function fetchAdminDeletedBundles(
 
 export type FetchInspectionSessionsParams = {
   slotId: string
-  status?: "IN_PROGRESS" | "SUBMITTED" | "CANCELED"
+  status?: "IN_PROGRESS" | "SUBMITTED" | "CANCELED" | "CANCELLED"
   limit?: number
 }
 

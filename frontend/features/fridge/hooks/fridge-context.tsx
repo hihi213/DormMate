@@ -74,6 +74,9 @@ type FridgeContextValue = {
   setInspector: (on: boolean) => void
   getSlotLabel: (slotId: string, fallbackIndex?: number) => string
   isSlotActive: (slotId: string) => boolean
+  refreshSlots: () => Promise<void>
+  refreshAll: () => Promise<void>
+  refreshInventory: () => Promise<void>
 }
 
 const FridgeContext = createContext<FridgeContextValue | null>(null)
@@ -201,6 +204,27 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       window.clearInterval(intervalId)
     }
   }, [currentUserId, refreshSlots])
+
+  const refreshInventory = useCallback(async () => {
+    if (!currentUserId) {
+      setBundleState([])
+      setUnits([])
+      return
+    }
+    const currentUser = getCurrentUser()
+    const ownerScope = currentUser?.isAdmin ? "all" : "me"
+    try {
+      const inventoryResult = await fetchFridgeInventory(currentUserId, { ownerScope })
+      setBundleState(inventoryResult.bundles)
+      setUnits(filterActiveUnits(inventoryResult.units))
+    } catch (error) {
+      console.error("Failed to refresh fridge inventory", error)
+    }
+  }, [currentUserId])
+
+  const refreshAll = useCallback(async () => {
+    await Promise.allSettled([refreshSlots(), refreshInventory()])
+  }, [refreshInventory, refreshSlots])
 
   const addBundle = useCallback<FridgeContextValue["addBundle"]>(
     async (payload) => {
@@ -683,6 +707,9 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       setInspector: setIsInspector,
       getSlotLabel,
       isSlotActive,
+      refreshSlots,
+      refreshAll,
+      refreshInventory,
     }),
     [
       slots,
@@ -702,6 +729,9 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       setLastInspectionNow,
       getSlotLabel,
       isSlotActive,
+      refreshSlots,
+      refreshAll,
+      refreshInventory,
     ],
   )
 

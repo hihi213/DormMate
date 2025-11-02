@@ -37,7 +37,8 @@ public class FridgeExpiryNotificationScheduler {
     private static final String ERROR_EXPIRY_FAILED = "EXPIRY_BATCH_FAILED";
     private static final String ERROR_EXPIRED_FAILED = "EXPIRED_BATCH_FAILED";
     private static final int EXPIRY_LOOKAHEAD_DAYS = 3;
-    private static final int TTL_HOURS = 24;
+    private static final int TTL_HOURS_EXPIRY = 24;
+    private static final int TTL_HOURS_EXPIRED = 24 * 7;
 
     private final FridgeItemRepository fridgeItemRepository;
     private final NotificationService notificationService;
@@ -72,7 +73,8 @@ public class FridgeExpiryNotificationScheduler {
                 "[냉장고] 유통기한 임박",
                 "임박했습니다.",
                 today,
-                ERROR_EXPIRY_FAILED
+                ERROR_EXPIRY_FAILED,
+                TTL_HOURS_EXPIRY
         );
 
         processNotifications(
@@ -84,7 +86,8 @@ public class FridgeExpiryNotificationScheduler {
                 "[냉장고] 유통기한 만료",
                 "지났습니다.",
                 today,
-                ERROR_EXPIRED_FAILED
+                ERROR_EXPIRED_FAILED,
+                TTL_HOURS_EXPIRED
         );
     }
 
@@ -94,7 +97,8 @@ public class FridgeExpiryNotificationScheduler {
             String title,
             String messageSuffix,
             LocalDate batchDate,
-            String errorCode
+            String errorCode,
+            int ttlHours
     ) {
         if (items.isEmpty()) {
             return;
@@ -149,7 +153,7 @@ public class FridgeExpiryNotificationScheduler {
                         body,
                         dedupeKey,
                         metadata,
-                        TTL_HOURS,
+                        ttlHours,
                         null
                 );
 

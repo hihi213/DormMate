@@ -51,7 +51,13 @@ import { getCurrentUser } from "@/lib/auth"
 import { formatShortDate } from "@/lib/date-utils"
 import { formatCompartmentLabel, formatSlotDisplayName } from "@/features/fridge/utils/labels"
 import type { Slot } from "@/features/fridge/types"
-import type { InspectionAction, InspectionSchedule, InspectionSession } from "@/features/inspections/types"
+import type {
+  InspectionAction,
+  InspectionSchedule,
+  InspectionSession,
+  NormalizedInspectionStatus,
+} from "@/features/inspections/types"
+import { normalizeInspectionStatus } from "@/features/inspections/types"
 import {
   cancelInspection,
   createInspectionSchedule,
@@ -64,7 +70,7 @@ import {
   updateInspectionSchedule,
 } from "@/features/inspections/api"
 
-const STATUS_BADGE: Record<InspectionSession["status"], { label: string; className: string }> = {
+const STATUS_BADGE: Record<NormalizedInspectionStatus, { label: string; className: string }> = {
   IN_PROGRESS: {
     label: "진행 중",
     className: "border-emerald-200 bg-emerald-50 text-emerald-700",
@@ -79,13 +85,26 @@ const STATUS_BADGE: Record<InspectionSession["status"], { label: string; classNa
   },
 }
 
+const getStatusMeta = (status: InspectionSession["status"]) =>
+  STATUS_BADGE[normalizeInspectionStatus(status)]
+
 type ScheduleFormState = {
+  slotId: string
   scheduledAt: string
   title: string
   notes: string
 }
 
 export default function InspectionsPage() {
+  if (process.env.NEXT_PUBLIC_FIXTURE === "1") {
+    return (
+      <>
+        <InspectionsInner />
+        <BottomNav />
+      </>
+    )
+  }
+
   return (
     <AuthGuard>
       <InspectionsInner />
@@ -131,6 +150,19 @@ function InspectionsInner() {
       console.error("Failed to refresh inspection slots", error)
     }
   }, [isFloorManager])
+
+  const refreshActiveSession = useCallback(async () => {
+    try {
+      const session = await fetchActiveInspection()
+      setActiveSession(session)
+      if (!session && activeSession) {
+        const refreshedHistory = await fetchInspectionHistory({ limit: 10 })
+        setHistory(refreshedHistory)
+      }
+    } catch (error) {
+      console.error("Failed to refresh active inspection", error)
+    }
+  }, [activeSession])
 
   const refreshSchedules = useCallback(
     async (options?: { silent?: boolean }) => {
@@ -209,6 +241,17 @@ function InspectionsInner() {
     }
   }, [isFloorManager, toast])
 
+  useEffect(() => {
+    if (typeof window === "undefined") return
+    const intervalId = window.setInterval(() => {
+      void refreshSlotList()
+      void refreshActiveSession()
+    }, 45000)
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [refreshActiveSession, refreshSlotList])
+
   const availableSlots = useMemo(() => {
     if (!slots.length) return []
     if (!activeSession) return slots
@@ -262,8 +305,21 @@ function InspectionsInner() {
       return
     }
     setScheduleToStart(schedule)
-    const defaultSlot = availableSlots[0]?.slotId ?? ""
-    setSlotToStart(defaultSlot)
+    const preferredSlotId = schedule.fridgeCompartmentId ?? ""
+    const matchedSlot = preferredSlotId
+      ? availableSlots.find((candidate) => candidate.slotId === preferredSlotId)
+      : undefined
+    const fallbackSlot = availableSlots[0]?.slotId ?? ""
+    const resolvedSlotId = matchedSlot?.slotId ?? fallbackSlot ?? ""
+    if (!resolvedSlotId) {
+      toast({
+        title: "검사를 시작할 수 없습니다.",
+        description: "현재 선택 가능한 칸이 없습니다. 잠시 후 다시 시도해 주세요.",
+        variant: "destructive",
+      })
+      return
+    }
+    setSlotToStart(resolvedSlotId)
     setScheduleStartingId(null)
     setStartDialogOpen(true)
   }
@@ -357,9 +413,22 @@ function InspectionsInner() {
 
   const handleOpenCreateSchedule = () => {
     if (!isFloorManager) return
+    if (!slots.length) {
+      toast({
+        title: "검사 일정을 추가할 수 없습니다.",
+        description: "배정된 냉장고 칸이 없습니다. 먼저 칸 배정을 확인해 주세요.",
+        variant: "destructive",
+      })
+      return
+    }
     setScheduleDialogMode("create")
     setEditingScheduleId(null)
-    setScheduleForm(getDefaultScheduleFormState())
+    const baseline = getDefaultScheduleFormState()
+    const initialSlot = slots[0]?.slotId ?? ""
+    setScheduleForm({
+      ...baseline,
+      slotId: initialSlot,
+    })
     setScheduleDialogOpen(true)
   }
 
@@ -368,6 +437,7 @@ function InspectionsInner() {
     setScheduleDialogMode("edit")
     setEditingScheduleId(schedule.scheduleId)
     setScheduleForm({
+      slotId: schedule.fridgeCompartmentId ?? "",
       scheduledAt: formatDateTimeInputValue(new Date(schedule.scheduledAt)),
       title: schedule.title ?? "",
       notes: schedule.notes ?? "",
@@ -384,6 +454,23 @@ function InspectionsInner() {
 
   const handleSubmitSchedule = async () => {
     if (!isFloorManager) return
+    if (!scheduleForm.slotId) {
+      toast({
+        title: "검사 일정을 저장할 수 없습니다.",
+        description: "검사할 냉장고 칸을 선택해 주세요.",
+        variant: "destructive",
+      })
+      return
+    }
+    const targetSlot = slots.find((candidate) => candidate.slotId === scheduleForm.slotId)
+    if (!targetSlot) {
+      toast({
+        title: "검사 일정을 저장할 수 없습니다.",
+        description: "선택한 칸 정보를 찾지 못했습니다. 다시 선택해 주세요.",
+        variant: "destructive",
+      })
+      return
+    }
     if (!scheduleForm.scheduledAt) {
       toast({
         title: "검사 일정을 저장할 수 없습니다.",
@@ -413,6 +500,7 @@ function InspectionsInner() {
           scheduledAt: parsed.toISOString(),
           title: title.length ? title : undefined,
           notes: notes.length ? notes : undefined,
+          fridgeCompartmentId: targetSlot.slotId,
         })
         toast({
           title: "검사 일정을 추가했습니다.",
@@ -422,6 +510,7 @@ function InspectionsInner() {
           scheduledAt: parsed.toISOString(),
           title: title.length ? title : null,
           notes: notes.length ? notes : null,
+          fridgeCompartmentId: targetSlot.slotId,
         })
         toast({
           title: "검사 일정을 수정했습니다.",
@@ -484,6 +573,8 @@ function InspectionsInner() {
     }
   }
 
+  const activeSessionBadge = activeSession ? getStatusMeta(activeSession.status) : null
+
   if (!isFloorManager) {
     return (
       <main className="min-h-[100svh] bg-white">
@@ -522,9 +613,9 @@ function InspectionsInner() {
                     </span>
                     <Badge
                       variant="secondary"
-                      className={STATUS_BADGE[activeSession.status]?.className}
+                      className={activeSessionBadge?.className}
                     >
-                      {STATUS_BADGE[activeSession.status]?.label ?? activeSession.status}
+                      {activeSessionBadge?.label ?? activeSession.status}
                     </Badge>
                   </div>
                   <p className="text-xs text-muted-foreground">
@@ -629,10 +720,12 @@ function InspectionsInner() {
               <ClipboardCheck className="size-4 text-emerald-700" />
               <h2 className="text-sm font-semibold">{"검사 일정"}</h2>
             </div>
-            <Button size="sm" onClick={handleOpenCreateSchedule}>
-              <Plus className="mr-1 size-4" />
-              {"일정 추가"}
-            </Button>
+            {isFloorManager && (
+              <Button size="sm" onClick={handleOpenCreateSchedule}>
+                <Plus className="mr-1 size-4" />
+                {"일정 추가"}
+              </Button>
+            )}
           </div>
 
           <Card>
@@ -651,6 +744,17 @@ function InspectionsInner() {
                       (isActiveSchedule
                         ? false
                         : starting || availableSlots.length === 0 || Boolean(activeSession))
+                    const hasSlotInfo =
+                      Boolean(schedule.fridgeCompartmentId) || typeof schedule.slotIndex === "number"
+                    const slotLabelCandidate = hasSlotInfo
+                      ? getSlotLabel(schedule.fridgeCompartmentId ?? undefined, schedule.slotIndex ?? undefined)
+                      : null
+                    const slotDisplayLabel =
+                      slotLabelCandidate && slotLabelCandidate !== "?"
+                        ? slotLabelCandidate
+                        : hasSlotInfo
+                          ? "칸 정보 없음"
+                          : null
                     return (
                       <li
                         key={schedule.scheduleId}
@@ -673,13 +777,20 @@ function InspectionsInner() {
                                 </Badge>
                               )}
                             </div>
-                            <div className="text-xs text-muted-foreground">
-                              {new Date(schedule.scheduledAt).toLocaleString("ko-KR", {
-                                month: "numeric",
-                                day: "numeric",
-                                hour: "2-digit",
-                                minute: "2-digit",
-                              })}
+                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <span>
+                                {new Date(schedule.scheduledAt).toLocaleString("ko-KR", {
+                                  month: "numeric",
+                                  day: "numeric",
+                                  hour: "2-digit",
+                                  minute: "2-digit",
+                                })}
+                              </span>
+                              {slotDisplayLabel && (
+                                <span className="inline-flex items-center rounded-md border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                                  {slotDisplayLabel}
+                                </span>
+                              )}
                             </div>
                             {schedule.notes && (
                               <p className="text-xs text-muted-foreground whitespace-pre-wrap">{schedule.notes}</p>
@@ -692,76 +803,84 @@ function InspectionsInner() {
                             )}
                           </div>
                           <div className="flex flex-col items-end gap-2">
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                className="w-full sm:w-auto"
-                                onClick={() =>
-                                  isActiveSchedule ? handleContinue() : handleRequestStart(schedule)
-                                }
-                                disabled={primaryDisabled}
-                                variant={isActiveSchedule ? "secondary" : "default"}
-                              >
-                                {scheduleStartingId === schedule.scheduleId && starting && !isActiveSchedule ? (
-                                  <>
-                                    <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-                                    {"검사 시작"}
-                                  </>
-                                ) : isActiveSchedule ? (
-                                  <>
-                                    <ShieldCheck className="mr-2 size-4" aria-hidden />
-                                    {"검사 중"}
-                                  </>
-                                ) : (
-                                  <>
-                                    <Play className="mr-2 size-4" aria-hidden />
-                                    {"검사 시작"}
-                                  </>
-                                )}
-                              </Button>
-                              <DropdownMenu>
-                                <DropdownMenuTrigger asChild>
-                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                                    <MoreVertical className="size-4" aria-hidden />
-                                    <span className="sr-only">{"일정 옵션"}</span>
+                            {isFloorManager ? (
+                              <>
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    size="sm"
+                                    className="w-full sm:w-auto"
+                                    onClick={() =>
+                                      isActiveSchedule ? handleContinue() : handleRequestStart(schedule)
+                                    }
+                                    disabled={primaryDisabled}
+                                    variant={isActiveSchedule ? "secondary" : "default"}
+                                  >
+                                    {scheduleStartingId === schedule.scheduleId && starting && !isActiveSchedule ? (
+                                      <>
+                                        <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                                        {"검사 시작"}
+                                      </>
+                                    ) : isActiveSchedule ? (
+                                      <>
+                                        <ShieldCheck className="mr-2 size-4" aria-hidden />
+                                        {"검사 중"}
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Play className="mr-2 size-4" aria-hidden />
+                                        {"검사 시작"}
+                                      </>
+                                    )}
                                   </Button>
-                                </DropdownMenuTrigger>
-                                <DropdownMenuContent align="end">
-                                  <DropdownMenuItem
-                                    onSelect={(event) => {
-                                      event.preventDefault()
-                                      handleEditSchedule(schedule)
-                                    }}
+                                  <DropdownMenu>
+                                    <DropdownMenuTrigger asChild>
+                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                                        <MoreVertical className="size-4" aria-hidden />
+                                        <span className="sr-only">{"일정 옵션"}</span>
+                                      </Button>
+                                    </DropdownMenuTrigger>
+                                    <DropdownMenuContent align="end">
+                                      <DropdownMenuItem
+                                        onSelect={(event) => {
+                                          event.preventDefault()
+                                          handleEditSchedule(schedule)
+                                        }}
+                                      >
+                                        {"일정 수정"}
+                                      </DropdownMenuItem>
+                                      <DropdownMenuItem
+                                        className="text-rose-600 focus:text-rose-600"
+                                        onSelect={(event) => {
+                                          event.preventDefault()
+                                          handleDeleteScheduleRequest(schedule)
+                                        }}
+                                      >
+                                        {"일정 삭제"}
+                                      </DropdownMenuItem>
+                                    </DropdownMenuContent>
+                                  </DropdownMenu>
+                                </div>
+                                {isActiveSchedule && (
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={handleCancel}
+                                    disabled={canceling}
+                                    className="w-full sm:w-auto"
                                   >
-                                    {"일정 수정"}
-                                  </DropdownMenuItem>
-                                  <DropdownMenuItem
-                                    className="text-rose-600 focus:text-rose-600"
-                                    onSelect={(event) => {
-                                      event.preventDefault()
-                                      handleDeleteScheduleRequest(schedule)
-                                    }}
-                                  >
-                                    {"일정 삭제"}
-                                  </DropdownMenuItem>
-                                </DropdownMenuContent>
-                              </DropdownMenu>
-                            </div>
-                            {isActiveSchedule && (
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={handleCancel}
-                                disabled={canceling}
-                                className="w-full sm:w-auto"
-                              >
-                                {canceling ? (
-                                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-                                ) : (
-                                  <PauseCircle className="mr-2 size-4" aria-hidden />
+                                    {canceling ? (
+                                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                                    ) : (
+                                      <PauseCircle className="mr-2 size-4" aria-hidden />
+                                    )}
+                                    {"검사 취소"}
+                                  </Button>
                                 )}
-                                {"검사 취소"}
-                              </Button>
+                              </>
+                            ) : isActiveSchedule ? (
+                              <span className="text-xs text-emerald-700">{"진행 중"}</span>
+                            ) : (
+                              <span className="text-xs text-muted-foreground">{"층별장 전용 기능입니다."}</span>
                             )}
                           </div>
                         </div>
@@ -889,6 +1008,22 @@ function InspectionsInner() {
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-2">
+                <Label htmlFor="inspection-schedule-slot">{"검사할 칸"}</Label>
+                {slots.length > 0 ? (
+                  <SlotSelector
+                    value={scheduleForm.slotId}
+                    onChange={(value) => handleScheduleFieldChange("slotId")(value)}
+                    slots={slots}
+                    placeholder="검사할 보관 칸 선택"
+                    className="max-w-full"
+                  />
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    {"배정된 냉장고 칸이 없어 일정을 만들 수 없습니다."}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="inspection-schedule-datetime">{"검사 일시"}</Label>
                 <Input
                   id="inspection-schedule-datetime"
@@ -1007,7 +1142,7 @@ function HistoryList({
   return (
     <div className="space-y-4">
       {history.map((session) => {
-        const badgeMeta = STATUS_BADGE[session.status]
+        const badgeMeta = getStatusMeta(session.status)
         return (
           <div key={session.sessionId} className="rounded-lg border border-slate-200 p-4 space-y-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
@@ -1090,6 +1225,7 @@ function getDefaultScheduleFormState(): ScheduleFormState {
   const baseline = new Date()
   baseline.setSeconds(0, 0)
   return {
+    slotId: "",
     scheduledAt: formatDateTimeInputValue(baseline),
     title: "",
     notes: "",
