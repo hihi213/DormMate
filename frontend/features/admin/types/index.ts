@@ -47,6 +47,5 @@ export type AdminUser = {
   roles?: AdminUserRole[]
   status: "ACTIVE" | "INACTIVE"
   lastLogin: string
-  inspectionsInProgress?: number
   penalties?: number
 }

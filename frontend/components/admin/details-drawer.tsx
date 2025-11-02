@@ -15,6 +15,8 @@ import { cn } from "@/lib/utils"
 
 type DrawerWidth = "sm" | "md" | "lg"
 
+type DrawerDirection = "top" | "bottom" | "left" | "right"
+
 export type DetailsDrawerProps = {
   title: string
   description?: string
@@ -23,13 +25,14 @@ export type DetailsDrawerProps = {
   children: React.ReactNode
   footer?: React.ReactNode
   width?: DrawerWidth
+  direction?: DrawerDirection
   className?: string
 }
 
 const widthMap: Record<DrawerWidth, string> = {
-  sm: "sm:max-w-sm",
-  md: "sm:max-w-lg",
-  lg: "sm:max-w-3xl",
+  sm: "sm:max-w-sm data-[vaul-drawer-direction=right]:sm:!max-w-sm",
+  md: "sm:max-w-lg data-[vaul-drawer-direction=right]:sm:!max-w-lg",
+  lg: "sm:max-w-3xl data-[vaul-drawer-direction=right]:sm:!max-w-3xl",
 }
 
 /**
@@ -44,13 +47,17 @@ export function DetailsDrawer({
   children,
   footer,
   width = "lg",
+  direction = "bottom",
   className,
 }: DetailsDrawerProps) {
   return (
-    <Drawer open={open} onOpenChange={onOpenChange}>
+    <Drawer open={open} onOpenChange={onOpenChange} direction={direction} modal>
       <DrawerContent
         className={cn(
-          "sm:right-0 sm:left-auto sm:w-full",
+          "sm:w-full",
+          direction === "right"
+            ? "data-[vaul-drawer-direction=right]:h-full data-[vaul-drawer-direction=right]:max-h-full data-[vaul-drawer-direction=right]:border-l"
+            : null,
           widthMap[width],
           className
         )}

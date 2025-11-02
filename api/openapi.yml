@@ -187,11 +187,9 @@ components:
           type: string
           enum: [ACTIVE, INACTIVE]
         lastLogin: { type: string }
-        inspectionsInProgress:
-          type: integer
         penalties:
           type: integer
-      required: [id, name, role, status, lastLogin, inspectionsInProgress, penalties]
+      required: [id, name, role, status, lastLogin, penalties]
     AdminUsersResponse:
       type: object
       properties:

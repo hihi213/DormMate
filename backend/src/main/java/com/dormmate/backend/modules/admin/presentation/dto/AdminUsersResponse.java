@@ -15,7 +15,6 @@ public record AdminUsersResponse(List<User> items) {
             List<String> roles,
             String status,
             String lastLogin,
-            int inspectionsInProgress,
             int penalties
     ) {
     }

@@ -5,7 +5,6 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -43,10 +42,7 @@ import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeComp
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
 import com.dormmate.backend.modules.inspection.domain.InspectionSchedule;
 import com.dormmate.backend.modules.inspection.domain.InspectionScheduleStatus;
-import com.dormmate.backend.modules.inspection.domain.InspectionSession;
-import com.dormmate.backend.modules.inspection.domain.InspectionStatus;
 import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionScheduleRepository;
-import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionSessionRepository;
 import com.dormmate.backend.modules.notification.domain.NotificationDispatchStatus;
 import com.dormmate.backend.modules.notification.infrastructure.persistence.NotificationDispatchLogRepository;
 import com.dormmate.backend.modules.penalty.infrastructure.persistence.PenaltyHistoryRepository;
@@ -68,7 +64,6 @@ public class AdminReadService {
     private final DormUserRepository dormUserRepository;
     private final RoomAssignmentRepository roomAssignmentRepository;
     private final UserSessionRepository userSessionRepository;
-    private final InspectionSessionRepository inspectionSessionRepository;
     private final PenaltyHistoryRepository penaltyHistoryRepository;
     private final AdminPolicyRepository adminPolicyRepository;
     private final Clock clock;
@@ -83,7 +78,6 @@ public class AdminReadService {
             DormUserRepository dormUserRepository,
             RoomAssignmentRepository roomAssignmentRepository,
             UserSessionRepository userSessionRepository,
-            InspectionSessionRepository inspectionSessionRepository,
             PenaltyHistoryRepository penaltyHistoryRepository,
             AdminPolicyRepository adminPolicyRepository,
             Clock clock
@@ -97,7 +91,6 @@ public class AdminReadService {
         this.dormUserRepository = dormUserRepository;
         this.roomAssignmentRepository = roomAssignmentRepository;
         this.userSessionRepository = userSessionRepository;
-        this.inspectionSessionRepository = inspectionSessionRepository;
         this.penaltyHistoryRepository = penaltyHistoryRepository;
         this.adminPolicyRepository = adminPolicyRepository;
         this.clock = clock;
@@ -267,7 +260,6 @@ public class AdminReadService {
         OffsetDateTime now = OffsetDateTime.now(clock);
         Set<UUID> userIds = uniqueUsers.keySet();
         Map<UUID, Integer> penaltyTotals = loadPenaltyTotals(userIds, now);
-        Map<UUID, Integer> activeInspections = loadActiveInspectionCounts(userIds);
         Map<UUID, RoomAssignment> activeAssignments = roomAssignmentRepository.findActiveAssignmentsByUserIds(userIds).stream()
                 .collect(Collectors.toMap(
                         assignment -> assignment.getDormUser().getId(),
@@ -283,8 +275,7 @@ public class AdminReadService {
                         now,
                         activeAssignments.get(user.getId()),
                         activeSessions.getOrDefault(user.getId(), List.of()),
-                        penaltyTotals,
-                        activeInspections
+                        penaltyTotals
                 ))
                 .sorted((a, b) -> a.name().compareToIgnoreCase(b.name()))
                 .toList();
@@ -320,8 +311,7 @@ public class AdminReadService {
             OffsetDateTime now,
             RoomAssignment activeAssignment,
             List<UserSession> sessions,
-            Map<UUID, Integer> penaltyTotals,
-            Map<UUID, Integer> activeInspections
+            Map<UUID, Integer> penaltyTotals
     ) {
         List<String> activeRoles = user.getRoles().stream()
                 .filter(role -> role.getRevokedAt() == null)
@@ -353,7 +343,6 @@ public class AdminReadService {
                 .orElse("-");
 
         int penaltyPoints = penaltyTotals.getOrDefault(user.getId(), 0);
-        int inspectionsInProgress = activeInspections.getOrDefault(user.getId(), 0);
 
         return new AdminUsersResponse.User(
                 user.getId().toString(),
@@ -366,7 +355,6 @@ public class AdminReadService {
                 activeRoles,
                 user.getStatus().name(),
                 lastLogin,
-                inspectionsInProgress,
                 penaltyPoints
         );
     }
@@ -379,41 +367,6 @@ public class AdminReadService {
                 .collect(Collectors.toMap(
                         PenaltyHistoryRepository.PenaltyTotal::getUserId,
                         total -> total.getTotalPoints() != null ? total.getTotalPoints().intValue() : 0
-                ));
-    }
-
-    private Map<UUID, Integer> loadActiveInspectionCounts(Set<UUID> userIds) {
-        if (userIds.isEmpty()) {
-            return Map.of();
-        }
-        List<InspectionSession> sessions = inspectionSessionRepository.findActiveSessionsByUsers(
-                InspectionStatus.IN_PROGRESS,
-                userIds
-        );
-        Map<UUID, Set<UUID>> userToSessionIds = new LinkedHashMap<>();
-        for (InspectionSession session : sessions) {
-            UUID sessionId = session.getId();
-            if (session.getStartedBy() != null) {
-                UUID startedById = session.getStartedBy().getId();
-                if (userIds.contains(startedById)) {
-                    userToSessionIds.computeIfAbsent(startedById, ignored -> new HashSet<>()).add(sessionId);
-                }
-            }
-            if (session.getParticipants() != null) {
-                session.getParticipants().stream()
-                        .filter(participant -> participant.getDormUser() != null)
-                        .filter(participant -> participant.getLeftAt() == null)
-                        .map(participant -> participant.getDormUser().getId())
-                        .filter(userIds::contains)
-                        .forEach(participantId -> userToSessionIds
-                                .computeIfAbsent(participantId, ignored -> new HashSet<>())
-                                .add(sessionId));
-            }
-        }
-        return userToSessionIds.entrySet().stream()
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        entry -> entry.getValue().size()
                 ));
     }
 

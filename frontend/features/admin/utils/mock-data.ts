@@ -139,7 +139,6 @@ export const mockUsers: AdminUser[] = [
     roles: ["RESIDENT", "FLOOR_MANAGER"],
     status: "ACTIVE",
     lastLogin: "2025-11-01 08:40",
-    inspectionsInProgress: 1,
     penalties: 0,
   },
   {
@@ -178,7 +177,6 @@ export const mockUsers: AdminUser[] = [
     roles: ["RESIDENT", "FLOOR_MANAGER"],
     status: "ACTIVE",
     lastLogin: "2025-10-29 19:12",
-    inspectionsInProgress: 0,
     penalties: 2,
   },
 ]

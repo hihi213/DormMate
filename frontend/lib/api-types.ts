@@ -1521,7 +1521,6 @@ export interface components {
             /** @enum {string} */
             status: "ACTIVE" | "INACTIVE";
             lastLogin: string;
-            inspectionsInProgress: number;
             penalties: number;
         };
         AdminUsersResponse: {
