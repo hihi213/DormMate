@@ -71,12 +71,13 @@ public class FridgeBundleRepositoryImpl implements FridgeBundleRepositoryCustom 
         boolean hasKeyword = StringUtils.hasText(condition.keyword());
         if (hasKeyword) {
             String keywordParam = "%" + condition.keyword().toLowerCase(Locale.ROOT) + "%";
-            whereClauses.add(buildKeywordClause(condition));
+            whereClauses.add(buildKeywordClause(condition, params));
             params.put("keyword", keywordParam);
         }
 
         String baseJoin = " FROM fridge_bundle fb "
-                + " JOIN fridge_compartment fc ON fc.id = fb.fridge_compartment_id ";
+                + " JOIN fridge_compartment fc ON fc.id = fb.fridge_compartment_id "
+                + " LEFT JOIN dorm_user du ON du.id = fb.owner_user_id ";
 
         String whereSql = whereClauses.isEmpty() ? "" : " WHERE " + String.join(" AND ", whereClauses);
 
@@ -145,12 +146,27 @@ public class FridgeBundleRepositoryImpl implements FridgeBundleRepositoryCustom 
         params.forEach(query::setParameter);
     }
 
-    private static String buildKeywordClause(FridgeBundleSearchCondition condition) {
+    private static String buildKeywordClause(FridgeBundleSearchCondition condition, Map<String, Object> params) {
         List<String> parts = new ArrayList<>();
         parts.add("lower(fb.bundle_name) like :keyword");
         parts.add("lower(to_char(fb.label_number, 'FM000')) like :keyword");
         parts.add("lower(concat(chr(65 + fc.slot_index), to_char(fb.label_number, 'FM000'))) like :keyword");
         parts.add("lower(concat(chr(65 + fc.slot_index), '-', to_char(fb.label_number, 'FM000'))) like :keyword");
+        if (!CollectionUtils.isEmpty(condition.slotLetterIndices())) {
+            int index = 0;
+            for (Integer slotIndex : condition.slotLetterIndices()) {
+                String param = "slotIdxKeyword" + index++;
+                parts.add("fc.slot_index = :" + param);
+                params.put(param, slotIndex);
+            }
+        }
+        parts.add("lower(coalesce(du.full_name, '')) like :keyword");
+        parts.add(
+                "EXISTS (SELECT 1 FROM room_assignment ra JOIN room rm ON rm.id = ra.room_id "
+                        + "WHERE ra.dorm_user_id = fb.owner_user_id "
+                        + "AND ra.released_at IS NULL "
+                        + "AND (lower(rm.room_number) like :keyword "
+                        + "OR lower(concat(rm.floor, 'f ', rm.room_number)) like :keyword))");
         if (condition.searchItems()) {
             parts.add("EXISTS (SELECT 1 FROM fridge_item fi WHERE fi.fridge_bundle_id = fb.id AND lower(fi.item_name) like :keyword)");
         }

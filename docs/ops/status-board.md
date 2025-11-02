@@ -23,10 +23,12 @@
   - 기존 build 스크립트와 최근 변경분을 비교해 버전 편차 및 누락 없음 확인(`backend/build.gradle`).
   - `auto` 스크립트가 Gradle/Node 경로를 적절히 세팅하는지 점검하고 재시도 시 오프라인/온라인 모드 전환 로그 확인.
   - 통합 테스트 픽스처 구조(`backend/src/test/java/com/dormmate/backend/...`)와 베이스 클래스(`AbstractPostgresIntegrationTest`) 유효성 확인.
+  - 2025-11-02: CI/운영 Node 런타임을 `22.11.0`으로 상향하고 `.cache/node`에 동일 버전을 캐시했다.
 - **테스트 계획**
   - `./auto tests backend`
     - (PASS, 2024-11-24 — 초기 오프라인 캐시 부재로 1회 실패 후 온라인 재시도 성공, 캐시 확보 확인)
-  - `./auto dev warmup`
+    - (PASS, 2025-11-02 — Node 22.11.0 환경에서 새 런타임 검증)
+  - `./auto dev warmup --with-playwright`
     - (PASS, 2024-11-24 — Gradle/Node/Playwright 캐시 준비 및 npm audit 0 vulnerabilities 확인)
 - **리스크/의존성**: 현재 통합 테스트는 Testcontainers 의존성을 사용하므로 Docker 데몬 비가동 시 실패 가능. 캐시 초기화 후 오프라인 모드 정상 동작 확인.
 

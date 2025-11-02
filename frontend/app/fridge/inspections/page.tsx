@@ -120,6 +120,18 @@ function InspectionsInner() {
   const currentUser = getCurrentUser()
   const isFloorManager = currentUser?.roles.includes("FLOOR_MANAGER") ?? false
 
+  const refreshSlotList = useCallback(async () => {
+    try {
+      const slotList = await fetchInspectionSlots()
+      const normalizedSlots = isFloorManager
+        ? slotList.filter((slot) => slot.resourceStatus === "ACTIVE")
+        : slotList
+      setSlots(normalizedSlots)
+    } catch (error) {
+      console.error("Failed to refresh inspection slots", error)
+    }
+  }, [isFloorManager])
+
   const refreshSchedules = useCallback(
     async (options?: { silent?: boolean }) => {
       if (!isFloorManager) return []
@@ -275,6 +287,7 @@ function InspectionsInner() {
         scheduleId: scheduleToStart.scheduleId,
       })
       await refreshSchedules({ silent: true })
+      await refreshSlotList()
       setActiveSession(session)
       toast({
         title: "검사를 시작했습니다.",
@@ -314,6 +327,7 @@ function InspectionsInner() {
       await refreshSchedules({ silent: true })
       const refreshedHistory = await fetchInspectionHistory({ limit: 10 })
       setHistory(refreshedHistory)
+      await refreshSlotList()
       toast({
         title: "검사 세션이 취소되었습니다.",
       })

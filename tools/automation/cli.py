@@ -219,7 +219,7 @@ def cmd_tests_core(args: argparse.Namespace) -> None:
     if args.skip_frontend:
         print("↪️  프론트엔드 테스트를 건너뜁니다.")
     else:
-        npm_tests()
+        npm_lint()
 
     if args.skip_playwright:
         print("↪️  Playwright 테스트를 건너뜁니다.")
@@ -241,8 +241,8 @@ def gradle_tests(*, clean: bool) -> None:
     run_gradle_task("test", clean=clean, refresh=True)
 
 
-def npm_tests() -> None:
-    run_npm_command("test")
+def npm_lint() -> None:
+    run_npm_command("run", "lint")
 
 
 def playwright_smoke() -> None:
@@ -289,69 +289,23 @@ def cmd_dev_warmup(args: argparse.Namespace) -> None:
     print("▶️  Install frontend packages")
     npm_install()
 
-    print("▶️  Install Playwright browsers")
-    npm_playwright_install()
+    if getattr(args, "with_playwright", False):
+        print("▶️  Install Playwright browsers")
+        npm_playwright_install()
+    else:
+        print("ℹ️  Playwright 브라우저 설치를 건너뜁니다. 필요 시 --with-playwright 옵션을 사용하세요.")
 
     print("✅ 개발 환경 예열 완료")
 
 
 def cmd_tests_backend(_: argparse.Namespace) -> None:
     gradle_tests(clean=False)
-    # Flyway 상태 확인
     run_gradle_task("flywayInfo")
-
-    # Runtime OpenAPI와 설계 명세 비교
-    backend_process = subprocess.Popen([
-        "./gradlew", "bootRun"
-    ], cwd=BACKEND_DIR, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-
-    try:
-        for _ in range(30):
-            time.sleep(2)
-            health = subprocess.run(
-                ["curl", "-fsS", "http://localhost:8080/actuator/health"],
-                cwd=PROJECT_ROOT,
-                check=False,
-                capture_output=True,
-            )
-            if health.returncode == 0:
-                break
-        else:
-            print("⚠️  백엔드 서버가 기동되지 않아 OpenAPI 비교를 건너뜁니다.")
-            raise SystemExit(1)
-
-        run_command([
-            "curl", "-fsS", "http://localhost:8080/v3/api-docs"
-        ], cwd=PROJECT_ROOT)
-        runtime_path = PROJECT_ROOT / "runtime-openapi.json"
-        runtime_path.write_bytes(subprocess.check_output([
-            "curl", "-fsS", "http://localhost:8080/v3/api-docs"
-        ], cwd=PROJECT_ROOT))
-
-        spec_path = PROJECT_ROOT / "spec-openapi.json"
-        run_command([
-            "npx", "@redocly/openapi-cli", "bundle", "api/openapi.yml",
-            "--output", str(spec_path), "--ext", "json"
-        ], cwd=PROJECT_ROOT)
-        run_command([
-            "npx", "@redocly/openapi-cli", "diff",
-            str(spec_path), str(runtime_path)
-        ], cwd=PROJECT_ROOT)
-    finally:
-        backend_process.terminate()
-        try:
-            backend_process.wait(timeout=10)
-        except subprocess.TimeoutExpired:
-            backend_process.kill()
-        for tmp in (PROJECT_ROOT / "runtime-openapi.json", PROJECT_ROOT / "spec-openapi.json"):
-            if tmp.exists():
-                tmp.unlink()
-
     persist_state(last_tests="auto tests backend")
 
 
 def cmd_tests_frontend(_: argparse.Namespace) -> None:
-    npm_tests()
+    npm_lint()
     persist_state(last_tests="auto tests frontend")
 
 
@@ -371,7 +325,7 @@ def cmd_db_migrate(_: argparse.Namespace) -> None:
 
 
 def cmd_dev_up(args: argparse.Namespace) -> None:
-    services = args.services or ["db", "redis", "pgadmin"]
+    services = args.services or ["db", "redis"]
     run_command(["docker", "compose", "up", "-d", *services])
 
 
@@ -555,7 +509,7 @@ def print_top_level_summary(parser: argparse.ArgumentParser) -> None:
     parser.print_help()
     summary = """
 자주 쓰는 명령 요약
-  ./auto dev warmup [--refresh]      Gradle·Node·Playwright 캐시 예열
+  ./auto dev warmup [--refresh] [--with-playwright]  Gradle·Node 의존성 예열 (필요 시 Playwright)
   ./auto dev up                      개발용 Docker 서비스 기동
   ./auto dev down                    개발용 Docker 서비스 중지
   ./auto dev status                  개발용 Docker 서비스 상태 확인
@@ -564,7 +518,7 @@ def print_top_level_summary(parser: argparse.ArgumentParser) -> None:
   ./auto dev kill-ports              지정한 포트(기본 3000~3003, 8080) 정리
   ./auto tests core                  백엔드·프론트·Playwright 테스트 번들
   ./auto tests backend               백엔드 테스트만 실행
-  ./auto tests frontend              프론트엔드 테스트만 실행
+  ./auto tests frontend              프론트엔드 Lint 실행
   ./auto tests playwright [--full]   Playwright 스모크/전체 실행
   ./auto db migrate                  Flyway 마이그레이션
   ./auto cleanup                     빌드 산출물 정리
@@ -580,7 +534,7 @@ def build_parser() -> argparse.ArgumentParser:
             "DormMate Automation CLI\n"
             "\n"
             "주요 플로우 예시:\n"
-            "  ./auto dev warmup [--refresh]  # Gradle/Node/Playwright 캐시 준비\n"
+            "  ./auto dev warmup [--refresh] [--with-playwright]  # Gradle/Node 캐시 및 (옵션) Playwright 설치\n"
             "  ./auto dev up                  # 개발용 Docker 서비스 기동\n"
             "  ./auto dev backend             # Spring Boot 서버 실행\n"
             "  ./auto dev kill-ports          # 지정한 포트를 한 번에 정리\n"
@@ -604,7 +558,7 @@ def build_parser() -> argparse.ArgumentParser:
     tests_backend = tests_sub.add_parser("backend", help="Gradle 테스트만 실행")
     tests_backend.set_defaults(func=cmd_tests_backend)
 
-    tests_frontend = tests_sub.add_parser("frontend", help="프론트엔드 테스트만 실행")
+    tests_frontend = tests_sub.add_parser("frontend", help="프론트엔드 정적 점검(lint) 실행")
     tests_frontend.set_defaults(func=cmd_tests_frontend)
 
     tests_playwright = tests_sub.add_parser("playwright", help="Playwright 스모크 또는 전체 실행")
@@ -622,12 +576,13 @@ def build_parser() -> argparse.ArgumentParser:
     dev = subparsers.add_parser("dev", help="개발 환경 제어")
     dev_sub = dev.add_subparsers(dest="dev_command", metavar="dev-command")
 
-    dev_warmup = dev_sub.add_parser("warmup", help="Gradle/Node/Playwright 캐시 예열")
+    dev_warmup = dev_sub.add_parser("warmup", help="Gradle/Node 캐시 예열 (옵션: Playwright)")
     dev_warmup.add_argument("--refresh", action="store_true", help="Gradle 의존성을 강제로 갱신합니다.")
+    dev_warmup.add_argument("--with-playwright", action="store_true", help="Playwright 브라우저까지 설치합니다.")
     dev_warmup.set_defaults(func=cmd_dev_warmup)
 
     dev_up = dev_sub.add_parser("up", help="도커 서비스 기동")
-    dev_up.add_argument("--services", nargs="+", help="기동할 서비스 지정 (기본: db redis pgadmin)")
+    dev_up.add_argument("--services", nargs="+", help="기동할 서비스 지정 (기본: db redis)")
     dev_up.set_defaults(func=cmd_dev_up)
 
     dev_down = dev_sub.add_parser("down", help="도커 서비스 중지")

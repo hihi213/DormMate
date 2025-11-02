@@ -19,7 +19,7 @@
 ## 자동화 CLI
 - `tools/automation/cli.py`는 테스트, 빌드, 상태 관리를 위한 공통 진입점을 제공한다.
 - 주요 명령
-  - `./auto dev warmup [--refresh]`: Gradle/Node/Playwright 의존성 예열
+  - `./auto dev warmup [--refresh] [--with-playwright]`: Gradle/Node 의존성 예열(Playwright는 옵션)
   - `./auto dev up|down|status|backend|frontend`: Docker 및 개발 서버 제어
   - `./auto dev kill-ports [--ports …]`: 지정한 포트(기본 3000~3003, 8080)를 점유한 프로세스를 종료
   - `./auto tests core [--skip-backend --skip-frontend --skip-playwright --full-playwright]`: Step 6 테스트 번들
