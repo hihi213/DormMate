@@ -71,7 +71,8 @@ jobs:
         run: ./auto db migrate
 
       - name: Verify Flyway status
-        run: ./backend/gradlew flywayInfo
+        working-directory: backend
+        run: ./gradlew flywayInfo
 
       - name: Run backend tests
         run: ./auto tests backend
