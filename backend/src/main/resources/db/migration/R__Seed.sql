@@ -19,7 +19,11 @@ VALUES
 ON CONFLICT (code) DO UPDATE
 SET name        = EXCLUDED.name,
     description = EXCLUDED.description,
-    updated_at   = CURRENT_TIMESTAMP;
+    updated_at   = CASE
+                       WHEN (role.name, role.description) IS DISTINCT FROM (EXCLUDED.name, EXCLUDED.description)
+                           THEN CURRENT_TIMESTAMP
+                       ELSE role.updated_at
+                   END;
 
 -- ==========================
 -- 층/호실 메타데이터
@@ -56,4 +60,8 @@ FROM raw_rooms
 ON CONFLICT (floor, room_number) DO UPDATE
 SET room_type = EXCLUDED.room_type,
     capacity  = EXCLUDED.capacity,
-    updated_at = CURRENT_TIMESTAMP;
+    updated_at = CASE
+                     WHEN (room.room_type, room.capacity) IS DISTINCT FROM (EXCLUDED.room_type, EXCLUDED.capacity)
+                         THEN CURRENT_TIMESTAMP
+                     ELSE room.updated_at
+                 END;

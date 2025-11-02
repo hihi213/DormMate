@@ -4,7 +4,7 @@ import { useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { User } from "lucide-react"
 
-import NotificationPermission from "@/components/notification-permission"
+import NotificationBell from "@/features/notifications/components/notification-bell"
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -51,7 +51,11 @@ export default function HomeHeader({
           )}
         </div>
         <div className="flex items-center gap-2">
-          <NotificationPermission />
+          <NotificationBell
+            size={12}
+            disabled={!mounted || !isLoggedIn}
+            onRequireLogin={!isLoggedIn ? navigateToLogin : undefined}
+          />
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <button

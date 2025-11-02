@@ -350,6 +350,352 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/admin/fridge/bundles/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 삭제된 포장 이력 조회
+         * @description 기본적으로 최근 3개월 이내 삭제된 포장을 반환하며, `since` 파라미터로 기간을 확장할 수 있습니다.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 조회 기준 시각(UTC). 지정하지 않으면 현재 시각 기준 3개월 전으로 자동 설정됩니다. */
+                    since?: string;
+                    page?: number;
+                    size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 삭제된 포장 목록 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BundleListResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/fridge/reallocations/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 층별 칸-호실 재배분 추천안 조회
+         * @description 현재 배정 현황을 바탕으로 균등 분배한 추천안을 생성합니다. 실제 반영 전 검토용으로 사용하세요.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReallocationPreviewRequest"];
+                };
+            };
+            responses: {
+                /** @description 추천안 생성 성공 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReallocationPreviewResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/fridge/reallocations/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 층별 칸-호실 재배분 확정 반영
+         * @description 검토·수정한 배정안을 저장하고 기존 배정을 종료합니다.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReallocationApplyRequest"];
+                };
+            };
+            responses: {
+                /** @description 재배분 적용 성공 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReallocationApplyResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 내 알림 목록 조회
+         * @description 미읽음 우선 정렬로 알림을 반환합니다. TTL이 지난 알림은 자동으로 만료 처리됩니다.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 조회할 알림 상태 */
+                    state?: "all" | "unread" | "read";
+                    page?: number;
+                    size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 알림 목록 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationListResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/{notificationId}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 특정 알림 읽음 처리 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    notificationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 읽음 처리 완료 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        trace?: never;
+    };
+    "/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 모든 미읽음 알림 읽음 처리 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 처리 완료 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        trace?: never;
+    };
+    "/notifications/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 알림 수신 설정 조회 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 알림 선호 설정 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationPreferenceResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/preferences/{kindCode}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 알림 수신 설정 변경 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 알림 종류 코드 (예: FRIDGE_RESULT) */
+                    kindCode: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateNotificationPreferenceRequest"];
+                };
+            };
+            responses: {
+                /** @description 변경된 설정 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationPreferenceItem"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        trace?: never;
+    };
     "/fridge/bundles/{bundleId}": {
         parameters: {
             query?: never;
@@ -1081,6 +1427,111 @@ export interface components {
             /** Format: int64 */
             totalCount: number;
         };
+        ReallocationPreviewRequest: {
+            /** Format: int32 */
+            floor: number;
+        };
+        ReallocationPreviewResponse: {
+            /** Format: int32 */
+            floor: number;
+            rooms: components["schemas"]["ReallocationRoomSummary"][];
+            allocations: components["schemas"]["ReallocationCompartmentAllocation"][];
+            /** Format: int32 */
+            chillCompartmentCount: number;
+        };
+        ReallocationRoomSummary: {
+            /** Format: uuid */
+            roomId: string;
+            roomNumber: string;
+            roomType: string;
+            /** Format: int32 */
+            floor: number;
+        };
+        ReallocationCompartmentAllocation: {
+            /** Format: uuid */
+            compartmentId: string;
+            /** Format: uuid */
+            fridgeUnitId: string;
+            /** Format: int32 */
+            slotIndex: number;
+            slotLabel: string;
+            /** @enum {string} */
+            compartmentType: "CHILL" | "FREEZE";
+            /** @enum {string} */
+            status: "ACTIVE" | "SUSPENDED" | "REPORTED" | "RETIRED";
+            locked: boolean;
+            currentRoomIds: string[];
+            recommendedRoomIds: string[];
+            warnings: string[];
+        };
+        ReallocationApplyRequest: {
+            /** Format: int32 */
+            floor: number;
+            allocations: components["schemas"]["ReallocationApplyAllocation"][];
+        };
+        ReallocationApplyAllocation: {
+            /** Format: uuid */
+            compartmentId: string;
+            roomIds: string[];
+        };
+        ReallocationApplyResponse: {
+            /** Format: int32 */
+            floor: number;
+            /** Format: int32 */
+            affectedCompartments: number;
+            /** Format: int32 */
+            releasedAssignments: number;
+            /** Format: int32 */
+            createdAssignments: number;
+            /** Format: date-time */
+            appliedAt: string;
+        };
+        /** @enum {string} */
+        NotificationState: "UNREAD" | "READ" | "EXPIRED";
+        NotificationItem: {
+            /** Format: uuid */
+            id: string;
+            kindCode: string;
+            title: string;
+            body: string;
+            state: components["schemas"]["NotificationState"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            readAt?: string | null;
+            /** Format: date-time */
+            ttlAt?: string | null;
+            /** Format: uuid */
+            correlationId?: string | null;
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        NotificationListResponse: {
+            items: components["schemas"]["NotificationItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            size: number;
+            /** Format: int64 */
+            totalElements: number;
+            /** Format: int64 */
+            unreadCount: number;
+        };
+        NotificationPreferenceItem: {
+            kindCode: string;
+            displayName: string;
+            description: string;
+            enabled: boolean;
+            allowBackground: boolean;
+        };
+        NotificationPreferenceResponse: {
+            items: components["schemas"]["NotificationPreferenceItem"][];
+        };
+        UpdateNotificationPreferenceRequest: {
+            enabled: boolean;
+            allowBackground: boolean;
+        };
         CreateBundleItemInput: {
             name: string;
             /** Format: date */
@@ -1130,7 +1581,7 @@ export interface components {
         };
         InspectionActionItem: {
             /** Format: int64 */
-            id: number;
+            id?: number;
             /** Format: uuid */
             fridgeItemId?: string | null;
             snapshotName?: string | null;
@@ -1140,29 +1591,29 @@ export interface components {
         };
         PenaltyHistory: {
             /** Format: uuid */
-            id: string;
-            points: number;
+            id?: string;
+            points?: number;
             reason?: string | null;
             /** Format: date-time */
-            issuedAt: string;
+            issuedAt?: string;
             /** Format: date-time */
             expiresAt?: string | null;
         };
         InspectionActionDetail: {
             /** Format: int64 */
-            actionId: number;
-            actionType: components["schemas"]["InspectionAction"];
+            actionId?: number;
+            actionType?: components["schemas"]["InspectionAction"];
             /** Format: uuid */
             bundleId?: string | null;
             /** Format: uuid */
             targetUserId?: string | null;
             /** Format: date-time */
-            recordedAt: string;
+            recordedAt?: string;
             /** Format: uuid */
             recordedBy?: string | null;
             note?: string | null;
-            items: components["schemas"]["InspectionActionItem"][];
-            penalties: components["schemas"]["PenaltyHistory"][];
+            items?: components["schemas"]["InspectionActionItem"][];
+            penalties?: components["schemas"]["PenaltyHistory"][];
         };
         InspectionSession: {
             /** Format: uuid */
@@ -1182,7 +1633,7 @@ export interface components {
             endedAt?: string | null;
             bundles: components["schemas"]["FridgeBundle"][];
             summary: components["schemas"]["InspectionActionSummary"][];
-            actions: components["schemas"]["InspectionActionDetail"][];
+            actions?: components["schemas"]["InspectionActionDetail"][];
             notes?: string | null;
         };
         InspectionActionEntry: {

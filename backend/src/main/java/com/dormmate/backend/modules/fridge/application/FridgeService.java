@@ -10,9 +10,17 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.EnumSet;
+import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
 
 import com.dormmate.backend.modules.fridge.presentation.dto.BundleListResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.CreateBundleItemInput;
@@ -44,12 +52,16 @@ import com.dormmate.backend.modules.auth.infrastructure.persistence.RoomAssignme
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.BundleLabelSequenceRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.CompartmentRoomAccessRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleSearchCondition;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleSearchOrder;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeCompartmentRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeUnitRepository;
 import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionSessionRepository;
 import com.dormmate.backend.global.security.SecurityUtils;
 
+import org.springframework.core.NestedExceptionUtils;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -61,6 +73,7 @@ import org.springframework.web.server.ResponseStatusException;
 public class FridgeService {
 
     private static final int MAX_LABEL = 999;
+    private static final Pattern LABEL_SEARCH_PATTERN = Pattern.compile("([A-Za-z]+)[-\\s]?([0-9]{1,3})");
     private final FridgeUnitRepository fridgeUnitRepository;
     private final FridgeCompartmentRepository fridgeCompartmentRepository;
     private final CompartmentRoomAccessRepository compartmentRoomAccessRepository;
@@ -181,63 +194,54 @@ public class FridgeService {
             ownerFilter = currentUserId;
         }
 
-        List<FridgeBundle> candidates = new ArrayList<>();
+        UUID finalOwnerFilter = ownerFilter;
+        UUID compartmentId = null;
 
         if (slotId != null) {
             FridgeCompartment compartment = fridgeCompartmentRepository.findById(slotId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SLOT_NOT_FOUND"));
             verifyBundleReadAccess(currentUser, compartment, isAdmin, true);
-            if (ownerFilter != null && isFloorManager) {
+            if (finalOwnerFilter != null && isFloorManager) {
                 boolean managesFloor = roomAssignmentRepository.findActiveAssignment(currentUserId)
                         .map(assignment -> assignment.getRoom().getFloor()
                                 == compartment.getFridgeUnit().getFloorNo())
                         .orElse(false);
                 if (managesFloor) {
-                    ownerFilter = null;
+                    finalOwnerFilter = null;
                 }
             }
-            candidates.addAll(fridgeBundleRepository.findByFridgeCompartmentAndStatus(compartment, FridgeBundleStatus.ACTIVE));
-            if (includeDeleted) {
-                candidates.addAll(fridgeBundleRepository.findByFridgeCompartmentAndStatus(compartment, FridgeBundleStatus.DELETED));
-            }
-        } else if (ownerFilter != null) {
-            candidates.addAll(fridgeBundleRepository.findByOwner(currentUser));
-        } else {
-            // 관리자 전체 조회
-            candidates.addAll(fridgeBundleRepository.findAll());
+            compartmentId = compartment.getId();
+        } else if (finalOwnerFilter != null) {
+            compartmentId = null;
         }
 
-        if (!includeDeleted) {
-            candidates = candidates.stream()
-                    .filter(b -> b.getStatus() == FridgeBundleStatus.ACTIVE)
-                    .toList();
-        }
+        Set<FridgeBundleStatus> statuses = includeDeleted
+                ? EnumSet.of(FridgeBundleStatus.ACTIVE, FridgeBundleStatus.DELETED)
+                : EnumSet.of(FridgeBundleStatus.ACTIVE);
 
-        final UUID finalOwnerFilter = ownerFilter;
-        if (finalOwnerFilter != null) {
-            candidates = candidates.stream()
-                    .filter(bundle -> bundle.getOwner().getId().equals(finalOwnerFilter))
-                    .toList();
-        }
+        String trimmedSearch = StringUtils.hasText(search) ? search.trim() : null;
+        String normalizedKeyword = trimmedSearch != null ? trimmedSearch.toLowerCase() : null;
+        LabelSearchCriteria labelCriteria = parseLabelSearch(trimmedSearch).orElse(null);
 
-        if (StringUtils.hasText(search)) {
-            String keyword = search.trim().toLowerCase();
-            candidates = candidates.stream()
-                    .filter(bundle -> matchesSearch(bundle, keyword))
-                    .toList();
-        }
+        FridgeBundleSearchCondition condition = new FridgeBundleSearchCondition(
+                compartmentId,
+                finalOwnerFilter,
+                statuses,
+                normalizedKeyword,
+                labelCriteria != null ? labelCriteria.slotIndex() : null,
+                labelCriteria != null ? labelCriteria.labelNumber() : null,
+                StringUtils.hasText(normalizedKeyword),
+                null,
+                FridgeBundleSearchOrder.CREATED_AT_DESC
+        );
 
-        Comparator<FridgeBundle> comparator = Comparator.comparing(FridgeBundle::getCreatedAt).reversed();
-        List<FridgeBundle> sorted = candidates.stream()
-                .sorted(comparator)
-                .toList();
+        Page<FridgeBundle> resultPage = fridgeBundleRepository.searchBundles(
+                condition,
+                PageRequest.of(safePage, safeSize)
+        );
 
-        long total = sorted.size();
-
-        List<FridgeBundle> paged = sorted.stream()
-                .skip((long) safePage * safeSize)
-                .limit(safeSize)
-                .toList();
+        List<FridgeBundle> paged = resultPage.getContent();
+        long total = resultPage.getTotalElements();
 
         Map<UUID, RoomAssignment> ownerAssignments = loadAssignmentsForBundles(paged);
 
@@ -250,6 +254,45 @@ public class FridgeService {
                 .toList();
 
         return new BundleListResponse(summaries, total);
+    }
+
+    public BundleListResponse getDeletedBundles(OffsetDateTime since, int page, int size) {
+        if (!SecurityUtils.hasRole("ADMIN")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FORBIDDEN");
+        }
+        int safePage = Math.max(page, 0);
+        int safeSize = Math.min(Math.max(size, 1), 100);
+        OffsetDateTime baseline = since != null ? since : OffsetDateTime.now(clock).minusMonths(3);
+
+        FridgeBundleSearchCondition condition = new FridgeBundleSearchCondition(
+                null,
+                null,
+                EnumSet.of(FridgeBundleStatus.DELETED),
+                null,
+                null,
+                null,
+                false,
+                baseline,
+                FridgeBundleSearchOrder.DELETED_AT_DESC
+        );
+
+        Page<FridgeBundle> resultPage = fridgeBundleRepository.searchBundles(
+                condition,
+                PageRequest.of(safePage, safeSize)
+        );
+
+        Map<UUID, RoomAssignment> ownerAssignments = loadAssignmentsForBundles(resultPage.getContent());
+        UUID currentUserId = SecurityUtils.getCurrentUserId();
+
+        List<FridgeBundleSummaryResponse> summaries = resultPage.getContent().stream()
+                .map(bundle -> FridgeDtoMapper.toSummary(
+                        bundle,
+                        ownerAssignments.get(bundle.getOwner().getId()),
+                        bundle.getOwner().getId().equals(currentUserId)
+                ))
+                .toList();
+
+        return new BundleListResponse(summaries, resultPage.getTotalElements());
     }
 
     @Transactional(readOnly = true)
@@ -283,8 +326,7 @@ public class FridgeService {
     public CreateBundleResponse createBundle(CreateBundleRequest request) {
         UUID currentUserId = SecurityUtils.getCurrentUserId();
         DormUser currentUser = loadUser(currentUserId);
-        FridgeCompartment compartment = fridgeCompartmentRepository.findById(request.slotId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SLOT_NOT_FOUND"));
+        FridgeCompartment compartment = loadCompartmentForUpdate(request.slotId());
 
         verifyBundleWriteAccess(currentUser, compartment);
         ensureCompartmentNotLocked(compartment);
@@ -307,10 +349,17 @@ public class FridgeService {
             bundle.getItems().add(buildItem(bundle, input.name(), input.expiryDate(), input.quantity(), input.unitCode()));
         }
 
-        FridgeBundle saved = fridgeBundleRepository.save(bundle);
-        RoomAssignment ownerAssignment = roomAssignmentRepository.findActiveAssignment(currentUserId)
-                .orElse(null);
-        return new CreateBundleResponse(FridgeDtoMapper.toResponse(saved, ownerAssignment));
+        try {
+            FridgeBundle saved = fridgeBundleRepository.saveAndFlush(bundle);
+            RoomAssignment ownerAssignment = roomAssignmentRepository.findActiveAssignment(currentUserId)
+                    .orElse(null);
+            return new CreateBundleResponse(FridgeDtoMapper.toResponse(saved, ownerAssignment));
+        } catch (DataIntegrityViolationException ex) {
+            if (isCapacityConstraintViolation(ex)) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "CAPACITY_EXCEEDED", ex);
+            }
+            throw ex;
+        }
     }
 
     public FridgeBundleResponse updateBundle(UUID bundleId, UpdateBundleRequest request) {
@@ -451,22 +500,29 @@ public class FridgeService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "USER_NOT_FOUND"));
     }
 
-    private boolean matchesSearch(FridgeBundle bundle, String keyword) {
-        if (bundle.getBundleName() != null && bundle.getBundleName().toLowerCase().contains(keyword)) {
-            return true;
+    private Optional<LabelSearchCriteria> parseLabelSearch(String rawKeyword) {
+        if (!StringUtils.hasText(rawKeyword)) {
+            return Optional.empty();
         }
-        String labelNumber = LabelFormatter.formatLabelNumber(bundle.getLabelNumber()).toLowerCase();
-        if (labelNumber.contains(keyword)) {
-            return true;
+        Matcher matcher = LABEL_SEARCH_PATTERN.matcher(rawKeyword.trim());
+        if (!matcher.matches()) {
+            return Optional.empty();
         }
-        String labelDisplay = LabelFormatter.toBundleLabel(
-                bundle.getFridgeCompartment().getSlotIndex(),
-                bundle.getLabelNumber()).toLowerCase();
-        if (labelDisplay.contains(keyword)) {
-            return true;
+        String letterPart = matcher.group(1).toUpperCase(Locale.ROOT);
+        String numberPart = matcher.group(2);
+        try {
+            int slotIndex = LabelFormatter.fromSlotLetter(letterPart);
+            int labelNumber = Integer.parseInt(numberPart);
+            if (labelNumber <= 0 || labelNumber > MAX_LABEL) {
+                return Optional.empty();
+            }
+            return Optional.of(new LabelSearchCriteria(slotIndex, labelNumber));
+        } catch (IllegalArgumentException ex) {
+            return Optional.empty();
         }
-        return bundle.getItems().stream()
-                .anyMatch(item -> item.getItemName() != null && item.getItemName().toLowerCase().contains(keyword));
+    }
+
+    private record LabelSearchCriteria(int slotIndex, int labelNumber) {
     }
 
     private Map<UUID, RoomAssignment> loadAssignmentsForBundles(List<FridgeBundle> bundles) {
@@ -619,7 +675,23 @@ public class FridgeService {
                         sequence.setRecycledNumbers(recycled);
                         bundleLabelSequenceRepository.save(sequence);
                     }
-                });
+        });
+    }
+
+    private FridgeCompartment loadCompartmentForUpdate(UUID compartmentId) {
+        return fridgeCompartmentRepository.findByIdForUpdate(compartmentId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SLOT_NOT_FOUND"));
+    }
+
+    private boolean isCapacityConstraintViolation(DataIntegrityViolationException ex) {
+        Throwable root = NestedExceptionUtils.getMostSpecificCause(ex);
+        String message = root != null ? root.getMessage() : null;
+        if (message == null) {
+            return false;
+        }
+        return message.contains("uq_fridge_bundle_active_label")
+                || message.contains("bundle_label_sequence")
+                || message.contains("fridge_bundle_active_label");
     }
 
     private void ensureCompartmentNotLocked(FridgeCompartment compartment) {

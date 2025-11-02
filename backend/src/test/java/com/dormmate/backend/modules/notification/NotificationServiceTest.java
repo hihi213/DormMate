@@ -16,6 +16,7 @@ import java.util.UUID;
 
 import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.auth.domain.DormUserStatus;
+import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
 import com.dormmate.backend.modules.inspection.domain.InspectionAction;
 import com.dormmate.backend.modules.inspection.domain.InspectionActionType;
 import com.dormmate.backend.modules.inspection.domain.InspectionSession;
@@ -43,6 +44,9 @@ class NotificationServiceTest {
     @Mock
     private NotificationPreferenceRepository notificationPreferenceRepository;
 
+    @Mock
+    private DormUserRepository dormUserRepository;
+
     private NotificationService notificationService;
     private Clock clock;
 
@@ -51,7 +55,12 @@ class NotificationServiceTest {
     @BeforeEach
     void setUp() {
         clock = Clock.fixed(OffsetDateTime.parse("2025-01-01T00:00:00Z").toInstant(), ZoneOffset.UTC);
-        notificationService = new NotificationService(notificationRepository, notificationPreferenceRepository, clock);
+        notificationService = new NotificationService(
+                notificationRepository,
+                notificationPreferenceRepository,
+                dormUserRepository,
+                clock
+        );
 
         targetUser = new DormUser();
         targetUser.setLoginId("alice");

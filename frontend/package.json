@@ -9,7 +9,8 @@
     "start": "next start",
     "test": "npm run lint",
     "playwright:test": "playwright test",
-    "playwright:install": "playwright install --with-deps"
+    "playwright:install": "playwright install --with-deps",
+    "playwright:create-admin-storage": "node ./scripts/create-admin-storage.mjs"
   },
   "engines": {
     "node": ">=18.18 <23",

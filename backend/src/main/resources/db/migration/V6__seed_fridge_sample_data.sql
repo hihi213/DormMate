@@ -33,6 +33,8 @@ unit_upsert AS (
         cold_type = EXCLUDED.cold_type,
         description = EXCLUDED.description,
         updated_at = CURRENT_TIMESTAMP
+    WHERE ROW(fridge_unit.cold_type, fridge_unit.description)
+          IS DISTINCT FROM ROW(EXCLUDED.cold_type, EXCLUDED.description)
     RETURNING id, floor, label
 ),
 compartment_defs AS (
@@ -111,6 +113,22 @@ compartment_insert AS (
         label_range_start = EXCLUDED.label_range_start,
         label_range_end = EXCLUDED.label_range_end,
         updated_at = CURRENT_TIMESTAMP
+    WHERE ROW(
+            fridge_compartment.fridge_unit_id,
+            fridge_compartment.display_order,
+            fridge_compartment.compartment_type,
+            fridge_compartment.max_bundle_count,
+            fridge_compartment.label_range_start,
+            fridge_compartment.label_range_end
+        )
+        IS DISTINCT FROM ROW(
+            EXCLUDED.fridge_unit_id,
+            EXCLUDED.display_order,
+            EXCLUDED.compartment_type,
+            EXCLUDED.max_bundle_count,
+            EXCLUDED.label_range_start,
+            EXCLUDED.label_range_end
+        )
     RETURNING id, slot_code
 ),
 compartments AS (
@@ -137,6 +155,7 @@ label_sequence_upsert AS (
     SET
         next_label = GREATEST(bundle_label_sequence.next_label, EXCLUDED.next_label),
         updated_at = CURRENT_TIMESTAMP
+    WHERE bundle_label_sequence.next_label < EXCLUDED.next_label
 ),
 rooms AS (
     SELECT id, floor, room_number::INTEGER AS room_no
@@ -175,6 +194,8 @@ room_access_upsert AS (
         priority_order = EXCLUDED.priority_order,
         released_at = NULL,
         updated_at = CURRENT_TIMESTAMP
+    WHERE compartment_room_access.priority_order <> EXCLUDED.priority_order
+       OR compartment_room_access.released_at IS NOT NULL
     RETURNING fridge_compartment_id, room_id
 ),
 bundle_data AS (
@@ -238,6 +259,20 @@ bundle_upsert AS (
         status = 'ACTIVE',
         deleted_at = NULL,
         updated_at = CURRENT_TIMESTAMP
+    WHERE ROW(
+            fridge_bundle.bundle_name,
+            fridge_bundle.memo,
+            fridge_bundle.visibility,
+            fridge_bundle.status,
+            fridge_bundle.deleted_at
+        )
+        IS DISTINCT FROM ROW(
+            EXCLUDED.bundle_name,
+            EXCLUDED.memo,
+            EXCLUDED.visibility,
+            'ACTIVE',
+            NULL
+        )
     RETURNING id, fridge_compartment_id, owner_user_id AS owner_id, label_code
 ),
 item_data AS (
@@ -317,10 +352,31 @@ item_upsert AS (
         memo = EXCLUDED.memo,
         deleted_at = NULL,
         updated_at = CURRENT_TIMESTAMP
+    WHERE ROW(
+            fridge_item.item_name,
+            fridge_item.quantity,
+            fridge_item.unit,
+            fridge_item.priority,
+            fridge_item.expires_on,
+            fridge_item.memo,
+            fridge_item.status,
+            fridge_item.deleted_at
+        )
+        IS DISTINCT FROM ROW(
+            EXCLUDED.item_name,
+            EXCLUDED.quantity,
+            EXCLUDED.unit,
+            EXCLUDED.priority,
+            EXCLUDED.expires_on,
+            EXCLUDED.memo,
+            'ACTIVE',
+            NULL
+        )
 )
 SELECT NULL;
 
 UPDATE fridge_compartment
 SET max_bundle_count = 3,
     updated_at = CURRENT_TIMESTAMP
-WHERE slot_code = '2F-R1';
+WHERE slot_code = '2F-R1'
+  AND max_bundle_count <> 3;

@@ -30,11 +30,13 @@ export default defineConfig({
         ['html', { outputFolder: 'playwright-report', open: 'never' }],
       ]
     : [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
+  grep: new RegExp(process.env.PLAYWRIGHT_GREP ?? ''),
   use: {
     actionTimeout: 0,
     trace: isCI ? 'retain-on-failure' : 'on-first-retry',
     baseURL,
     video: isCI ? 'on-first-retry' : 'retain-on-failure',
+    storageState: process.env.PLAYWRIGHT_STORAGE_STATE || undefined,
   },
   webServer: webServerConfig,
   projects: [
