@@ -52,8 +52,8 @@ jobs:
         working-directory: frontend
         run: npx playwright install --with-deps
 
-      - name: Start database container
-        run: ./auto dev up --services db
+      - name: Start database and redis containers
+        run: ./auto dev up --services db redis
 
       - name: Wait for database readiness
         run: |
@@ -65,6 +65,18 @@ jobs:
           done
           echo "Database did not become ready in time." >&2
           docker compose logs db
+          exit 1
+
+      - name: Wait for redis readiness
+        run: |
+          for i in {1..30}; do
+            if docker compose exec -T redis redis-cli ping >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Redis did not become ready in time." >&2
+          docker compose logs redis
           exit 1
 
       - name: Apply database migrations
