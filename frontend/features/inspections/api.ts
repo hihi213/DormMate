@@ -19,7 +19,7 @@ const isFixtureRuntime = () =>
 
 const isFixtureMode = () => isFixtureEnabled || isFixtureRuntime()
 
-async function fetchFixture<T>(resource: "slots" | "active" | "history"): Promise<T | undefined> {
+async function fetchFixture<T>(resource: "slots" | "active" | "history" | "schedules"): Promise<T | undefined> {
   const response = await fetch(`/api/__fixtures__/fridge/inspections?resource=${resource}`)
   if (response.status === 204) {
     return undefined
@@ -93,6 +93,11 @@ type InspectionScheduleDto = {
   status: InspectionSchedule["status"]
   completedAt?: string | null
   inspectionSessionId?: string | null
+  fridgeCompartmentId?: string | null
+  slotIndex?: number | null
+  slotLetter?: string | null
+  floorNo?: number | null
+  floorCode?: string | null
   createdAt: string
   updatedAt: string
 }
@@ -280,6 +285,12 @@ type InspectionScheduleParams = {
 export async function fetchInspectionSchedules(
   params: InspectionScheduleParams = {},
 ): Promise<InspectionSchedule[]> {
+  if (isFixtureMode()) {
+    const fixture = await fetchFixture<InspectionScheduleDto[]>("schedules")
+    if (!fixture) return []
+    return fixture.map(mapScheduleDto)
+  }
+
   const search = new URLSearchParams()
   if (params.status) search.set("status", params.status)
   if (typeof params.limit === "number") search.set("limit", String(params.limit))
@@ -445,6 +456,11 @@ function mapScheduleDto(dto: InspectionScheduleDto): InspectionSchedule {
     status: dto.status,
     completedAt: dto.completedAt ?? null,
     inspectionSessionId: dto.inspectionSessionId ?? null,
+    fridgeCompartmentId: dto.fridgeCompartmentId ?? null,
+    slotIndex: dto.slotIndex ?? null,
+    slotLetter: dto.slotLetter ?? null,
+    floorNo: dto.floorNo ?? null,
+    floorCode: dto.floorCode ?? null,
     createdAt: dto.createdAt,
     updatedAt: dto.updatedAt,
   }

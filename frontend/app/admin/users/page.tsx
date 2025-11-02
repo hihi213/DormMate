@@ -71,7 +71,7 @@ export default function AdminUsersPage() {
 
   const filteredUsers = useMemo(() => {
     const keyword = filters.search.trim().toLowerCase()
-    return userItems.filter((user) => {
+    const filtered = userItems.filter((user) => {
       const roomLabel = user.room?.toLowerCase() ?? ""
       const roomCode = user.roomCode?.toLowerCase() ?? ""
       const personalNo = user.personalNo != null ? String(user.personalNo) : ""
@@ -92,6 +92,7 @@ export default function AdminUsersPage() {
 
       return matchesSearch && statusMatches && floorMatches
     })
+    return filtered.sort(compareAdminUsers)
   }, [filters, userItems])
 
   const totalItems = filteredUsers.length
@@ -681,4 +682,31 @@ function formatRoomWithPersonal(user: AdminUser): string {
   }
   if (roomCode) return roomCode
   return user.room ?? "호실 미배정"
+}
+
+function compareAdminUsers(a: AdminUser, b: AdminUser): number {
+  const floorA = resolveUserFloor(a)
+  const floorB = resolveUserFloor(b)
+  if (floorA !== floorB) {
+    if (floorA === null) return 1
+    if (floorB === null) return -1
+    return floorA - floorB
+  }
+
+  const codeA = resolveRoomCode(a)
+  const codeB = resolveRoomCode(b)
+  if (codeA || codeB) {
+    if (!codeA) return 1
+    if (!codeB) return -1
+    const codeCompare = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: "base" })
+    if (codeCompare !== 0) return codeCompare
+  }
+
+  const personalA = typeof a.personalNo === "number" ? a.personalNo : Number.POSITIVE_INFINITY
+  const personalB = typeof b.personalNo === "number" ? b.personalNo : Number.POSITIVE_INFINITY
+  if (personalA !== personalB) {
+    return personalA - personalB
+  }
+
+  return a.name.localeCompare(b.name, "ko", { sensitivity: "base" })
 }
