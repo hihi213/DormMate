@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.time.OffsetDateTime;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 
 import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.auth.domain.UserSession;
@@ -43,7 +47,7 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
 
         UserSession expired = new UserSession();
         expired.setDormUser(admin);
-        expired.setRefreshToken("expired-token");
+        expired.setRefreshTokenHash(hashToken("expired-token"));
         OffsetDateTime issuedAt = OffsetDateTime.now().minusDays(10);
         expired.setIssuedAt(issuedAt);
         expired.setExpiresAt(issuedAt.plusDays(1));
@@ -52,13 +56,13 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
 
         var response = authService.login(new LoginRequest("admin", "password", "  ios-device-1234567890   "));
 
-        UserSession freshSession = userSessionRepository.findByRefreshToken(response.tokens().refreshToken()).orElseThrow();
+        UserSession freshSession = userSessionRepository.findByRefreshTokenHash(hashToken(response.tokens().refreshToken())).orElseThrow();
         assertThat(freshSession.getDeviceId()).isEqualTo("ios-device-1234567890");
         assertThat(freshSession.getRevokedAt()).isNull();
         assertThat(freshSession.getExpiresAt()).isAfter(freshSession.getIssuedAt().plusDays(6));
         assertThat(freshSession.getExpiresAt()).isBefore(freshSession.getIssuedAt().plusDays(8));
 
-        UserSession revoked = userSessionRepository.findByRefreshToken("expired-token").orElseThrow();
+        UserSession revoked = userSessionRepository.findByRefreshTokenHash(hashToken("expired-token")).orElseThrow();
         assertThat(revoked.getRevokedAt()).isNotNull();
         assertThat(revoked.getRevokedReason()).isEqualTo("EXPIRED");
     }
@@ -74,8 +78,18 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
         );
         assertThat(exception.getReason()).isEqualTo("REFRESH_TOKEN_DEVICE_MISMATCH");
 
-        UserSession revoked = userSessionRepository.findByRefreshToken(refreshToken).orElseThrow();
+        UserSession revoked = userSessionRepository.findByRefreshTokenHash(hashToken(refreshToken)).orElseThrow();
         assertThat(revoked.getRevokedReason()).isEqualTo("DEVICE_MISMATCH");
         assertThat(revoked.getRevokedAt()).isNotNull();
+    }
+
+    private String hashToken(String token) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            byte[] hashed = digest.digest(token.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(hashed);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Failed to hash token in test", e);
+        }
     }
 }

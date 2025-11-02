@@ -75,6 +75,90 @@ const INSPECTION_STATUS_LABEL: Record<AdminInspectionSession["status"], string> 
   CANCELED: "취소됨",
 }
 
+type ApiErrorLike = Error & { code?: string; status?: number }
+
+const REALLOCATION_ERROR_MESSAGES: Record<string, string> = {
+  COMPARTMENT_IN_USE: "잠금 또는 검사 중인 칸이 포함되어 있어 재배분할 수 없습니다. 먼저 상태를 해제한 뒤 다시 시도하세요.",
+  ROOM_NOT_ON_FLOOR: "선택한 호실이 해당 층에 존재하지 않습니다.",
+  COMPARTMENT_NOT_ON_FLOOR: "다른 층에 속한 냉장고 칸이 포함되어 있습니다.",
+  COMPARTMENT_NOT_FOUND: "선택한 냉장고 칸 정보를 찾을 수 없습니다.",
+  COMPARTMENT_UNIT_INACTIVE: "비활성 상태의 냉장고가 포함되어 있습니다. 상태를 활성화한 뒤 다시 시도하세요.",
+  EXCLUSIVE_COMPARTMENT_REQUIRES_ROOMS: "냉장 칸에는 최소 한 개 이상의 호실을 지정해야 합니다.",
+  SHARED_COMPARTMENT_REQUIRES_ROOMS: "냉동 칸에는 층 내 모든 호실을 지정해야 합니다.",
+  SHARED_COMPARTMENT_MUST_INCLUDE_ALL_ROOMS: "냉동 칸에는 층 내 모든 호실을 포함해야 합니다.",
+  DUPLICATE_ROOM_ASSIGNMENT: "동일 호실이 여러 칸에 중복 배정되었습니다.",
+  ROOM_ASSIGNED_MULTIPLE_COMPARTMENTS: "동일 호실이 여러 냉장 칸에 중복 배정되었습니다.",
+  CHILL_COMPARTMENT_MISSING_ASSIGNMENTS: "일부 냉장 칸에 배정된 호실이 없습니다.",
+  ROOM_COVERAGE_MISMATCH: "모든 호실이 균등하게 배정되도록 조정해 주세요.",
+  ROOM_DISTRIBUTION_IMBALANCED: "호실 분배가 균등하지 않습니다. 추천값을 기반으로 조정해 주세요.",
+  CHILL_COMPARTMENT_INACTIVE: "활성 상태의 냉장 칸이 없어 재배분을 진행할 수 없습니다.",
+  ALLOCATIONS_REQUIRED: "재배분할 칸을 선택하고 배정안을 입력해 주세요.",
+  ROOMS_NOT_FOUND_ON_FLOOR: "해당 층에 등록된 호실 정보를 찾을 수 없습니다.",
+  COMPARTMENTS_NOT_FOUND_ON_FLOOR: "해당 층에 배정 가능한 냉장고 칸이 없습니다.",
+}
+
+const REALLOCATION_WARNING_LABELS: Record<string, string> = {
+  INACTIVE_COMPARTMENT: "비활성 칸",
+  COMPARTMENT_LOCKED: "잠김",
+  INSPECTION_IN_PROGRESS: "검사 진행 중",
+}
+
+const INSPECTION_ACTION_LABELS: Record<string, string> = {
+  WARN_INFO_MISMATCH: "정보 불일치 경고",
+  WARN_STORAGE_POOR: "보관 상태 경고",
+  DISPOSE_EXPIRED: "유통기한 폐기",
+  UNREGISTERED_DISPOSE: "미등록 물품 폐기",
+  PASS: "정상",
+}
+
+function getErrorCode(error: unknown): string | undefined {
+  if (error && typeof error === "object" && "code" in error) {
+    const code = (error as ApiErrorLike).code
+    return typeof code === "string" ? code : undefined
+  }
+  return undefined
+}
+
+function getErrorStatus(error: unknown): number | undefined {
+  if (error && typeof error === "object" && "status" in error) {
+    const status = (error as ApiErrorLike).status
+    return typeof status === "number" ? status : undefined
+  }
+  return undefined
+}
+
+function resolveReallocationErrorMessage(error: unknown): string {
+  const fallback =
+    error instanceof Error && error.message ? error.message : "재배분 처리 중 오류가 발생했습니다."
+  const code = getErrorCode(error)
+  const status = getErrorStatus(error)
+  if (status === 401 || code === "UNAUTHORIZED") {
+    return "관리자 인증이 필요하거나 세션이 만료되었습니다. 다시 로그인한 뒤 시도해 주세요."
+  }
+  if (status === 403 || code === "FORBIDDEN") {
+    return "재배분 기능은 관리자 권한이 필요합니다. 권한을 확인한 뒤 요청을 다시 시도해 주세요."
+  }
+  if (!code) {
+    return fallback
+  }
+  return REALLOCATION_ERROR_MESSAGES[code] ?? `${fallback} (${code})`
+}
+
+function resolveDeletedBundlesError(error: unknown): string {
+  const fallback =
+    error instanceof Error && error.message ? error.message : "삭제된 포장 이력을 불러오지 못했습니다."
+  const code = getErrorCode(error)
+  const status = getErrorStatus(error)
+  if (status === 403 || code === "FORBIDDEN") {
+    return "삭제 이력은 관리자만 열람할 수 있습니다."
+  }
+  return code ? `${fallback} (${code})` : fallback
+}
+
+function formatInspectionActionLabel(action: string): string {
+  return INSPECTION_ACTION_LABELS[action] ?? action
+}
+
 function formatDateTime(value?: string | null, fallback = "정보 없음") {
   if (!value) return fallback
   try {
@@ -298,13 +382,18 @@ export default function AdminFridgePage() {
           error: message,
           items: [],
         }))
+        toast({
+          title: "검사 기록을 불러오지 못했습니다.",
+          description: message,
+          variant: "destructive",
+        })
       }
     }
     void load()
     return () => {
       active = false
     }
-  }, [selectedSlotId, inspectionState.status])
+  }, [selectedSlotId, inspectionState.status, toast])
 
   const stats = useMemo(() => {
     if (slots.length === 0) {
@@ -378,10 +467,7 @@ export default function AdminFridgePage() {
         response,
       }))
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message
-          : "삭제된 포장 이력을 불러오는 중 오류가 발생했습니다."
+      const message = resolveDeletedBundlesError(error)
       setDeletedState((prev) => ({
         ...prev,
         loading: false,
@@ -447,9 +533,13 @@ export default function AdminFridgePage() {
         setReallocationSelections(initialSelections)
       } catch (error) {
         if (!active) return
-        const message =
-          error instanceof Error ? error.message : "재배분 추천안을 불러오는 중 오류가 발생했습니다."
+        const message = resolveReallocationErrorMessage(error)
         setReallocationError(message)
+        toast({
+          title: "재배분 추천을 불러오지 못했습니다.",
+          description: message,
+          variant: "destructive",
+        })
       } finally {
         if (active) setReallocationLoading(false)
       }
@@ -481,8 +571,7 @@ export default function AdminFridgePage() {
       setReallocationSelections({})
       await loadSlots(selectedFloor)
     } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "재배분 적용 중 오류가 발생했습니다."
+      const message = resolveReallocationErrorMessage(error)
       toast({
         title: "재배분 적용 실패",
         description: message,
@@ -510,11 +599,12 @@ export default function AdminFridgePage() {
             <span className="rounded-full bg-emerald-100 p-2">
               <Snowflake className="size-5 text-emerald-600" aria-hidden />
             </span>
-          <div>
-            <h1 className="text-xl font-semibold text-slate-900">냉장고 칸 운영 현황</h1>
-            <p className="text-sm text-slate-500">
-              층별 칸 상태, 검사 결과, 포장 목록을 한 화면에서 확인하고 조치하세요.
-            </p>
+            <div>
+              <h1 className="text-xl font-semibold text-slate-900">냉장고 칸 운영 현황</h1>
+              <p className="text-sm text-slate-500">
+                층별 칸 상태, 검사 결과, 포장 목록을 한 화면에서 확인하고 조치하세요.
+              </p>
+            </div>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -657,12 +747,15 @@ export default function AdminFridgePage() {
                               <span>
                                 추천 배정: <span className="font-medium text-slate-700">{recommendedNumbers}</span>
                               </span>
-                              {warnings.map((warning) => (
-                                <Badge key={warning} variant="destructive" className="gap-1">
-                                  <AlertTriangle className="size-3" aria-hidden />
-                                  {warning}
-                                </Badge>
-                              ))}
+                              {warnings.map((warning) => {
+                                const label = REALLOCATION_WARNING_LABELS[warning] ?? warning
+                                return (
+                                  <Badge key={warning} variant="destructive" className="gap-1">
+                                    <AlertTriangle className="size-3" aria-hidden />
+                                    {label}
+                                  </Badge>
+                                )
+                              })}
                             </div>
                           </div>
                         )
@@ -1213,7 +1306,7 @@ export default function AdminFridgePage() {
                                 <AlertCircle className="size-3 text-rose-500" aria-hidden />
                                 폐기 {inspection.disposalCount}
                               </span>
-                              <span>PASS {inspection.passCount}</span>
+                              <span className="flex items-center gap-1">정상 {inspection.passCount}</span>
                             </div>
                             {inspection.summary.length > 0 ? (
                               <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
@@ -1222,12 +1315,26 @@ export default function AdminFridgePage() {
                                     key={`${inspection.sessionId}-${entry.action}`}
                                     className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
                                   >
-                                    <p className="font-medium text-slate-700">{entry.action}</p>
+                                    <p className="font-medium text-slate-700">
+                                      {formatInspectionActionLabel(entry.action)}
+                                    </p>
                                     <p>{entry.count}건</p>
                                   </div>
                                 ))}
                               </div>
                             ) : null}
+                            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                              <Button
+                                asChild
+                                variant="outline"
+                                size="sm"
+                                className="h-8 px-3 text-xs"
+                              >
+                                <Link href={`/admin/audit?module=fridge&sessionId=${inspection.sessionId}`}>
+                                  감사 로그 이동
+                                </Link>
+                              </Button>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -1242,9 +1349,8 @@ export default function AdminFridgePage() {
           </div>
         )}
       </section>
-      </div>
-      </div>
-      <aside
+    </div>
+    <aside
         data-admin-slot="rail"
         className="space-y-4"
         aria-label="냉장고 운영 퀵 액션"
@@ -1322,7 +1428,7 @@ export default function AdminFridgePage() {
             </Button>
           </section>
         ) : null}
-      </aside>
-    </Fragment>
+    </aside>
+  </Fragment>
   )
 }

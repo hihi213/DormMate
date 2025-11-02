@@ -14,12 +14,12 @@ import org.springframework.data.repository.query.Param;
 public interface UserSessionRepository extends JpaRepository<UserSession, UUID> {
 
     @Modifying
-    @Query("update UserSession us set us.revokedAt = :revokedAt, us.revokedReason = :reason where us.refreshToken = :refreshToken")
-    int revokeByRefreshToken(@Param("refreshToken") String refreshToken,
+    @Query("update UserSession us set us.revokedAt = :revokedAt, us.revokedReason = :reason where us.refreshTokenHash = :refreshTokenHash")
+    int revokeByRefreshTokenHash(@Param("refreshTokenHash") String refreshTokenHash,
                              @Param("revokedAt") OffsetDateTime revokedAt,
                              @Param("reason") String reason);
 
-    Optional<UserSession> findByRefreshToken(String refreshToken);
+    Optional<UserSession> findByRefreshTokenHash(String refreshTokenHash);
 
     @Modifying
     @Query("""

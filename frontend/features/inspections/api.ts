@@ -272,7 +272,7 @@ type CreateInspectionSchedulePayload = {
 
 export async function createInspectionSchedule(
   payload: CreateInspectionSchedulePayload,
-): Promise<InspectionSchedule> {
+): Promise<InspectionSchedule | null> {
   const body = {
     scheduledAt: payload.scheduledAt,
     title: payload.title ?? undefined,
@@ -282,10 +282,10 @@ export async function createInspectionSchedule(
     method: "POST",
     body,
   })
-  if (error || !data) {
-    throw new Error(error?.message ?? "검사 일정을 생성하지 못했습니다.")
+  if (error) {
+    throw new Error(error.message ?? "검사 일정을 생성하지 못했습니다.")
   }
-  return mapScheduleDto(data)
+  return data ? mapScheduleDto(data) : null
 }
 
 type UpdateInspectionSchedulePayload = {
@@ -301,7 +301,7 @@ type UpdateInspectionSchedulePayload = {
 export async function updateInspectionSchedule(
   scheduleId: string,
   payload: UpdateInspectionSchedulePayload,
-): Promise<InspectionSchedule> {
+): Promise<InspectionSchedule | null> {
   const body: Record<string, unknown> = {}
   if (payload.scheduledAt) body.scheduledAt = payload.scheduledAt
   if (payload.title !== undefined) body.title = payload.title ?? null
@@ -315,10 +315,10 @@ export async function updateInspectionSchedule(
     method: "PATCH",
     body,
   })
-  if (error || !data) {
-    throw new Error(error?.message ?? "검사 일정을 수정하지 못했습니다.")
+  if (error) {
+    throw new Error(error.message ?? "검사 일정을 수정하지 못했습니다.")
   }
-  return mapScheduleDto(data)
+  return data ? mapScheduleDto(data) : null
 }
 
 export async function deleteInspectionSchedule(scheduleId: string): Promise<void> {
@@ -327,6 +327,9 @@ export async function deleteInspectionSchedule(scheduleId: string): Promise<void
     parseResponseAs: "none",
   })
   if (error) {
+    if (error.status === 404 || error.code === "SCHEDULE_NOT_FOUND") {
+      return
+    }
     throw new Error(error.message ?? "검사 일정을 삭제하지 못했습니다.")
   }
 }

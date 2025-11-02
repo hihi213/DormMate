@@ -65,6 +65,7 @@
 - **세부 작업**
   - `user_session` 테이블에 `device_id` 컬럼과 활성 인덱스 추가(`V12__add_user_session_device_id.sql`), 엔터티/리포지토리 갱신.
   - `AuthService`에서 디바이스 ID 정규화·저장, 만료 세션 일괄 `EXPIRED` 처리, 기기 불일치 시 세션을 `DEVICE_MISMATCH`로 즉시 폐기하도록 개편.
+  - 리프레시 토큰을 SHA-256 해시로 저장하고 dev/prod 환경의 TTL을 7일로 통일해 재사용·유출 위험을 낮춤.
   - `ResponseStatusException` 발생 시 세션 폐기가 롤백되지 않도록 트랜잭션 전략(noRollbackFor) 조정 및 신규 동작 검증용 통합 테스트 추가.
   - 프런트 로그인/가드 UI에서 데모 계정 자동 로그인 요소를 제거하고 백엔드 `/auth/login` 흐름만 노출하도록 정비(`frontend/features/auth/components/login-panel.tsx`, `frontend/features/auth/components/auth-guard.tsx` 등).
 - **테스트**

@@ -6,6 +6,10 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.Objects;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 
 import com.dormmate.backend.modules.auth.presentation.dto.LoginRequest;
 import com.dormmate.backend.modules.auth.presentation.dto.LoginResponse;
@@ -40,6 +44,8 @@ public class AuthService {
     private static final String REASON_DEVICE_MISMATCH = "DEVICE_MISMATCH";
     private static final String REASON_USER_INACTIVE = "USER_INACTIVE";
     private static final int DEVICE_ID_MAX_LENGTH = 100;
+    private static final HexFormat HEX_FORMAT = HexFormat.of();
+    private static final String REFRESH_TOKEN_HASH_ALGORITHM = "SHA-256";
 
     private final DormUserRepository dormUserRepository;
     private final UserRoleRepository userRoleRepository;
@@ -84,10 +90,11 @@ public class AuthService {
         revokeExpiredSessions(user.getId(), now);
 
         String refreshToken = UUID.randomUUID().toString();
+        String refreshTokenHash = hashRefreshToken(refreshToken);
         String deviceId = normalizeDeviceId(request.deviceId());
 
         TokenPairResponse tokens = jwtTokenService.issueTokenPair(user.getId(), user.getLoginId(), roleCodes, refreshToken);
-        persistSession(user, refreshToken, tokens, deviceId);
+        persistSession(user, refreshTokenHash, tokens, deviceId);
 
         UserProfileResponse profile = buildUserProfile(user, roleCodes);
         return new LoginResponse(tokens, profile);
@@ -95,7 +102,9 @@ public class AuthService {
 
     public LoginResponse refresh(RefreshRequest request) {
         OffsetDateTime now = OffsetDateTime.now(clock);
-        UserSession session = userSessionRepository.findByRefreshToken(request.refreshToken())
+        String requestRefreshTokenHash = hashRefreshToken(request.refreshToken());
+
+        UserSession session = userSessionRepository.findByRefreshTokenHash(requestRefreshTokenHash)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN"));
 
         if (session.getRevokedAt() != null) {
@@ -127,10 +136,11 @@ public class AuthService {
 
         List<String> roleCodes = extractActiveRoleCodes(user.getId());
         String refreshToken = UUID.randomUUID().toString();
+        String refreshTokenHash = hashRefreshToken(refreshToken);
         String effectiveDeviceId = requestDeviceId != null ? requestDeviceId : sessionDeviceId;
 
         TokenPairResponse tokens = jwtTokenService.issueTokenPair(user.getId(), user.getLoginId(), roleCodes, refreshToken);
-        persistSession(user, refreshToken, tokens, effectiveDeviceId);
+        persistSession(user, refreshTokenHash, tokens, effectiveDeviceId);
 
         UserProfileResponse profile = buildUserProfile(user, roleCodes);
         return new LoginResponse(tokens, profile);
@@ -138,7 +148,8 @@ public class AuthService {
 
     public void logout(LogoutRequest request) {
         OffsetDateTime now = OffsetDateTime.now(clock);
-        int updated = userSessionRepository.revokeByRefreshToken(request.refreshToken(), now, REASON_LOGOUT);
+        String refreshTokenHash = hashRefreshToken(request.refreshToken());
+        int updated = userSessionRepository.revokeByRefreshTokenHash(refreshTokenHash, now, REASON_LOGOUT);
         if (updated == 0) {
             // 기등록되지 않은 토큰도 동일한 응답을 반환해 토큰 유효 여부가 노출되지 않도록 한다.
             return;
@@ -198,13 +209,13 @@ public class AuthService {
         );
     }
 
-    private void persistSession(DormUser user, String refreshToken, TokenPairResponse tokens, String deviceId) {
+    private void persistSession(DormUser user, String refreshTokenHash, TokenPairResponse tokens, String deviceId) {
         OffsetDateTime issuedAt = tokens.issuedAt();
         OffsetDateTime refreshExpiry = issuedAt.plusSeconds(tokens.refreshExpiresIn());
 
         UserSession session = new UserSession();
         session.setDormUser(user);
-        session.setRefreshToken(refreshToken);
+        session.setRefreshTokenHash(refreshTokenHash);
         session.setIssuedAt(issuedAt);
         session.setExpiresAt(refreshExpiry);
         session.setDeviceId(deviceId);
@@ -214,6 +225,16 @@ public class AuthService {
 
     private void revokeExpiredSessions(UUID userId, OffsetDateTime now) {
         userSessionRepository.revokeExpiredSessions(userId, now, now, REASON_EXPIRED);
+    }
+
+    private String hashRefreshToken(String refreshToken) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance(REFRESH_TOKEN_HASH_ALGORITHM);
+            byte[] hashed = digest.digest(refreshToken.getBytes(StandardCharsets.UTF_8));
+            return HEX_FORMAT.formatHex(hashed);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Failed to initialize refresh token hash algorithm", e);
+        }
     }
 
     private String normalizeDeviceId(String rawDeviceId) {
