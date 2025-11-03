@@ -2,7 +2,7 @@
 # 멀티스테이지 빌드로 최적화된 이미지 생성
 
 # 빌드 스테이지
-FROM gradle:8.9-jdk21-alpine AS builder
+FROM gradle:8.9.0-jdk21 AS builder
 
 # 작업 디렉토리 설정
 WORKDIR /app
@@ -21,10 +21,10 @@ RUN ./gradlew dependencies --no-daemon
 COPY src/ src/
 
 # 애플리케이션 빌드
-RUN ./gradlew build -x test --no-daemon
+RUN ./gradlew build -x test -x generateGitProperties --no-daemon
 
 # 실행 스테이지
-FROM openjdk:21-jre-slim
+FROM eclipse-temurin:21-jre-jammy
 
 # 작업 디렉토리 설정
 WORKDIR /app
