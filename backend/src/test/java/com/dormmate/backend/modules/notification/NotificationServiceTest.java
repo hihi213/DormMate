@@ -10,12 +10,14 @@ import static org.mockito.Mockito.when;
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
 import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.auth.domain.DormUserStatus;
+import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
 import com.dormmate.backend.modules.inspection.domain.InspectionAction;
 import com.dormmate.backend.modules.inspection.domain.InspectionActionType;
 import com.dormmate.backend.modules.inspection.domain.InspectionSession;
@@ -43,6 +45,9 @@ class NotificationServiceTest {
     @Mock
     private NotificationPreferenceRepository notificationPreferenceRepository;
 
+    @Mock
+    private DormUserRepository dormUserRepository;
+
     private NotificationService notificationService;
     private Clock clock;
 
@@ -51,7 +56,12 @@ class NotificationServiceTest {
     @BeforeEach
     void setUp() {
         clock = Clock.fixed(OffsetDateTime.parse("2025-01-01T00:00:00Z").toInstant(), ZoneOffset.UTC);
-        notificationService = new NotificationService(notificationRepository, notificationPreferenceRepository, clock);
+        notificationService = new NotificationService(
+                notificationRepository,
+                notificationPreferenceRepository,
+                dormUserRepository,
+                clock
+        );
 
         targetUser = new DormUser();
         targetUser.setLoginId("alice");
@@ -92,7 +102,11 @@ class NotificationServiceTest {
         assertThat(saved.getUser().getId()).isEqualTo(targetUser.getId());
         assertThat(saved.getTitle()).contains("검사 결과");
         assertThat(saved.getBody()).contains("경고 1건").contains("폐기 1건");
+        assertThat(saved.getCorrelationId()).isEqualTo(sessionId);
         assertThat(saved.getMetadata()).containsEntry("sessionId", sessionId);
+        assertThat(saved.getMetadata()).containsEntry("actionIds", java.util.List.of());
+        assertThat(saved.getMetadata()).containsEntry("actionItemIds", java.util.List.of());
+        assertThat(saved.getMetadata()).containsEntry("penaltyHistoryIds", java.util.List.of());
         assertThat(saved.getTtlAt()).isAfter(OffsetDateTime.now(clock));
     }
 
@@ -114,6 +128,32 @@ class NotificationServiceTest {
         notificationService.sendInspectionResultNotifications(session);
 
         verify(notificationRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("알림 기본 선호에는 검사/임박/만료 종류가 포함된다")
+    void getPreferencesIncludesAllKindsWithDefaults() {
+        UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000303");
+        when(notificationPreferenceRepository.findByIdUserId(userId)).thenReturn(List.of());
+
+        NotificationService.NotificationPreferenceView view = notificationService.getPreferences(userId);
+
+        assertThat(view.items()).extracting(NotificationService.NotificationPreferenceItem::kindCode)
+                .containsExactlyInAnyOrder("FRIDGE_RESULT", NotificationService.KIND_FRIDGE_EXPIRY, NotificationService.KIND_FRIDGE_EXPIRED);
+
+        NotificationService.NotificationPreferenceItem expiryPref = view.items().stream()
+                .filter(item -> item.kindCode().equals(NotificationService.KIND_FRIDGE_EXPIRY))
+                .findFirst()
+                .orElseThrow();
+        assertThat(expiryPref.enabled()).isTrue();
+        assertThat(expiryPref.allowBackground()).isFalse();
+
+        NotificationService.NotificationPreferenceItem expiredPref = view.items().stream()
+                .filter(item -> item.kindCode().equals(NotificationService.KIND_FRIDGE_EXPIRED))
+                .findFirst()
+                .orElseThrow();
+        assertThat(expiredPref.enabled()).isTrue();
+        assertThat(expiredPref.allowBackground()).isTrue();
     }
 
     private InspectionSession buildSession(UUID id, InspectionAction... actions) {

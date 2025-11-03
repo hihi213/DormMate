@@ -21,6 +21,7 @@ export type Slot = {
   lockedUntil?: string | null
   capacity?: number | null
   displayName?: string | null
+  occupiedCount?: number | null
 }
 
 export type Owner = "me" | "other"
@@ -123,7 +124,7 @@ export type FridgeStats = {
   byStatus: Record<ItemStatus, number>
 }
 
-export type InspectionStatus = "IN_PROGRESS" | "SUBMITTED" | "CANCELED"
+export type InspectionStatus = "IN_PROGRESS" | "SUBMITTED" | "CANCELED" | "CANCELLED"
 
 export type InspectionAction = "PASS" | "WARNING" | "DISCARD" | "DISCARD_WITH_PENALTY"
 

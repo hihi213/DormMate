@@ -1,443 +1,282 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState, type ChangeEvent, type FormEvent } from "react"
-import { useRouter } from "next/navigation"
-import { ClipboardCheck, ListChecks, ShieldCheck, Loader2 } from "lucide-react"
+import Link from "next/link"
+import {
+  AlarmClockCheck,
+  AlertTriangle,
+  ArrowUpRight,
+  BellDot,
+  ClipboardList,
+} from "lucide-react"
 
-import BottomNav from "@/components/bottom-nav"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import AuthGuard from "@/features/auth/components/auth-guard"
-import { getCurrentUser, logout as doLogout, subscribeAuth, type AuthUser } from "@/lib/auth"
-import { SlotSelector } from "@/features/fridge/components/slot-selector"
-import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { useToast } from "@/hooks/use-toast"
-import {
-  fetchFridgeSlots,
-  updateFridgeCompartment,
-} from "@/features/fridge/api"
-import type { ResourceStatus, Slot, UpdateCompartmentConfigPayload } from "@/features/fridge/types"
-import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { cn } from "@/lib/utils"
+import { getCurrentUser } from "@/lib/auth"
+import { useAdminDashboard } from "@/features/admin/hooks/use-admin-dashboard"
 
-const SCHEDULE_STORAGE_KEY = "fridge-inspections-schedule-v1"
-const HISTORY_STORAGE_KEY = "fridge-inspections-history-v1"
-
-type Schedule = {
+type WatchlistItem = {
   id: string
-  dateISO: string
-  title?: string
-  notes?: string
-  completed?: boolean
-  completedAt?: string
-  completedBy?: string
-  summary?: { passed: number; warned: number; discarded: number }
+  category: "승인 필요" | "조치 필요" | "시스템 경보"
+  title: string
+  due: string
+  owner: string
+  link: string
+  severity: "high" | "medium" | "low"
 }
 
-type HistoryRecord = {
-  id: string
-  dateISO: string
-  passed?: number
-  warned?: number
-  discarded?: number
-  notes?: string
-}
+const defaultWatchlist: WatchlistItem[] = [
+  {
+    id: "fridge-lock",
+    category: "조치 필요",
+    title: "A동 냉장고 2칸 잠금 해제 요청",
+    due: "오늘 14:00 마감",
+    owner: "3층 층별장",
+    link: "/admin/fridge?unit=A&compartment=2",
+    severity: "high",
+  },
+  {
+    id: "penalty-review",
+    category: "승인 필요",
+    title: "벌점 3건 승격 검토",
+    due: "오늘 18:00",
+    owner: "운영 관리자",
+    link: "/admin/users#penalty-summary",
+    severity: "medium",
+  },
+  {
+    id: "laundry-incident",
+    category: "시스템 경보",
+    title: "세탁실 1호기 오류 감지",
+    due: "모니터링 중",
+    owner: "설비팀",
+    link: "/admin/laundry",
+    severity: "low",
+  },
+]
 
-const ROLE_LABEL = {
-  RESIDENT: "거주자",
-  FLOOR_MANAGER: "층별장",
-  ADMIN: "관리자",
-} as const
+const moduleSnapshots = [
+  {
+    id: "fridge",
+    label: "냉장고",
+    summary: "층별 임박 12건 · 검사 예정 3건",
+    metrics: [
+      { label: "임박 물품", value: "12", trend: "+2", tone: "warn" as const },
+      { label: "폐기 조치", value: "3", trend: "-1", tone: "critical" as const },
+      { label: "검사 진행률", value: "78%", trend: "+8", tone: "ok" as const },
+      { label: "알림 실패", value: "1", trend: "3건", tone: "critical" as const },
+    ],
+    link: "/admin/fridge",
+    memo: "오늘 14:00 검사 세션 잠금 해제 예정",
+  },
+  {
+    id: "laundry",
+    label: "세탁실",
+    summary: "가동률 64% · 노쇼 신고 2건",
+    metrics: [
+      { label: "사용 중 기기", value: "7/12", trend: "-1", tone: "ok" as const },
+      { label: "노쇼 신고", value: "2", trend: "+1", tone: "warn" as const },
+      { label: "정지 기기", value: "1", trend: "=", tone: "critical" as const },
+      { label: "알림 실패", value: "0", trend: "0건", tone: "ok" as const },
+    ],
+    link: "/admin/laundry",
+    memo: "1호기 히터 점검 필요 — 설비팀 배정 완료",
+  },
+  {
+    id: "library",
+    label: "도서관",
+    summary: "예약 대기 9건 · 연체 대응 3건",
+    metrics: [
+      { label: "대출 중", value: "128", trend: "+4", tone: "ok" as const },
+      { label: "연체", value: "3", trend: "=", tone: "warn" as const },
+      { label: "예약 대기", value: "9", trend: "+2", tone: "ok" as const },
+      { label: "알림 실패", value: "2", trend: "5건", tone: "critical" as const },
+    ],
+    link: "/admin/library",
+    memo: "이번 주 인기 도서 5권 재입고 예정",
+  },
+  {
+    id: "multipurpose",
+    label: "다목적실",
+    summary: "이용률 72% · 노쇼 경고 1건",
+    metrics: [
+      { label: "금일 예약", value: "18", trend: "+2", tone: "ok" as const },
+      { label: "노쇼", value: "1", trend: "=", tone: "warn" as const },
+      { label: "제재 중", value: "2", trend: "=", tone: "medium" as const },
+      { label: "알림 실패", value: "0", trend: "0건", tone: "ok" as const },
+    ],
+    link: "/admin/multipurpose",
+    memo: "18시 예약 시간대 혼잡 — 층별 공지 발송 예정",
+  },
+]
+
+type MetricTone = "ok" | "warn" | "critical" | "medium"
+
+const toneClassMap: Record<MetricTone, string> = {
+  ok: "text-emerald-600",
+  warn: "text-amber-600",
+  critical: "text-red-600",
+  medium: "text-sky-600",
+}
 
 export default function AdminPage() {
-  return (
-    <AuthGuard>
-      <AdminInner />
-      <BottomNav />
-    </AuthGuard>
-  )
+  return <AdminDashboard />
 }
 
-function AdminInner() {
-  const router = useRouter()
-  const [authUser, setAuthUser] = useState<AuthUser | null>(getCurrentUser())
-  const [schedule, setSchedule] = useState<Schedule[]>([])
-  const [history, setHistory] = useState<HistoryRecord[]>([])
-  const [mounted, setMounted] = useState(false)
-  const { toast } = useToast()
-  const [slots, setSlots] = useState<Slot[]>([])
-  const [slotsLoading, setSlotsLoading] = useState(false)
-  const [selectedSlotId, setSelectedSlotId] = useState<string>("")
-  const [formState, setFormState] = useState<{ maxBundleCount: string; status: ResourceStatus }>({
-    maxBundleCount: "",
-    status: "ACTIVE",
-  })
-  const [savingSlot, setSavingSlot] = useState(false)
+function AdminDashboard() {
+  const currentUser = getCurrentUser()
+  const { data, loading } = useAdminDashboard()
 
-  useEffect(() => {
-    setMounted(true)
-    const unsubscribe = subscribeAuth(setAuthUser)
-    return () => unsubscribe()
-  }, [])
-
-  useEffect(() => {
-    if (!mounted) return
-    if (typeof window === "undefined") return
-    try {
-      const rawSchedule = JSON.parse(localStorage.getItem(SCHEDULE_STORAGE_KEY) || "null") as Schedule[] | null
-      if (Array.isArray(rawSchedule)) {
-        setSchedule(rawSchedule)
-      }
-    } catch {
-      setSchedule([])
-    }
-
-    try {
-      const rawHistory = JSON.parse(localStorage.getItem(HISTORY_STORAGE_KEY) || "null") as HistoryRecord[] | null
-      if (Array.isArray(rawHistory)) {
-        setHistory(rawHistory)
-      }
-    } catch {
-      setHistory([])
-    }
-  }, [mounted])
-
-  const isAdmin = authUser?.roles.includes("ADMIN")
-
-  useEffect(() => {
-    if (mounted && authUser && !authUser.roles.includes("ADMIN")) {
-      router.replace("/")
-    }
-  }, [authUser, mounted, router])
-
-  useEffect(() => {
-    if (!mounted || !isAdmin) return
-    let cancelled = false
-    const loadSlots = async () => {
-      try {
-        setSlotsLoading(true)
-        const data = await fetchFridgeSlots()
-        if (cancelled) return
-        setSlots(data)
-        if (!selectedSlotId && data.length > 0) {
-          setSelectedSlotId(data[0].slotId)
-        }
-      } catch (error) {
-        if (cancelled) return
-        console.error("Failed to load compartments", error)
-        toast({
-          title: "칸 정보를 불러오지 못했습니다.",
-          description: "네트워크 상태를 확인한 뒤 다시 시도해 주세요.",
-          variant: "destructive",
-        })
-      } finally {
-        if (!cancelled) {
-          setSlotsLoading(false)
-        }
-      }
-    }
-
-    void loadSlots()
-    return () => {
-      cancelled = true
-    }
-  }, [mounted, isAdmin, toast, selectedSlotId])
-
-  useEffect(() => {
-    if (!selectedSlotId) return
-    const slot = slots.find((candidate) => candidate.slotId === selectedSlotId)
-    if (!slot) return
-    setFormState({
-      maxBundleCount: slot.capacity != null ? String(slot.capacity) : "",
-      status: slot.resourceStatus,
-    })
-  }, [selectedSlotId, slots])
-
-  const upcomingSchedules = useMemo(
-    () =>
-      schedule
-        .filter((entry) => !entry.completed)
-        .slice()
-        .sort((a, b) => a.dateISO.localeCompare(b.dateISO)),
-    [schedule],
-  )
-
-  const entryTime = (entry: Schedule) => entry.completedAt ?? entry.dateISO
-
-  const completedSchedules = useMemo(
-    () =>
-      schedule
-        .filter((entry) => entry.completed)
-        .slice()
-        .sort((a, b) => entryTime(b).localeCompare(entryTime(a))),
-    [schedule],
-  )
-
-  const selectedSlot = useMemo(() => slots.find((slot) => slot.slotId === selectedSlotId) ?? null, [slots, selectedSlotId])
-  const statusOptions: ResourceStatus[] = ["ACTIVE", "SUSPENDED", "REPORTED", "RETIRED"]
-  const statusLabel = useCallback((status: ResourceStatus) => {
-    switch (status) {
-      case "ACTIVE":
-        return "사용 가능"
-      case "SUSPENDED":
-        return "점검 중"
-      case "REPORTED":
-        return "이상 신고"
-      case "RETIRED":
-        return "퇴역"
-      default:
-        return status
-    }
-  }, [])
-
-  const handleSlotChange = useCallback((slotId: string) => {
-    setSelectedSlotId(slotId)
-  }, [])
-
-  const handleCapacityChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
-    const numericOnly = event.target.value.replace(/[^0-9]/g, "")
-    setFormState((prev) => ({ ...prev, maxBundleCount: numericOnly }))
-  }, [])
-
-  const handleStatusChange = useCallback((event: ChangeEvent<HTMLSelectElement>) => {
-    setFormState((prev) => ({ ...prev, status: event.target.value as ResourceStatus }))
-  }, [])
-
-  const handleCompartmentSubmit = useCallback(
-    async (event: FormEvent<HTMLFormElement>) => {
-      event.preventDefault()
-      if (!selectedSlotId) {
-        toast({
-          title: "칸을 선택해 주세요.",
-          variant: "destructive",
-        })
-        return
-      }
-
-      const payload: UpdateCompartmentConfigPayload = {}
-      if (formState.maxBundleCount.trim().length > 0) {
-        const parsed = Number(formState.maxBundleCount)
-        if (!Number.isFinite(parsed) || parsed <= 0) {
-          toast({
-            title: "허용량을 확인해 주세요.",
-            description: "허용량은 1 이상의 숫자여야 합니다.",
-            variant: "destructive",
-          })
-          return
-        }
-        payload.maxBundleCount = Math.floor(parsed)
-      }
-      payload.status = formState.status
-
-      try {
-        setSavingSlot(true)
-        const updated = await updateFridgeCompartment(selectedSlotId, payload)
-        setSlots((prev) => prev.map((slot) => (slot.slotId === updated.slotId ? updated : slot)))
-        toast({
-          title: "저장되었습니다",
-          description: `${formatSlotDisplayName(updated)} 설정이 갱신되었습니다.`,
-        })
-      } catch (error) {
-        toast({
-          title: "저장 실패",
-          description:
-            error instanceof Error
-              ? error.message
-              : "칸 설정을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요.",
-          variant: "destructive",
-        })
-      } finally {
-        setSavingSlot(false)
-      }
-    },
-    [selectedSlotId, formState.maxBundleCount, formState.status, toast],
-  )
-
-  const handleLogout = useCallback(async () => {
-    await doLogout()
-    router.replace("/")
-  }, [router])
-  if (!isAdmin) {
-    return (
-      <main className="min-h-[100svh] bg-white">
-        <div className="mx-auto max-w-screen-sm px-4 py-16 space-y-6 text-center">
-          <ShieldCheck className="mx-auto h-12 w-12 text-emerald-600" />
-          <h1 className="text-xl font-semibold text-gray-900">관리자 권한이 필요합니다.</h1>
-          <p className="text-sm text-muted-foreground">
-            이 화면은 DormMate 관리자만 접근할 수 있습니다. 권한이 없다면 메인 페이지로 이동해 주세요.
-          </p>
-          <Button onClick={() => router.replace("/")}>메인으로 이동</Button>
-        </div>
-      </main>
-    )
-  }
+  const timeline = data?.timeline ?? []
+  const watchlistItems = defaultWatchlist
 
   return (
-    <main className="min-h-[100svh] bg-white pb-28">
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-        <div className="mx-auto flex max-w-screen-sm items-center justify-between px-4 py-3">
-          <div className="flex items-center gap-2">
-            <ShieldCheck className="h-5 w-5 text-emerald-700" />
-            <div>
-              <p className="text-sm font-medium text-gray-700">DormMate Admin</p>
-              <p className="text-xs text-muted-foreground">{authUser?.name}</p>
-            </div>
+    <>
+      <div data-admin-slot="main" className="space-y-8">
+        <section className="space-y-4">
+          <div className="space-y-1">
+            <h2 className="text-lg font-semibold text-slate-900">모듈 스냅샷</h2>
+            <p className="text-sm text-slate-500">모듈별 핵심 지표와 운영 메모를 확인하고 필요한 화면으로 이동하세요.</p>
           </div>
-          <div className="flex items-center gap-2">
-            <Badge variant="outline">{ROLE_LABEL.ADMIN}</Badge>
-            <Button variant="outline" size="sm" onClick={handleLogout}>
-              로그아웃
-            </Button>
-          </div>
-        </div>
-      </header>
-
-      <div className="mx-auto flex max-w-screen-sm flex-col gap-6 px-4 py-6">
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-              냉장고 자원 관리
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {slotsLoading ? (
-              <p className="text-sm text-muted-foreground">칸 정보를 불러오는 중입니다…</p>
-            ) : slots.length === 0 ? (
-              <p className="text-sm text-muted-foreground">등록된 냉장고 칸이 없습니다.</p>
-            ) : (
-              <form onSubmit={handleCompartmentSubmit} className="space-y-4">
-                <div className="space-y-2">
-                  <Label className="text-xs text-muted-foreground">보관 칸</Label>
-                  <SlotSelector
-                    value={selectedSlotId}
-                    onChange={handleSlotChange}
-                    slots={slots}
-                    placeholder="칸을 선택하세요"
-                    className="w-full"
-                  />
-                </div>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">허용 포장 수</Label>
-                    <Input
-                      value={formState.maxBundleCount}
-                      onChange={handleCapacityChange}
-                      inputMode="numeric"
-                      pattern="[0-9]*"
-                      placeholder={selectedSlot?.capacity != null ? String(selectedSlot.capacity) : "예: 12"}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label className="text-xs text-muted-foreground">상태</Label>
-                    <select
-                      value={formState.status}
-                      onChange={handleStatusChange}
-                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-                    >
-                      {statusOptions.map((option) => (
-                        <option key={option} value={option}>
-                          {statusLabel(option)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                {selectedSlot && (
-                  <p className="text-xs text-muted-foreground">
-                    {`현재 상태: ${statusLabel(selectedSlot.resourceStatus)} · 허용 포장 수: ${
-                      selectedSlot.capacity != null ? selectedSlot.capacity : "제한 없음"
-                    }`}
-                  </p>
-                )}
-                <div className="flex justify-end">
-                  <Button type="submit" disabled={savingSlot || !selectedSlotId}>
-                    {savingSlot && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
-                    저장
-                  </Button>
-                </div>
-              </form>
-            )}
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-              <ClipboardCheck className="h-4 w-4 text-emerald-700" />
-              예정된 검사
-              <Badge variant="secondary" className="ml-auto">
-                {upcomingSchedules.length}건
-              </Badge>
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {upcomingSchedules.length === 0 ? (
-              <p className="text-sm text-muted-foreground">예정된 검사가 없습니다.</p>
-            ) : (
-              <ul className="space-y-2">
-                {upcomingSchedules.map((entry) => (
-                  <li key={entry.id} className="rounded-md border px-3 py-2">
-                    <div className="text-sm font-medium text-gray-900">{entry.title ?? "검사"}</div>
-                    <div className="text-xs text-muted-foreground">{new Date(entry.dateISO).toLocaleString("ko-KR")}</div>
-                    {entry.notes && <div className="mt-1 text-xs text-muted-foreground">{entry.notes}</div>}
-                  </li>
+          <Tabs defaultValue="fridge" className="w-full">
+            <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
+              <TabsList className="grid h-auto grid-cols-2 gap-2 bg-slate-50 p-4 sm:grid-cols-4">
+                {moduleSnapshots.map((module) => (
+                  <TabsTrigger
+                    key={module.id}
+                    value={module.id}
+                    className="rounded-xl border border-transparent bg-white/70 text-xs font-medium text-slate-600 shadow-sm transition hover:border-emerald-200 hover:text-emerald-700 data-[state=active]:border-emerald-200 data-[state=active]:bg-emerald-50/80 data-[state=active]:text-emerald-700 sm:text-sm"
+                  >
+                    {module.label}
+                  </TabsTrigger>
                 ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-              <ListChecks className="h-4 w-4 text-emerald-700" />
-              최근 검사 결과
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            {history.length === 0 ? (
-              <p className="text-sm text-muted-foreground">최근 제출된 검사 결과가 없습니다.</p>
-            ) : (
-              <ul className="space-y-2">
-                {history.slice(0, 3).map((entry) => (
-                  <li key={entry.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2">
-                    <div>
-                      <div className="text-sm font-medium text-gray-900">
-                        {new Date(entry.dateISO).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              </TabsList>
+              {moduleSnapshots.map((module) => (
+                <TabsContent key={module.id} value={module.id} className="p-0">
+                  <div className="space-y-5 border-t border-slate-100 p-6">
+                    <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                      <div>
+                        <CardTitle className="text-base font-semibold text-slate-900">{module.label}</CardTitle>
+                        <CardDescription className="text-sm text-slate-600">{module.summary}</CardDescription>
                       </div>
-                      {entry.notes && <div className="text-xs text-muted-foreground">{entry.notes}</div>}
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={module.link}>
+                          상세 보기
+                          <ArrowUpRight className="ml-1 size-4" aria-hidden />
+                        </Link>
+                      </Button>
                     </div>
-                    <div className="flex gap-1 text-xs">
-                      <Badge variant="outline" className="border-emerald-200 text-emerald-700">
-                        통과 {entry.passed ?? 0}
-                      </Badge>
-                      <Badge variant="outline" className="border-amber-200 text-amber-700">
-                        경고 {entry.warned ?? 0}
-                      </Badge>
-                      <Badge variant="outline" className="border-rose-200 text-rose-700">
-                        폐기 {entry.discarded ?? 0}
-                      </Badge>
+                    <div className="grid gap-4 md:grid-cols-4">
+                      {module.metrics.map((metric) => (
+                        <div key={metric.label} className="space-y-1 rounded-xl border border-slate-100 bg-slate-50/60 p-4">
+                          <p className="text-xs font-medium text-slate-500">{metric.label}</p>
+                          <p className={cn("text-xl font-semibold", toneClassMap[metric.tone])}>{metric.value}</p>
+                          <p className="text-xs text-slate-400">
+                            {metric.label.includes("알림 실패")
+                              ? `재시도 대기 ${metric.trend}`
+                              : `전주 대비 ${metric.trend}`}
+                          </p>
+                        </div>
+                      ))}
                     </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </CardContent>
-        </Card>
+                    <Separator />
+                    <p className="text-sm text-slate-600">{module.memo}</p>
+                  </div>
+                </TabsContent>
+              ))}
+            </div>
+          </Tabs>
+        </section>
 
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-              {"층별장 관리"}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <p className="text-sm text-muted-foreground">
-              층별장 임명 기능은 백엔드 연동이 준비되는 대로 제공될 예정입니다.
-            </p>
-          </CardContent>
-        </Card>
+        <section className="grid gap-6 xl:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold text-slate-900">운영 워치리스트</CardTitle>
+                <CardDescription className="text-sm text-slate-500">지금 처리해야 할 승인/조치/경보 항목입니다.</CardDescription>
+              </div>
+              <Button asChild size="sm" variant="outline">
+                <Link href="/admin/tools">운영 도구 열기</Link>
+              </Button>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {watchlistItems.map((item) => (
+                <Link key={item.id} href={item.link} className="block rounded-xl border border-slate-200 bg-white/80 p-4 transition hover:border-emerald-200 hover:shadow">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className={cn("border-transparent", item.severity === "high" && "bg-red-50 text-red-600", item.severity === "medium" && "bg-amber-50 text-amber-600", item.severity === "low" && "bg-sky-50 text-sky-600")}> 
+                      {item.category}
+                    </Badge>
+                    <span className="text-sm font-semibold text-slate-900">{item.title}</span>
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                    <span>담당: {item.owner}</span>
+                    <span>마감: {item.due}</span>
+                  </div>
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+
+          <Card className="border-slate-200 shadow-sm">
+            <CardHeader className="flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-base font-semibold text-slate-900">최근 이벤트</CardTitle>
+                <CardDescription className="text-sm text-slate-500">지난 24시간 내 주요 이벤트를 확인하세요.</CardDescription>
+              </div>
+              <AlarmClockCheck className="size-5 text-emerald-600" aria-hidden />
+            </CardHeader>
+            <CardContent className="space-y-4 text-sm">
+              {timeline.length === 0 && loading ? (
+                <p className="text-xs text-slate-500">타임라인을 불러오는 중입니다…</p>
+              ) : timeline.length === 0 ? (
+                <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50/60 p-4 text-xs text-slate-500">
+                  표시할 이벤트가 없습니다. 검사/알림/벌점 활동이 기록되면 자동으로 채워집니다.
+                </div>
+              ) : (
+                timeline.map((event) => (
+                  <div key={event.id ?? event.time} className="flex gap-3">
+                    <span className="mt-0.5 min-w-[56px] text-xs font-semibold text-emerald-600">{event.time}</span>
+                    <div className="flex-1 rounded-xl border border-slate-200 bg-white/70 p-3">
+                      <p className="font-medium text-slate-900">{event.title}</p>
+                      <p className="text-xs text-slate-500">{event.detail}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
+          </Card>
+        </section>
+
       </div>
-    </main>
+
+      <div data-admin-slot="rail" className="space-y-6">
+        <section className="space-y-3">
+          <h2 className="text-sm font-semibold text-slate-800">운영 런북</h2>
+          <ul className="space-y-2 text-xs text-slate-600">
+            <li className="flex items-start gap-2">
+              <AlertTriangle className="mt-0.5 size-4 text-amber-500" aria-hidden />
+              <span>
+                <strong className="text-slate-800">데모 데이터 초기화</strong> — `/admin/seed/fridge-demo` 실행 전 운영 DB 여부를 반드시 확인하세요.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <BellDot className="mt-0.5 size-4 text-emerald-500" aria-hidden />
+              <span>
+                <strong className="text-slate-800">임박 알림</strong> — 09:00 배치를 테스트할 때는 알림 정책 탭에서 `테스트 발송`을 먼저 실행하세요.
+              </span>
+            </li>
+            <li className="flex items-start gap-2">
+              <ClipboardList className="mt-0.5 size-4 text-slate-500" aria-hidden />
+              <span>
+                <strong className="text-slate-800">검사 보고</strong> — 제출 요약 이후 감사 로그 탭에서 `냉장고 검사` 프리셋으로 바로 이동할 수 있습니다.
+              </span>
+            </li>
+          </ul>
+        </section>
+      </div>
+    </>
   )
 }

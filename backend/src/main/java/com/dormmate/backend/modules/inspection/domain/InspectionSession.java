@@ -57,6 +57,9 @@ public class InspectionSession extends AbstractTimestampedEntity {
     @Column(name = "submitted_at")
     private OffsetDateTime submittedAt;
 
+    @Column(name = "initial_bundle_count")
+    private Integer initialBundleCount;
+
     @Column(name = "total_bundle_count")
     private Integer totalBundleCount;
 
@@ -130,6 +133,14 @@ public class InspectionSession extends AbstractTimestampedEntity {
 
     public void setSubmittedAt(OffsetDateTime submittedAt) {
         this.submittedAt = submittedAt;
+    }
+
+    public Integer getInitialBundleCount() {
+        return initialBundleCount;
+    }
+
+    public void setInitialBundleCount(Integer initialBundleCount) {
+        this.initialBundleCount = initialBundleCount;
     }
 
     public Integer getTotalBundleCount() {

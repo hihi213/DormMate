@@ -29,7 +29,7 @@ public class UserSession extends AbstractTimestampedEntity {
     private DormUser dormUser;
 
     @Column(name = "refresh_token", nullable = false, unique = true, length = 255)
-    private String refreshToken;
+    private String refreshTokenHash;
 
     @Column(name = "issued_at", nullable = false)
     private OffsetDateTime issuedAt;
@@ -43,6 +43,9 @@ public class UserSession extends AbstractTimestampedEntity {
     @Column(name = "revoked_reason", length = 100)
     private String revokedReason;
 
+    @Column(name = "device_id", length = 100)
+    private String deviceId;
+
     public UUID getId() {
         return id;
     }
@@ -55,12 +58,12 @@ public class UserSession extends AbstractTimestampedEntity {
         this.dormUser = dormUser;
     }
 
-    public String getRefreshToken() {
-        return refreshToken;
+    public String getRefreshTokenHash() {
+        return refreshTokenHash;
     }
 
-    public void setRefreshToken(String refreshToken) {
-        this.refreshToken = refreshToken;
+    public void setRefreshTokenHash(String refreshTokenHash) {
+        this.refreshTokenHash = refreshTokenHash;
     }
 
     public OffsetDateTime getIssuedAt() {
@@ -93,6 +96,14 @@ public class UserSession extends AbstractTimestampedEntity {
 
     public void setRevokedReason(String revokedReason) {
         this.revokedReason = revokedReason;
+    }
+
+    public String getDeviceId() {
+        return deviceId;
+    }
+
+    public void setDeviceId(String deviceId) {
+        this.deviceId = deviceId;
     }
 
     public boolean isActive() {

@@ -1,5 +1,8 @@
 import { defineConfig, devices, type PlaywrightTestConfig } from '@playwright/test';
 
+process.env.NEXT_PUBLIC_FIXTURE = process.env.NEXT_PUBLIC_FIXTURE || '1';
+process.env.NEXT_PUBLIC_API_BASE = process.env.NEXT_PUBLIC_API_BASE || 'http://127.0.0.1:3000/api/__fixtures__/backend';
+
 const isCI = !!process.env.CI;
 const devServerCommand =
   'node ./node_modules/next/dist/bin/next dev --hostname 0.0.0.0 --port 3000';
@@ -12,7 +15,16 @@ const webServerConfig: PlaywrightTestConfig['webServer'] = process.env.PLAYWRIGH
       url: 'http://127.0.0.1:3000',
       reuseExistingServer: !isCI,
       timeout: 120 * 1000,
+      env: {
+        NEXT_PUBLIC_FIXTURE: '1',
+        NEXT_PUBLIC_API_BASE: 'http://127.0.0.1:3000/api/__fixtures__/backend',
+      },
     };
+
+const envWorkerRaw = process.env.PLAYWRIGHT_WORKERS;
+const parsedWorkers = envWorkerRaw ? Number.parseInt(envWorkerRaw, 10) : Number.NaN;
+const hasEnvWorkers = Number.isFinite(parsedWorkers) && parsedWorkers > 0;
+const resolvedWorkers = hasEnvWorkers ? parsedWorkers : isCI ? 3 : undefined;
 
 export default defineConfig({
   testDir: './tests',
@@ -22,7 +34,7 @@ export default defineConfig({
   },
   fullyParallel: true,
   retries: isCI ? 2 : 0,
-  workers: isCI ? 1 : undefined,
+  workers: resolvedWorkers,
   reporter: isCI
     ? [
         ['dot'],
@@ -30,11 +42,13 @@ export default defineConfig({
         ['html', { outputFolder: 'playwright-report', open: 'never' }],
       ]
     : [['list'], ['html', { outputFolder: 'playwright-report', open: 'never' }]],
+  grep: new RegExp(process.env.PLAYWRIGHT_GREP ?? ''),
   use: {
     actionTimeout: 0,
     trace: isCI ? 'retain-on-failure' : 'on-first-retry',
     baseURL,
     video: isCI ? 'on-first-retry' : 'retain-on-failure',
+    storageState: process.env.PLAYWRIGHT_STORAGE_STATE || undefined,
   },
   webServer: webServerConfig,
   projects: [

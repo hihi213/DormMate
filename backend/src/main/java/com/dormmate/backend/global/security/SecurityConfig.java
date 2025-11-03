@@ -48,7 +48,16 @@ public class SecurityConfig {
                         .requestMatchers("/auth/**").permitAll()
                         .requestMatchers("/health", "/healthz", "/readyz").permitAll()
                         .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/actuator/health", "/actuator/health/**").permitAll()
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
+                        .requestMatchers(
+                                "/admin/dashboard",
+                                "/admin/resources",
+                                "/admin/users",
+                                "/admin/policies",
+                                "/admin/fridge/**",
+                                "/admin/seed/**"
+                        ).hasRole("ADMIN")
                         .anyRequest().authenticated()
                 )
                 .exceptionHandling(handler -> handler

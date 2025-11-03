@@ -30,4 +30,20 @@ public final class LabelFormatter {
         }
         return String.format("%03d", Math.min(labelNumber, 999));
     }
+
+    public static int fromSlotLetter(String slotLetter) {
+        if (slotLetter == null || slotLetter.isBlank()) {
+            throw new IllegalArgumentException("slotLetter must not be blank");
+        }
+        String normalized = slotLetter.trim().toUpperCase();
+        int result = 0;
+        for (int i = 0; i < normalized.length(); i++) {
+            char ch = normalized.charAt(i);
+            if (ch < 'A' || ch > 'Z') {
+                throw new IllegalArgumentException("Invalid slot letter: " + slotLetter);
+            }
+            result = result * 26 + (ch - 'A' + 1);
+        }
+        return result - 1;
+    }
 }

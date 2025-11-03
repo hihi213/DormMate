@@ -1,5 +1,5 @@
-import { ensureValidAccessToken, forceRefreshAccessToken } from "@/lib/auth"
-import { ApiError, ApiErrorDictionary, resolveApiError } from "./api-errors"
+import { ensureValidAccessToken, forceRefreshAccessToken, redirectToLogin } from "@/lib/auth"
+import { ApiError, ApiErrorDictionary, ApiErrorTemplate, resolveApiError } from "./api-errors"
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
@@ -11,6 +11,7 @@ export type ApiRequestOptions = Omit<RequestInit, "body" | "method" | "headers">
   headers?: HeadersInit
   parseResponseAs?: ParseMode
   errorMessages?: Partial<ApiErrorDictionary>
+  errorCodeMessages?: Record<string, ApiErrorTemplate>
   baseUrl?: string
   skipAuth?: boolean
 }
@@ -71,6 +72,7 @@ export async function apiClient<T>(path: string, options: ApiRequestOptions = {}
     headers: headersInit,
     parseResponseAs = "json",
     errorMessages,
+    errorCodeMessages,
     baseUrl = DEFAULT_BASE_URL,
     skipAuth = false,
     ...rest
@@ -108,7 +110,10 @@ export async function apiClient<T>(path: string, options: ApiRequestOptions = {}
   }
 
   if (!response.ok) {
-    const error = await resolveApiError(response, errorMessages)
+    const error = await resolveApiError(response, errorMessages, errorCodeMessages)
+    if (response.status === 401 && !skipAuth) {
+      redirectToLogin(undefined, "sessionExpired")
+    }
     return { ok: false, error, response }
   }
 

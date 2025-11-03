@@ -52,6 +52,7 @@ export type FridgeSlotDto = {
   lockedUntil?: string | null
   capacity?: number | null
   displayName?: string | null
+  occupiedCount?: number | null
 }
 
 export type FridgeBundleSummaryDto = {
@@ -100,6 +101,14 @@ export type BundleListResponseDto = {
   totalCount: number
 }
 
+export type FridgeSlotListResponseDto = {
+  items: FridgeSlotDto[]
+  totalCount: number
+  page?: number
+  size?: number
+  totalPages?: number
+}
+
 export function mapSlotFromDto(dto: FridgeSlotDto): Slot {
   const slotLetter = dto.slotLetter && dto.slotLetter.length > 0 ? dto.slotLetter : toSlotLetter(dto.slotIndex)
   return {
@@ -114,6 +123,7 @@ export function mapSlotFromDto(dto: FridgeSlotDto): Slot {
     lockedUntil: dto.lockedUntil ?? null,
     capacity: dto.capacity ?? null,
     displayName: dto.displayName ?? null,
+    occupiedCount: dto.occupiedCount ?? null,
   }
 }
 
@@ -210,16 +220,16 @@ export function toItems(bundles: Bundle[], units: ItemUnit[]): Item[] {
       lastInspectedAt: unit.lastInspectedAt ?? null,
       memo: unit.memo ?? bundle.memo ?? null,
       quantity: unit.quantity ?? null,
-    owner: bundle.owner,
-    ownerId: bundle.ownerId,
-    ownerUserId: bundle.ownerUserId ?? null,
-    ownerDisplayName: bundle.ownerDisplayName ?? null,
-    ownerRoomNumber: bundle.ownerRoomNumber ?? null,
-    bundleMemo: bundle.memo ?? null,
-    freshness: unit.freshness ?? null,
-    priority: unit.priority,
-    createdAt: unit.createdAt,
-    updatedAt: unit.updatedAt,
+      owner: bundle.owner,
+      ownerId: bundle.ownerId,
+      ownerUserId: bundle.ownerUserId ?? null,
+      ownerDisplayName: bundle.ownerDisplayName ?? null,
+      ownerRoomNumber: bundle.ownerRoomNumber ?? null,
+      bundleMemo: bundle.memo ?? null,
+      freshness: unit.freshness ?? null,
+      priority: unit.priority,
+      createdAt: unit.createdAt,
+      updatedAt: unit.updatedAt,
       removedAt: unit.removedAt ?? null,
     }
   })

@@ -7,9 +7,9 @@ DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위�
 ## 주요 스택 & 권장 버전
 
 - **Backend**: Spring Boot 3.3.4, Java 21, Gradle 8.9, Flyway 10.17, PostgreSQL 16
-- **Frontend**: Next.js 14.2.7, React 18.2, TypeScript 5.4, Tailwind CSS 3.4
+- **Frontend**: Next.js 15.5.6, React 18.2, TypeScript 5.6, Tailwind CSS 3.4
 - **Infrastructure**: Docker Compose, Redis 7.2, pgAdmin 4 (8.6)
-- **Tooling**: Node.js 20 LTS, npm 10, 자동화 CLI(`./auto`)
+- **Tooling**: Node.js 22.11 (LTS), npm 10, 자동화 CLI(`./auto`, `.nvmrc` 기반)
 
 세부 요구 사항 및 주의 사항은 프로젝트 루트의 `nogitReadME.md`(버전 관리 제외)에 최신 메모 형태로 정리되어 있습니다.
 
@@ -27,7 +27,7 @@ docker compose up -d
 # 스키마 마이그레이션 적용
 ./auto db migrate
 
-# (최초 1회) 의존성/브라우저 사전 설치
+# (최초 1회) 의존성 사전 설치 (Playwright 필요 시 --with-playwright 추가)
 ./scripts/dev-warmup.sh
 
 # 백엔드 애플리케이션 실행
@@ -39,18 +39,18 @@ cd frontend && npm install && npm run dev
 
 > DB 컨테이너는 5432 포트를 호스트에 노출합니다. 로컬 툴(IDE, psql)에서는 `localhost:5432`로 접속하고, 다른 컨테이너에서 접근할 때는 `db:5432` 호스트명을 사용하세요.
 
-> CI 런너(예: GitHub Actions)는 Java 21, Node.js 20, Docker(Compose), PostgreSQL 16, Redis 7.2 이미지를 사용할 수 있는 환경이어야 합니다. 기본 워크플로(`.github/workflows/ci.yml`)는 이러한 런타임을 기준으로 구성되어 있습니다.
+> CI 런너(예: GitHub Actions)는 Java 21, Node.js 22, Docker(Compose), PostgreSQL 16, Redis 7.2 이미지를 사용할 수 있는 환경이어야 합니다. 기본 워크플로(`.github/workflows/ci.yml`)는 이러한 런타임을 기준으로 구성되어 있습니다.
 
 Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` 디렉터리를 참고하세요.
 
 ## 자동화 명령 요약
 
-- `./auto dev warmup [--refresh]`: Gradle/Node/Playwright 캐시 사전 준비(최초 1회 권장, 기존 `scripts/dev-warmup.sh`는 이 명령을 위임 실행)
+- `./auto dev warmup [--refresh] [--with-playwright]`: Gradle/Node 의존성 사전 준비(Playwright 브라우저 설치는 `--with-playwright` 사용, `scripts/dev-warmup.sh`는 이 명령을 위임 실행)
 - `./auto dev up` / `./auto dev down`: 개발용 Docker 서비스 기동·종료
 - `./auto dev backend` / `./auto dev frontend`: Spring Boot · Next.js 개발 서버 실행
 - `./auto dev kill-ports [--ports 3000 8080 …]`: 지정한 포트(미지정 시 3000~3003, 8080)를 점유한 프로세스를 정리
 - `./auto tests core [--skip-backend --skip-frontend --skip-playwright --full-playwright]`: Step6 테스트 번들(Gradle은 오프라인 우선, 실패 시 의존성 갱신)
-- `./auto tests backend|frontend|playwright`: 개별 계층 테스트(`backend`는 오프라인 → 리프레시 순으로 자동 시도)
+- `./auto tests backend|frontend|playwright`: 개별 계층 테스트(`backend`는 오프라인 → 리프레시 순으로 자동 시도, `frontend`는 `npm run lint` 실행)
 - `./auto db migrate`: Flyway 마이그레이션 적용
 - `./auto cleanup`: 빌드 산출물 정리
 - `./auto state show` / `./auto state update --notes "..."`
@@ -58,11 +58,11 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 > 원하는 경우 `alias auto='python3 tools/automation/cli.py'`를 셸 설정에 추가하면 `auto …`로 바로 실행할 수 있습니다.
 
-`./auto` 자동화 CLI는 Java 21 런타임, 로컬 Gradle 캐시(`.gradle-cache`), Corepack(Node 20) 바이너리를 자동으로 PATH에 등록합니다. 셸 프로파일(`.bash_profile`, `.zshrc`)에서 Node·Java 경로가 기본값으로 설정되어 있으므로 추가 스크립트를 로드할 필요가 없습니다. Gradle을 직접 실행해야 할 때는 `cd backend && ./gradlew <task>` 형태로 호출하십시오.
+`./auto` 자동화 CLI는 Java 21 런타임, 로컬 Gradle 캐시(`.gradle-cache`), Node 22 바이너리를 자동으로 PATH에 등록합니다. 셸 프로파일(`.bash_profile`, `.zshrc`)에서 Node·Java 경로가 기본값으로 설정되어 있으므로 추가 스크립트를 로드할 필요가 없습니다. Gradle을 직접 실행해야 할 때는 `cd backend && ./gradlew <task>` 형태로 호출하십시오.
 
 ### Playwright E2E 테스트 가이드
 
-1. 최초 한 번 브라우저 바이너리를 설치합니다. `./auto dev warmup` 명령은 이 단계까지 한 번에 처리합니다.
+1. 최초 한 번 브라우저 바이너리를 설치합니다. `./auto dev warmup --with-playwright` 명령으로 함께 설치할 수 있습니다.
 2. 로컬에서 스모크 테스트는 기본 `./auto tests core`로 실행됩니다.
    ```bash
    ./auto tests core

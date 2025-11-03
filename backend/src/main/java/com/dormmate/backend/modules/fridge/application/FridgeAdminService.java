@@ -1,5 +1,7 @@
 package com.dormmate.backend.modules.fridge.application;
 
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -32,6 +34,31 @@ public class FridgeAdminService {
     ) {
         this.fridgeCompartmentRepository = fridgeCompartmentRepository;
         this.inspectionSessionRepository = inspectionSessionRepository;
+    }
+
+    @Transactional(readOnly = true)
+    public List<FridgeSlotResponse> listCompartments(Integer floorParam, String viewParam) {
+        ensureAdminRole();
+
+        boolean fullView = "full".equalsIgnoreCase(viewParam) || "detailed".equalsIgnoreCase(viewParam);
+
+        List<FridgeCompartment> compartments;
+        if (floorParam != null) {
+            if (floorParam < 2 || floorParam > 5) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_FLOOR");
+            }
+            short floor = floorParam.shortValue();
+            compartments = fridgeCompartmentRepository.findByFloorWithAccesses(floor);
+        } else {
+            compartments = fridgeCompartmentRepository.findAllWithActiveUnit();
+        }
+
+        return compartments.stream()
+                .sorted(Comparator
+                        .comparingInt((FridgeCompartment compartment) -> compartment.getFridgeUnit().getFloorNo())
+                        .thenComparingInt(FridgeCompartment::getSlotIndex))
+                .map(compartment -> FridgeDtoMapper.toSlotResponse(compartment, fullView))
+                .toList();
     }
 
     public FridgeSlotResponse updateCompartment(UUID compartmentId, UpdateCompartmentConfigRequest request) {

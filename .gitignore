@@ -45,6 +45,7 @@ target/
 # OS generated files
 .DS_Store
 frontend/playwright-report/
+frontend/test-artifacts/
 .DS_Store?
 ._*
 .Spotlight-V100
@@ -101,6 +102,7 @@ jspm_packages/
 .env.*
 !.env.example
 !.env.sample
+deploy/.env.*
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -256,6 +258,7 @@ $RECYCLE.BIN/
 *.backup
 *.bak
 !**/db/migration/*.sql
+!**/db/demo/*.sql
 
 # 데이터베이스 설정 파일 (비밀번호 포함)
 tools/db/Readme
@@ -308,6 +311,9 @@ migra-*.log
 # 스키마 드리프트 감지 결과
 artifacts/migra.sql
 artifacts/schema.*.sql
+runtime-openapi.json
+spec-openapi.json
+backend-openapi.log
 
 # PostgreSQL 16 특화 설정
 postgresql.conf.backup
@@ -432,4 +438,3 @@ logs/
 # 개인 계획/기능 정리 문서
 /nogitReadME.md
 docs/ai-impl/
-docs/ops/

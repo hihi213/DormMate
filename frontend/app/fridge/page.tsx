@@ -10,19 +10,16 @@ import type { Item } from "@/features/fridge/types"
 import Filters from "@/features/fridge/components/filters"
 import ItemsList from "@/features/fridge/components/items-list"
 import BottomNav from "@/components/bottom-nav"
-import { getCurrentUserId } from "@/lib/auth"
+import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
 import AddItemDialog from "@/features/fridge/components/add-item-dialog"
 import { formatKoreanDate } from "./utils-fridge-page"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import { useToast } from "@/hooks/use-toast"
+import { fetchNextInspectionSchedule } from "@/features/inspections/api"
 
 // Lazy load heavier bottom sheets
 const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
 const BundleDetailSheet = dynamic(() => import("@/features/fridge/components/bundle-detail-sheet"), { ssr: false })
-
-const SCHED_KEY = "fridge-inspections-schedule-v1"
-
-type Schedule = { id: string; dateISO: string; title?: string; notes?: string }
 
 export default function FridgePage() {
   return (
@@ -36,17 +33,16 @@ export default function FridgePage() {
 }
 
 function FridgeInner() {
-  const { items, slots, bundles } = useFridge()
+  const { items, slots, bundles, initialLoadError, refreshAll } = useFridge()
   const { toast } = useToast()
+  const currentUser = getCurrentUser()
+  const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
   const [query, setQuery] = useState("")
   const [tab, setTab] = useState<"all" | "mine" | "expiring" | "expired">("all")
   const [selectedSlotId, setSelectedSlotId] = useState<string>("")
   const [addOpen, setAddOpen] = useState(false)
   const [myOnly, setMyOnly] = useState(true)
   const [nextScheduleText, setNextScheduleText] = useState<string>("")
-  const uid = getCurrentUserId()
-
-  // Bottom Sheets state
   const [itemSheet, setItemSheet] = useState<{ open: boolean; id: string; edit?: boolean }>({
     open: false,
     id: "",
@@ -57,8 +53,9 @@ function FridgeInner() {
     id: "",
     edit: false,
   })
-
   const initializedSlotRef = useRef(false)
+  const uid = getCurrentUserId()
+
   const ownedSlotIds = useMemo(() => {
     if (!uid) return []
     const ids = new Set<string>()
@@ -97,18 +94,35 @@ function FridgeInner() {
   }, [ownedSlotIds, slots.length])
 
   useEffect(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(SCHED_KEY) || "null") as Schedule[] | null
-      if (Array.isArray(saved)) {
-        const now = new Date()
-        const upcoming = saved
-          .map((s) => ({ ...s, d: new Date(s.dateISO) }))
-          .filter((s) => s.d.getTime() >= now.getTime())
-          .sort((a, b) => a.d.getTime() - b.d.getTime())[0]
-        setNextScheduleText(upcoming ? formatKoreanDate(upcoming.d) : "예정 없음")
-      } else setNextScheduleText("예정 없음")
-    } catch {
-      setNextScheduleText("예정 없음")
+    if (typeof window === "undefined") return
+    const intervalId = window.setInterval(() => {
+      void refreshAll()
+    }, 60000)
+    return () => {
+      window.clearInterval(intervalId)
+    }
+  }, [refreshAll])
+
+  useEffect(() => {
+    let cancelled = false
+    const loadNextSchedule = async () => {
+      try {
+        const schedule = await fetchNextInspectionSchedule()
+        if (cancelled) return
+        if (!schedule) {
+          setNextScheduleText("예정 없음")
+          return
+        }
+        setNextScheduleText(formatKoreanDate(new Date(schedule.scheduledAt)))
+      } catch {
+        if (!cancelled) {
+          setNextScheduleText("예정 없음")
+        }
+      }
+    }
+    void loadNextSchedule()
+    return () => {
+      cancelled = true
     }
   }, [])
 
@@ -232,8 +246,13 @@ function FridgeInner() {
         </div>
       </header>
 
-      <div className="mx-auto max-w-screen-sm px-4 pb-28 pt-4">
-        <div className="mb-3">
+      <div className="mx-auto max-w-screen-sm px-4 pb-28 pt-4 space-y-4">
+        {initialLoadError && (
+          <Card className="border-amber-200 bg-amber-50">
+            <CardContent className="py-3 text-sm text-amber-800">{initialLoadError}</CardContent>
+          </Card>
+        )}
+        <div>
           <div className="rounded-md border bg-slate-50 px-3 py-2.5 text-sm text-slate-700 flex items-center gap-2">
             <span className="font-medium">{"다음 점검일"}</span>
             <span className="text-slate-900 font-medium">{nextScheduleText}</span>
@@ -264,7 +283,7 @@ function FridgeInner() {
           </CardContent>
         </Card>
 
-        <section aria-labelledby="list-section" className="mt-4">
+        <section aria-labelledby="list-section">
           <h2 id="list-section" className="sr-only">
             {"목록"}
           </h2>

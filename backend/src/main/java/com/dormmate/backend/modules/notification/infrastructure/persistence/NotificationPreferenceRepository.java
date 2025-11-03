@@ -1,6 +1,8 @@
 package com.dormmate.backend.modules.notification.infrastructure.persistence;
 
 import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -10,4 +12,6 @@ import com.dormmate.backend.modules.notification.domain.NotificationPreferenceId
 public interface NotificationPreferenceRepository extends JpaRepository<NotificationPreference, NotificationPreferenceId> {
 
     List<NotificationPreference> findByIdUserId(java.util.UUID userId);
+
+    Optional<NotificationPreference> findByIdUserIdAndIdKindCode(UUID userId, String kindCode);
 }

@@ -17,23 +17,33 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.ResultSetExtractor;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 
@@ -167,7 +177,9 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                                             }
                                             """.formatted(slotId, expiresOn))
                     )
-                    .andExpect(status().isUnprocessableEntity());
+                    .andExpect(status().isUnprocessableEntity())
+                    .andExpect(jsonPath("$.code").value("CAPACITY_EXCEEDED"))
+                    .andExpect(jsonPath("$.detail").value("CAPACITY_EXCEEDED"));
         } finally {
             if (firstBundleId != null) {
                 fridgeBundleRepository.findById(firstBundleId)
@@ -181,6 +193,285 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 );
             }
             restoreLabelSequence(slotId, originalLabelState);
+        }
+    }
+
+    @Test
+    void concurrentBundleCreationReturnsCapacityExceededForSecondRequest() throws Exception {
+        String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        Integer originalCapacity = jdbcTemplate.queryForObject(
+                "SELECT max_bundle_count FROM fridge_compartment WHERE id = ?",
+                Integer.class,
+                slotId
+        );
+
+        LabelSequenceState originalLabelState = jdbcTemplate.query(
+                """
+                        SELECT next_number, recycled_numbers::text AS recycled_numbers
+                        FROM bundle_label_sequence
+                        WHERE fridge_compartment_id = ?
+                        """,
+                singleLabelState(),
+                slotId
+        );
+
+        jdbcTemplate.update(
+                "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
+                slotId
+        );
+        jdbcTemplate.update(
+                "DELETE FROM fridge_bundle WHERE fridge_compartment_id = ?",
+                slotId
+        );
+        jdbcTemplate.update(
+                "UPDATE fridge_compartment SET max_bundle_count = ? WHERE id = ?",
+                1,
+                slotId
+        );
+        jdbcTemplate.update(
+                """
+                        INSERT INTO bundle_label_sequence (fridge_compartment_id, next_number, recycled_numbers)
+                        VALUES (?, ?, '[]'::jsonb)
+                        ON CONFLICT (fridge_compartment_id) DO UPDATE
+                        SET next_number = EXCLUDED.next_number,
+                            recycled_numbers = '[]'::jsonb
+                        """,
+                slotId,
+                1
+        );
+
+        ExecutorService executor = Executors.newFixedThreadPool(2);
+        CountDownLatch ready = new CountDownLatch(2);
+        CountDownLatch start = new CountDownLatch(1);
+
+        Callable<MockHttpServletResponse> task = () -> {
+            ready.countDown();
+            boolean started = start.await(5, TimeUnit.SECONDS);
+            assertThat(started).isTrue();
+            String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(7).toString();
+            return mockMvc.perform(
+                            post("/fridge/bundles")
+                                    .header("Authorization", "Bearer " + accessToken)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("""
+                                            {
+                                              "slotId": "%s",
+                                              "bundleName": "동시 등록 테스트",
+                                              "items": [
+                                                {
+                                                  "name": "테스트 음료",
+                                                  "expiryDate": "%s",
+                                                  "quantity": 1
+                                                }
+                                              ]
+                                            }
+                                            """.formatted(slotId, expiresOn))
+                    )
+                    .andReturn()
+                    .getResponse();
+        };
+
+        Future<MockHttpServletResponse> first = executor.submit(task);
+        Future<MockHttpServletResponse> second = executor.submit(task);
+
+        try {
+            ready.await(5, TimeUnit.SECONDS);
+            start.countDown();
+
+            MockHttpServletResponse response1 = first.get(10, TimeUnit.SECONDS);
+            MockHttpServletResponse response2 = second.get(10, TimeUnit.SECONDS);
+
+            List<MockHttpServletResponse> responses = List.of(response1, response2);
+            assertThat(responses.stream().map(MockHttpServletResponse::getStatus))
+                    .containsExactlyInAnyOrder(
+                            HttpStatus.CREATED.value(),
+                            HttpStatus.UNPROCESSABLE_ENTITY.value()
+                    );
+
+            MockHttpServletResponse successResponse = responses.stream()
+                    .filter(res -> res.getStatus() == HttpStatus.CREATED.value())
+                    .findFirst()
+                    .orElseThrow();
+            JsonNode successJson = objectMapper.readTree(successResponse.getContentAsString());
+            bundlesToCleanup.add(UUID.fromString(successJson.path("bundle").path("bundleId").asText()));
+
+            MockHttpServletResponse failureResponse = responses.stream()
+                    .filter(res -> res.getStatus() == HttpStatus.UNPROCESSABLE_ENTITY.value())
+                    .findFirst()
+                    .orElseThrow();
+            JsonNode failureJson = objectMapper.readTree(failureResponse.getContentAsString());
+            assertThat(failureJson.path("code").asText()).isEqualTo("CAPACITY_EXCEEDED");
+            assertThat(failureJson.path("detail").asText()).isEqualTo("CAPACITY_EXCEEDED");
+        } finally {
+            executor.shutdownNow();
+            if (originalCapacity != null) {
+                jdbcTemplate.update(
+                        "UPDATE fridge_compartment SET max_bundle_count = ? WHERE id = ?",
+                        originalCapacity,
+                        slotId
+                );
+            }
+            restoreLabelSequence(slotId, originalLabelState);
+        }
+    }
+
+    @Test
+    void ownerCanUpdateBundleNameAndMemo() throws Exception {
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode bundleResponse = createBundle(residentToken, slotId, "initial bundle");
+        UUID bundleId = UUID.fromString(bundleResponse.path("bundle").path("bundleId").asText());
+
+        MvcResult updateResult = mockMvc.perform(
+                        patch("/fridge/bundles/" + bundleId)
+                                .header("Authorization", "Bearer " + residentToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "bundleName": "updated bundle",
+                                          "memo": "updated memo"
+                                        }
+                                        """))
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode updatedBundle = objectMapper.readTree(updateResult.getResponse().getContentAsString());
+        assertThat(updatedBundle.path("bundleName").asText()).isEqualTo("updated bundle");
+        assertThat(updatedBundle.path("memo").asText()).isEqualTo("updated memo");
+
+        MvcResult listResult = mockMvc.perform(
+                        get("/fridge/bundles")
+                                .param("slotId", slotId.toString())
+                                .header("Authorization", "Bearer " + residentToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode summaries = objectMapper.readTree(listResult.getResponse().getContentAsString()).path("items");
+        JsonNode summary = findBundleSummaryById(summaries, bundleId);
+        assertThat(summary.path("bundleName").asText()).isEqualTo("updated bundle");
+    }
+
+    @Test
+    void bundleUpdateFailsWhenLocked() throws Exception {
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode bundleResponse = createBundle(residentToken, slotId, "lock test");
+        UUID bundleId = UUID.fromString(bundleResponse.path("bundle").path("bundleId").asText());
+
+        LockState original = fetchLockState(slotId);
+        applyLockState(slotId, true, OffsetDateTime.now(ZoneOffset.UTC).plusHours(1));
+        try {
+            mockMvc.perform(
+                            patch("/fridge/bundles/" + bundleId)
+                                    .header("Authorization", "Bearer " + residentToken)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("""
+                                            { "bundleName": "should fail" }
+                                            """))
+                    .andExpect(status().isLocked())
+                    .andExpect(jsonPath("$.code").value("COMPARTMENT_LOCKED"));
+        } finally {
+            applyLockState(slotId, original.locked(), original.lockedUntil());
+        }
+    }
+
+    @Test
+    void ownerCanUpdateItem() throws Exception {
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode bundleResponse = createBundle(residentToken, slotId, "item update");
+        JsonNode itemNode = bundleResponse.path("bundle").path("items").get(0);
+        UUID itemId = UUID.fromString(itemNode.path("itemId").asText());
+
+        String newExpiry = LocalDate.now(ZoneOffset.UTC).plusDays(10).toString();
+
+        MvcResult updateItemResult = mockMvc.perform(
+                        patch("/fridge/items/" + itemId)
+                                .header("Authorization", "Bearer " + residentToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "name": "updated item",
+                                          "expiryDate": "%s",
+                                          "quantity": 3
+                                        }
+                                        """.formatted(newExpiry)))
+                .andReturn();
+
+        assertThat(updateItemResult.getResponse().getStatus()).isEqualTo(HttpStatus.OK.value());
+        JsonNode updatedItem = objectMapper.readTree(updateItemResult.getResponse().getContentAsString());
+        assertThat(updatedItem.path("name").asText()).isEqualTo("updated item");
+        assertThat(updatedItem.path("quantity").asInt()).isEqualTo(3);
+        assertThat(updatedItem.path("expiryDate").asText()).isEqualTo(newExpiry);
+    }
+
+    @Test
+    void itemUpdateFailsForUnauthorizedUser() throws Exception {
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String otherResidentToken = loginAndGetAccessToken("dylan", "dylan123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode bundleResponse = createBundle(residentToken, slotId, "permission test");
+        JsonNode itemNode = bundleResponse.path("bundle").path("items").get(0);
+        UUID itemId = UUID.fromString(itemNode.path("itemId").asText());
+
+        MvcResult unauthorizedResult = mockMvc.perform(
+                        patch("/fridge/items/" + itemId)
+                                .header("Authorization", "Bearer " + otherResidentToken)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content("""
+                                        {
+                                          "quantity": 5
+                                        }
+                                        """))
+                .andReturn();
+
+        assertThat(unauthorizedResult.getResponse().getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
+        JsonNode unauthorizedBody = objectMapper.readTree(unauthorizedResult.getResponse().getContentAsString());
+        assertThat(unauthorizedBody.path("code").asText()).isEqualTo("FORBIDDEN_SLOT");
+    }
+
+    @Test
+    void itemUpdateFailsWhenLocked() throws Exception {
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode bundleResponse = createBundle(residentToken, slotId, "locked item test");
+        JsonNode itemNode = bundleResponse.path("bundle").path("items").get(0);
+        UUID itemId = UUID.fromString(itemNode.path("itemId").asText());
+
+        LockState original = fetchLockState(slotId);
+        applyLockState(slotId, true, OffsetDateTime.now(ZoneOffset.UTC).plusHours(1));
+        try {
+            mockMvc.perform(
+                            patch("/fridge/items/" + itemId)
+                                    .header("Authorization", "Bearer " + residentToken)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("""
+                                            {
+                                              "quantity": 2
+                                            }
+                                            """))
+                    .andExpect(status().isLocked())
+                    .andExpect(jsonPath("$.code").value("COMPARTMENT_LOCKED"));
+        } finally {
+            applyLockState(slotId, original.locked(), original.lockedUntil());
         }
     }
     @Test
@@ -230,6 +521,104 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                                     }
                                     """.formatted(originalCapacity, originalStatus)))
                     .andExpect(status().isOk());
+        }
+    }
+
+    @Test
+    void cannotCreateBundleWhenCompartmentLocked() throws Exception {
+        String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        LockState originalLockState = fetchLockState(slotId);
+        OffsetDateTime lockedUntil = OffsetDateTime.now(ZoneOffset.UTC).plusHours(1);
+
+        applyLockState(slotId, true, lockedUntil);
+        try {
+            String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(2).toString();
+            mockMvc.perform(
+                            post("/fridge/bundles")
+                                    .header("Authorization", "Bearer " + accessToken)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("""
+                                            {
+                                              "slotId": "%s",
+                                              "bundleName": "잠금 테스트",
+                                              "items": [
+                                                {
+                                                  "name": "테스트 요구르트",
+                                                  "expiryDate": "%s",
+                                                  "quantity": 1
+                                                }
+                                              ]
+                                            }
+                                            """.formatted(slotId, expiresOn))
+                    )
+                    .andExpect(status().isLocked())
+                    .andExpect(jsonPath("$.code").value("COMPARTMENT_LOCKED"));
+        } finally {
+            applyLockState(slotId, originalLockState.locked(), originalLockState.lockedUntil());
+        }
+    }
+
+    @Test
+    void cannotCreateBundleDuringActiveInspection() throws Exception {
+        String managerToken = loginAndGetAccessToken("bob", "bob123!");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        LockState originalLockState = fetchLockState(slotId);
+        applyLockState(slotId, false, null);
+
+        UUID sessionId = null;
+        try {
+            MvcResult startResult = mockMvc.perform(
+                            post("/fridge/inspections")
+                                    .header("Authorization", "Bearer " + managerToken)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("""
+                                            {
+                                              "slotId": "%s"
+                                            }
+                                            """.formatted(slotId))
+                    )
+                    .andExpect(status().isCreated())
+                    .andReturn();
+
+            JsonNode session = objectMapper.readTree(startResult.getResponse().getContentAsString());
+            sessionId = UUID.fromString(session.path("sessionId").asText());
+
+            applyLockState(slotId, false, null);
+
+            String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(3).toString();
+            mockMvc.perform(
+                            post("/fridge/bundles")
+                                    .header("Authorization", "Bearer " + residentToken)
+                                    .contentType(MediaType.APPLICATION_JSON)
+                                    .content("""
+                                            {
+                                              "slotId": "%s",
+                                              "bundleName": "점검 중 등록 시도",
+                                              "items": [
+                                                {
+                                                  "name": "테스트 주스",
+                                                  "expiryDate": "%s",
+                                                  "quantity": 1
+                                                }
+                                              ]
+                                            }
+                                            """.formatted(slotId, expiresOn))
+                    )
+                    .andExpect(status().isLocked())
+                    .andExpect(jsonPath("$.code").value("COMPARTMENT_UNDER_INSPECTION"));
+        } finally {
+            if (sessionId != null) {
+                mockMvc.perform(
+                                delete("/fridge/inspections/" + sessionId)
+                                        .header("Authorization", "Bearer " + managerToken)
+                        )
+                        .andExpect(status().isNoContent());
+            }
+            applyLockState(slotId, originalLockState.locked(), originalLockState.lockedUntil());
         }
     }
 
@@ -361,6 +750,132 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void bundleSearchSupportsMultiLetterSlotCodeAndOwnerRoom() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode created = createBundle(residentToken, slotId, "multi-letter-slot");
+        UUID bundleId = UUID.fromString(created.path("bundle").path("bundleId").asText());
+        bundlesToCleanup.add(bundleId);
+
+        Integer originalSlotIndex = jdbcTemplate.queryForObject(
+                "SELECT slot_index FROM fridge_compartment WHERE id = ?",
+                Integer.class,
+                slotId
+        );
+        jdbcTemplate.update("UPDATE fridge_compartment SET slot_index = ? WHERE id = ?", 26, slotId);
+
+        try {
+            MvcResult slotTokenResult = mockMvc.perform(
+                            get("/fridge/bundles")
+                                    .param("owner", "all")
+                                    .param("search", "AA")
+                                    .header("Authorization", "Bearer " + adminToken)
+                    )
+                    .andExpect(status().isOk())
+                    .andReturn();
+
+            JsonNode slotSummaries = objectMapper.readTree(slotTokenResult.getResponse().getContentAsString()).path("items");
+            JsonNode slotSummary = findBundleSummaryById(slotSummaries, bundleId);
+            assertThat(slotSummary).isNotNull();
+            assertThat(slotSummary.path("slotLabel").asText()).isEqualTo("AA");
+
+            String roomSearchToken = jdbcTemplate.queryForObject("""
+                    SELECT CONCAT(r.floor, 'F ', r.room_number)
+                      FROM room_assignment ra
+                      JOIN dorm_user du ON du.id = ra.dorm_user_id
+                      JOIN room r ON r.id = ra.room_id
+                     WHERE du.login_id = ?
+                       AND ra.released_at IS NULL
+                    """, String.class, "alice");
+
+            MvcResult roomResult = mockMvc.perform(
+                            get("/fridge/bundles")
+                                    .param("owner", "all")
+                                    .param("search", roomSearchToken)
+                                    .header("Authorization", "Bearer " + adminToken)
+                    )
+                    .andExpect(status().isOk())
+                    .andReturn();
+
+            JsonNode roomSummaries = objectMapper.readTree(roomResult.getResponse().getContentAsString()).path("items");
+            JsonNode roomSummary = findBundleSummaryById(roomSummaries, bundleId);
+            assertThat(roomSummary).isNotNull();
+            assertThat(roomSummary.path("ownerRoomNumber").asText()).isEqualTo(roomSearchToken);
+        } finally {
+            if (originalSlotIndex != null) {
+                jdbcTemplate.update("UPDATE fridge_compartment SET slot_index = ? WHERE id = ?", originalSlotIndex, slotId);
+            }
+        }
+    }
+
+    @Test
+    void deletedBundleListingCanFilterBySlotId() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String aliceToken = loginAndGetAccessToken("alice", "alice123!");
+        String dianaToken = loginAndGetAccessToken("diana", "diana123!");
+        UUID slotFloor2 = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+        UUID slotFloor3 = fetchSlotId(FLOOR_3, SLOT_INDEX_A);
+
+        clearSlotBundles(slotFloor2);
+        clearSlotBundles(slotFloor3);
+
+        JsonNode aliceBundle = createBundle(aliceToken, slotFloor2, "slot-2F-deleted");
+        UUID aliceBundleId = UUID.fromString(aliceBundle.path("bundle").path("bundleId").asText());
+        bundlesToCleanup.add(aliceBundleId);
+        mockMvc.perform(
+                        delete("/fridge/bundles/" + aliceBundleId)
+                                .header("Authorization", "Bearer " + aliceToken)
+                )
+                .andExpect(status().isNoContent());
+
+        JsonNode dianaBundle = createBundle(dianaToken, slotFloor3, "slot-3F-deleted");
+        UUID dianaBundleId = UUID.fromString(dianaBundle.path("bundle").path("bundleId").asText());
+        bundlesToCleanup.add(dianaBundleId);
+        mockMvc.perform(
+                        delete("/fridge/bundles/" + dianaBundleId)
+                                .header("Authorization", "Bearer " + dianaToken)
+                )
+                .andExpect(status().isNoContent());
+
+        String sinceIso = OffsetDateTime.now(ZoneOffset.UTC).minusDays(1).toString();
+
+        MvcResult filteredResult = mockMvc.perform(
+                        get("/admin/fridge/bundles/deleted")
+                                .param("since", sinceIso)
+                                .param("slotId", slotFloor2.toString())
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode filteredBody = objectMapper.readTree(filteredResult.getResponse().getContentAsString());
+        JsonNode filteredItems = filteredBody.path("items");
+        assertThat(filteredItems.isArray()).isTrue();
+        assertThat(filteredItems.size()).isGreaterThanOrEqualTo(1);
+        filteredItems.forEach(item -> assertThat(item.path("slotId").asText()).isEqualTo(slotFloor2.toString()));
+
+        MvcResult unfilteredResult = mockMvc.perform(
+                        get("/admin/fridge/bundles/deleted")
+                                .param("since", sinceIso)
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode unfilteredItems = objectMapper.readTree(unfilteredResult.getResponse().getContentAsString()).path("items");
+        assertThat(unfilteredItems.isArray()).isTrue();
+        assertThat(unfilteredItems.size()).isGreaterThanOrEqualTo(filteredItems.size());
+        unfilteredItems.forEach(item -> {
+            String slotId = item.path("slotId").asText();
+            assertThat(slotId).isNotEmpty();
+        });
+    }
+
+    @Test
     void floorManagerCanViewBundlesWithoutMemo() throws Exception {
         String residentToken = loginAndGetAccessToken("alice", "alice123!");
         String managerToken = loginAndGetAccessToken("bob", "bob123!");
@@ -480,6 +995,186 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         assertThat(detail.has("memo")).isFalse();
         assertThat(detail.path("items").isArray()).isTrue();
         assertThat(detail.path("items").size()).isEqualTo(1);
+    }
+
+    @Test
+    void adminBundleSearchSupportsKeywordAndCaseInsensitiveMatch() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        createBundle(residentToken, slotId, "Alpha Search Bundle");
+        createBundle(residentToken, slotId, "beta mix pack");
+        createBundle(residentToken, slotId, "Gamma Storage");
+
+
+        MvcResult result = mockMvc.perform(
+                        get("/fridge/bundles")
+                                .param("slotId", slotId.toString())
+                                .param("owner", "all")
+                                .param("search", "ALPHA")
+                                .param("page", "0")
+                                .param("size", "10")
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(body.path("totalCount").asInt()).isEqualTo(1);
+        JsonNode items = body.path("items");
+        assertThat(items.isArray()).isTrue();
+        assertThat(items.size()).isEqualTo(1);
+        assertThat(items.get(0).path("bundleName").asText()).isEqualTo("Alpha Search Bundle");
+    }
+
+    @Test
+    void adminBundleSearchSupportsLabelLookup() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode firstBundle = createBundle(residentToken, slotId, "Label Base One");
+        JsonNode secondBundle = createBundle(residentToken, slotId, "Label Focus Two");
+
+        String targetLabel = secondBundle.path("bundle").path("labelDisplay").asText();
+
+        MvcResult result = mockMvc.perform(
+                        get("/fridge/bundles")
+                                .param("slotId", slotId.toString())
+                                .param("owner", "all")
+                                .param("search", targetLabel.toLowerCase())
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(body.path("totalCount").asInt()).isEqualTo(1);
+        JsonNode item = body.path("items").get(0);
+        assertThat(item.path("bundleId").asText()).isEqualTo(secondBundle.path("bundle").path("bundleId").asText());
+        assertThat(item.path("labelDisplay").asText()).isEqualTo(targetLabel);
+    }
+
+    @Test
+    void adminBundleListWithDeletedFilterReturnsOnlyDeletedBundles() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode activeBundle = createBundle(residentToken, slotId, "Active bundle snapshot");
+        JsonNode deletedBundle = createBundle(residentToken, slotId, "Deleted bundle snapshot");
+        UUID deletedBundleId = UUID.fromString(deletedBundle.path("bundle").path("bundleId").asText());
+
+        mockMvc.perform(
+                        delete("/fridge/bundles/" + deletedBundleId)
+                                .header("Authorization", "Bearer " + residentToken)
+                )
+                .andExpect(status().isNoContent());
+
+        MvcResult result = mockMvc.perform(
+                        get("/fridge/bundles")
+                                .param("slotId", slotId.toString())
+                                .param("owner", "all")
+                                .param("status", "deleted")
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        assertThat(body.path("totalCount").asInt()).isEqualTo(1);
+        JsonNode item = body.path("items").get(0);
+        assertThat(item.path("bundleId").asText()).isEqualTo(deletedBundleId.toString());
+        assertThat(item.path("status").asText()).isEqualTo("DELETED");
+
+        // sanity check that active bundle remains active when fetching default view
+        MvcResult activeResult = mockMvc.perform(
+                        get("/fridge/bundles")
+                                .param("slotId", slotId.toString())
+                                .header("Authorization", "Bearer " + adminToken)
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+        JsonNode activeBody = objectMapper.readTree(activeResult.getResponse().getContentAsString());
+        assertThat(activeBody.path("items").findValuesAsText("bundleId"))
+                .contains(activeBundle.path("bundle").path("bundleId").asText());
+    }
+    @Test
+    void residentCannotAccessDeletedBundleHistory() throws Exception {
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+
+        mockMvc.perform(
+                        get("/admin/fridge/bundles/deleted")
+                                .header("Authorization", "Bearer " + residentToken)
+                )
+                .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void adminGetsDeletedBundlesWithinDefaultWindow() throws Exception {
+        String adminToken = loginAndGetAccessToken("admin", "password");
+        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode recentBundle = createBundle(residentToken, slotId, "recent bundle");
+        UUID recentBundleId = UUID.fromString(recentBundle.path("bundle").path("bundleId").asText());
+
+        mockMvc.perform(
+                        delete("/fridge/bundles/" + recentBundleId)
+                                .header("Authorization", "Bearer " + residentToken)
+                )
+                .andExpect(status().isNoContent());
+
+        JsonNode oldBundle = createBundle(residentToken, slotId, "old bundle");
+        UUID oldBundleId = UUID.fromString(oldBundle.path("bundle").path("bundleId").asText());
+
+        mockMvc.perform(
+                        delete("/fridge/bundles/" + oldBundleId)
+                                .header("Authorization", "Bearer " + residentToken)
+                )
+                .andExpect(status().isNoContent());
+
+        OffsetDateTime fourMonthsAgo = OffsetDateTime.now(ZoneOffset.UTC).minusMonths(4);
+        overrideDeletedAt(oldBundleId, fourMonthsAgo);
+
+        MvcResult defaultWindowResult = mockMvc.perform(
+                        get("/admin/fridge/bundles/deleted")
+                                .header("Authorization", "Bearer " + adminToken)
+                                .param("size", "10")
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode defaultResponse = objectMapper.readTree(defaultWindowResult.getResponse().getContentAsString());
+        assertThat(defaultResponse.path("totalCount").asInt()).isEqualTo(1);
+        JsonNode items = defaultResponse.path("items");
+        assertThat(items.isArray()).isTrue();
+        assertThat(items.size()).isEqualTo(1);
+        assertThat(items.get(0).path("bundleId").asText()).isEqualTo(recentBundleId.toString());
+
+        MvcResult extendedWindowResult = mockMvc.perform(
+                        get("/admin/fridge/bundles/deleted")
+                                .header("Authorization", "Bearer " + adminToken)
+                                .param("since", fourMonthsAgo.minusWeeks(1).toString())
+                                .param("size", "10")
+                )
+                .andExpect(status().isOk())
+                .andReturn();
+
+        JsonNode extendedResponse = objectMapper.readTree(extendedWindowResult.getResponse().getContentAsString());
+        assertThat(extendedResponse.path("totalCount").asInt()).isEqualTo(2);
+        List<String> bundleIds = new ArrayList<>();
+        extendedResponse.path("items").forEach(node -> bundleIds.add(node.path("bundleId").asText()));
+        assertThat(bundleIds).containsExactlyInAnyOrder(recentBundleId.toString(), oldBundleId.toString());
     }
 
     @Test
@@ -617,6 +1312,61 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void deleteBundleFailsForUnauthorizedUser() throws Exception {
+        String ownerToken = loginAndGetAccessToken("alice", "alice123!");
+        String otherResidentToken = loginAndGetAccessToken("dylan", "dylan123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode bundleResponse = createBundle(ownerToken, slotId, "delete-forbidden-test");
+        UUID bundleId = UUID.fromString(bundleResponse.path("bundle").path("bundleId").asText());
+
+        mockMvc.perform(
+                        delete("/fridge/bundles/" + bundleId)
+                                .header("Authorization", "Bearer " + otherResidentToken)
+                )
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN_SLOT"));
+
+        // bundle should remain active after failed deletion
+        JsonNode bundleDetail = objectMapper.readTree(
+                mockMvc.perform(
+                                get("/fridge/bundles/" + bundleId)
+                                        .header("Authorization", "Bearer " + ownerToken)
+                        )
+                        .andExpect(status().isOk())
+                        .andReturn()
+                        .getResponse()
+                        .getContentAsString());
+        assertThat(bundleDetail.path("status").asText()).isEqualTo("ACTIVE");
+    }
+
+    @Test
+    void deleteBundleFailsWhenLocked() throws Exception {
+        String ownerToken = loginAndGetAccessToken("alice", "alice123!");
+        UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
+
+        JsonNode bundleResponse = createBundle(ownerToken, slotId, "delete-locked-test");
+        UUID bundleId = UUID.fromString(bundleResponse.path("bundle").path("bundleId").asText());
+
+        LockState originalLock = fetchLockState(slotId);
+        applyLockState(slotId, true, OffsetDateTime.now(ZoneOffset.UTC).plusMinutes(30));
+        try {
+            mockMvc.perform(
+                            delete("/fridge/bundles/" + bundleId)
+                                    .header("Authorization", "Bearer " + ownerToken)
+                    )
+                    .andExpect(status().isLocked())
+                    .andExpect(jsonPath("$.code").value("COMPARTMENT_LOCKED"));
+        } finally {
+            applyLockState(slotId, originalLock.locked(), originalLock.lockedUntil());
+        }
+    }
+
+    @Test
     void residentCanMarkItemAsRemoved() throws Exception {
         String accessToken = loginAndGetAccessToken("alice", "alice123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
@@ -688,8 +1438,9 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         return response.path("tokens").path("accessToken").asText();
     }
 
-    private JsonNode findSlot(JsonNode slots, int floorNo, int slotIndex) {
-        for (JsonNode slot : slots) {
+    private JsonNode findSlot(JsonNode root, int floorNo, int slotIndex) {
+        JsonNode items = root.isArray() ? root : root.path("items");
+        for (JsonNode slot : items) {
             if (slot.path("floorNo").asInt() == floorNo && slot.path("slotIndex").asInt() == slotIndex) {
                 return slot;
             }
@@ -714,6 +1465,17 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         jdbcTemplate.update(
                 "DELETE FROM fridge_bundle WHERE fridge_compartment_id = ?",
                 slotId
+        );
+    }
+
+    private void overrideDeletedAt(UUID bundleId, OffsetDateTime deletedAt) {
+        jdbcTemplate.update(
+                "UPDATE fridge_bundle SET deleted_at = ?, updated_at = GREATEST(updated_at, ?) WHERE id = ?",
+                ps -> {
+                    ps.setObject(1, deletedAt);
+                    ps.setObject(2, deletedAt);
+                    ps.setObject(3, bundleId);
+                }
         );
     }
 
@@ -757,6 +1519,32 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         }
     }
 
+    private LockState fetchLockState(UUID slotId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT is_locked, locked_until FROM fridge_compartment WHERE id = ?",
+                (rs, rowNum) -> new LockState(
+                        rs.getBoolean("is_locked"),
+                        rs.getObject("locked_until", OffsetDateTime.class)
+                ),
+                slotId
+        );
+    }
+
+    private void applyLockState(UUID slotId, boolean locked, OffsetDateTime lockedUntil) {
+        jdbcTemplate.update(
+                "UPDATE fridge_compartment SET is_locked = ?, locked_until = ? WHERE id = ?",
+                ps -> {
+                    ps.setBoolean(1, locked);
+                    if (lockedUntil != null) {
+                        ps.setObject(2, lockedUntil);
+                    } else {
+                        ps.setNull(2, Types.TIMESTAMP_WITH_TIMEZONE);
+                    }
+                    ps.setObject(3, slotId);
+                }
+        );
+    }
+
     private void assertAccessibleSlotsMatch(String loginId, String password) throws Exception {
         UUID userId = jdbcTemplate.queryForObject(
                 "SELECT id FROM dorm_user WHERE login_id = ?",
@@ -786,9 +1574,11 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode slots = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode body = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode slots = body.path("items");
         assertThat(slots.isArray()).isTrue();
 
+        assertThat(body.path("totalCount").asInt()).isGreaterThan(0);
         List<UUID> slotIdsFromApi = new ArrayList<>();
         for (JsonNode slot : slots) {
             slotIdsFromApi.add(UUID.fromString(slot.path("slotId").asText()));
@@ -808,7 +1598,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode slots = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode body = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode slots = body.path("items");
         assertThat(slots.isArray()).isTrue();
 
         List<UUID> slotIdsFromApi = new ArrayList<>();
@@ -820,5 +1611,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     private record LabelSequenceState(int nextNumber, String recycledNumbers) {
+    }
+
+    private record LockState(boolean locked, OffsetDateTime lockedUntil) {
     }
 }

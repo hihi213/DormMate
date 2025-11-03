@@ -13,6 +13,9 @@ env:
   POSTGRES_PASSWORD: dorm_password
   NEXT_TELEMETRY_DISABLED: "1"
   PYTHONUNBUFFERED: "1"
+  GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-cache
+  DM_GRADLE_OFFLINE_FIRST: "0"
+  PLAYWRIGHT_WORKERS: "3"
 
 jobs:
   tests:
@@ -31,7 +34,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.11.0"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -41,19 +44,48 @@ jobs:
           distribution: "temurin"
           java-version: "21"
 
+      - name: Restore Gradle user home
+        id: gradle-cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ${{ env.GRADLE_USER_HOME }}
+          key: gradle-${{ runner.os }}-${{ hashFiles('backend/**/*.gradle*', 'backend/gradle.properties', 'backend/gradle/wrapper/gradle-wrapper.properties') }}
+          restore-keys: |
+            gradle-${{ runner.os }}-
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v3
+
+      - name: Warm up Gradle dependencies
+        if: steps.gradle-cache.outputs.cache-hit != 'true'
+        working-directory: backend
+        run: ./gradlew testClasses --refresh-dependencies
 
       - name: Install frontend dependencies
         working-directory: frontend
         run: npm ci
 
+      - name: Restore Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: |
+            playwright-${{ runner.os }}-
+
       - name: Install Playwright browsers
         working-directory: frontend
-        run: npx playwright install --with-deps
+        run: |
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" = "true" ]; then
+            npx playwright install-deps
+          else
+            npx playwright install --with-deps
+          fi
 
-      - name: Start database container
-        run: ./auto dev up --services db
+      - name: Start database and redis containers
+        run: ./auto dev up --services db redis
 
       - name: Wait for database readiness
         run: |
@@ -67,11 +99,77 @@ jobs:
           docker compose logs db
           exit 1
 
+      - name: Wait for redis readiness
+        run: |
+          for i in {1..30}; do
+            if docker compose exec -T redis redis-cli ping >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "Redis did not become ready in time." >&2
+          docker compose logs redis
+          exit 1
+
       - name: Apply database migrations
         run: ./auto db migrate
 
+      - name: Verify Flyway status
+        working-directory: backend
+        run: ./gradlew flywayInfo
+
       - name: Run backend tests
         run: ./auto tests backend
+
+      - name: Start backend for OpenAPI drift check
+        working-directory: backend
+        run: |
+          LOG_FILE="$GITHUB_WORKSPACE/backend-openapi.log"
+          PID_FILE="$GITHUB_WORKSPACE/backend.pid"
+          ./gradlew bootRun > "$LOG_FILE" 2>&1 &
+          echo $! > "$PID_FILE"
+          for i in {1..30}; do
+            if curl -fsS http://localhost:8080/actuator/health >/dev/null; then
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "${READY:-0}" -ne 1 ]; then
+            echo "Backend failed to become ready" >&2
+            cat "$LOG_FILE" || true
+            if [ -f "$PID_FILE" ]; then
+              kill "$(cat "$PID_FILE")" || true
+            fi
+            exit 1
+          fi
+
+      - name: Compare runtime OpenAPI with spec
+        run: |
+          LOGIN_PAYLOAD='{"loginId":"admin","password":"password","deviceId":"ci-runner"}'
+          curl -fsS -H "Content-Type: application/json" -d "$LOGIN_PAYLOAD" http://localhost:8080/auth/login > login-response.json
+          ACCESS_TOKEN=$(jq -r '.tokens.accessToken' login-response.json)
+          if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
+            echo "Failed to obtain access token" >&2
+            cat login-response.json
+            exit 1
+          fi
+          curl -fsS -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/v3/api-docs > runtime-openapi.json
+          npx @redocly/openapi-cli bundle api/openapi.yml --output spec-openapi.json --ext json
+          npx @redocly/openapi-cli diff spec-openapi.json runtime-openapi.json
+
+      - name: Stop backend after OpenAPI check
+        if: always()
+        run: |
+          PID_FILE="$GITHUB_WORKSPACE/backend.pid"
+          LOG_FILE="$GITHUB_WORKSPACE/backend-openapi.log"
+          if [ -f "$PID_FILE" ]; then
+            PID=$(cat "$PID_FILE")
+            kill "$PID" || true
+            wait "$PID" 2>/dev/null || true
+            rm -f "$PID_FILE"
+          fi
+          rm -f "$LOG_FILE" runtime-openapi.json spec-openapi.json
 
       - name: Run frontend tests (lint)
         run: ./auto tests frontend

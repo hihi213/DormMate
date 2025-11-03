@@ -174,6 +174,202 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** 냉장고 슬롯 목록 조회 */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 조회할 층 (지정하지 않으면 전체) */
+                    floor?: number;
+                    /** @description full 지정 시 용량·표시 이름·점유 수 등 상세 정보를 포함 */
+                    view?: "basic" | "full";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 슬롯 목록 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["FridgeSlot"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 관리자 사용자 목록 조회 */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 조회할 사용자 상태 필터 (기본 ACTIVE) */
+                    status?: "ACTIVE" | "INACTIVE" | "ALL";
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 사용자 목록 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminUsersResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/roles/floor-manager": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 층별장 임명 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 임명 성공 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        /** 층별장 해제 */
+        delete: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 해제 성공 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/users/{userId}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 사용자 상태 변경 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    userId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateUserStatusRequest"];
+                };
+            };
+            responses: {
+                /** @description 상태 변경 성공 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        trace?: never;
+    };
+    "/admin/policies": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 관리자 정책 조회 */
         get: {
             parameters: {
                 query?: never;
@@ -182,9 +378,46 @@ export interface paths {
                 cookie?: never;
             };
             requestBody?: never;
-            responses: never;
+            responses: {
+                /** @description 정책 정보 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["AdminPoliciesResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
         };
-        put?: never;
+        /** 관리자 정책 저장 */
+        put: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateAdminPoliciesRequest"];
+                };
+            };
+            responses: {
+                /** @description 저장 성공 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
         post?: never;
         delete?: never;
         options?: never;
@@ -271,7 +504,9 @@ export interface paths {
                     status?: "active" | "deleted";
                     /** @description 포장명/물품명/라벨(A123) 검색 */
                     search?: string;
+                    /** @description 페이지 인덱스 (0부터 시작) */
                     page?: number;
+                    /** @description 페이지 당 항목 수 */
                     size?: number;
                 };
                 header?: never;
@@ -328,6 +563,361 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/admin/fridge/bundles/deleted": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 삭제된 포장 이력 조회
+         * @description 기본적으로 최근 3개월 이내 삭제된 포장을 반환하며, `since` 파라미터로 기간을 확장할 수 있습니다.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 조회 기준 시각(UTC). 지정하지 않으면 현재 시각 기준 3개월 전으로 자동 설정됩니다. */
+                    since?: string;
+                    page?: number;
+                    size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 삭제된 포장 목록 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["BundleListResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/fridge/reallocations/preview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 층별 칸-호실 재배분 추천안 조회
+         * @description 현재 배정 현황을 바탕으로 균등 분배한 추천안을 생성합니다. 실제 반영 전 검토용으로 사용하세요.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReallocationPreviewRequest"];
+                };
+            };
+            responses: {
+                /** @description 추천안 생성 성공 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReallocationPreviewResponse"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/fridge/reallocations/apply": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * 층별 칸-호실 재배분 확정 반영
+         * @description 검토·수정한 배정안을 저장하고 기존 배정을 종료합니다.
+         */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["ReallocationApplyRequest"];
+                };
+            };
+            responses: {
+                /** @description 재배분 적용 성공 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["ReallocationApplyResponse"];
+                    };
+                };
+                /** @description 잘못된 재배분 요청 (예: ROOM_NOT_ON_FLOOR, ROOM_DISTRIBUTION_IMBALANCED, SHARED_COMPARTMENT_MUST_INCLUDE_ALL_ROOMS) */
+                400: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/problem+json": components["schemas"]["Problem"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 내 알림 목록 조회
+         * @description 미읽음 우선 정렬로 알림을 반환합니다. TTL이 지난 알림은 자동으로 만료 처리됩니다.
+         */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 조회할 알림 상태 */
+                    state?: "all" | "unread" | "read";
+                    page?: number;
+                    size?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 알림 목록 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationListResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/{notificationId}/read": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 특정 알림 읽음 처리 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    notificationId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 읽음 처리 완료 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        trace?: never;
+    };
+    "/notifications/read-all": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 모든 미읽음 알림 읽음 처리 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 처리 완료 */
+                204: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content?: never;
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        trace?: never;
+    };
+    "/notifications/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 알림 수신 설정 조회 */
+        get: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 알림 선호 설정 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationPreferenceResponse"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/notifications/preferences/{kindCode}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** 알림 수신 설정 변경 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    /** @description 알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등) */
+                    kindCode: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateNotificationPreferenceRequest"];
+                };
+            };
+            responses: {
+                /** @description 변경된 설정 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["NotificationPreferenceItem"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
         trace?: never;
     };
     "/fridge/bundles/{bundleId}": {
@@ -558,7 +1148,36 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        get?: never;
+        /** 검사 세션 목록 조회 */
+        get: {
+            parameters: {
+                query?: {
+                    /** @description 특정 칸의 세션만 조회 */
+                    slotId?: string;
+                    /** @description 세션 상태 필터 */
+                    status?: "IN_PROGRESS" | "SUBMITTED" | "CANCELLED";
+                    /** @description 반환할 최대 세션 수 */
+                    limit?: number;
+                };
+                header?: never;
+                path?: never;
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 검사 세션 목록 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InspectionSession"][];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+            };
+        };
         put?: never;
         /** 검사 세션 시작 */
         post: {
@@ -651,7 +1270,7 @@ export interface paths {
             query?: never;
             header?: never;
             path: {
-                sessionId: number;
+                sessionId: string;
             };
             cookie?: never;
         };
@@ -661,7 +1280,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    sessionId: number;
+                    sessionId: string;
                 };
                 cookie?: never;
             };
@@ -689,7 +1308,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    sessionId: number;
+                    sessionId: string;
                 };
                 cookie?: never;
             };
@@ -809,68 +1428,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/events/poll": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * 폴링 커서 조회
-         * @description sinceId 이후 이벤트를 event_id 오름차순으로 반환한다.
-         */
-        get: {
-            parameters: {
-                query?: {
-                    /** @description 마지막으로 수신한 eventId. 빈 값이면 최신 50개를 반환한다. */
-                    sinceId?: number;
-                    /** @description 한번에 받을 이벤트 수 상한 */
-                    limit?: number;
-                    /** @description 특정 리소스(event_log.resource_id) 필터 */
-                    resourceId?: number;
-                    /** @description 층 코드 필터 (예: 2F) */
-                    floor?: string;
-                };
-                header?: never;
-                path?: never;
-                cookie?: never;
-            };
-            requestBody?: never;
-            responses: {
-                /** @description 이벤트 목록 */
-                200: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/json": components["schemas"]["PollResponse"];
-                    };
-                };
-                401: components["responses"]["Unauthorized"];
-                403: components["responses"]["Forbidden"];
-                409: components["responses"]["Conflict"];
-                422: components["responses"]["UnprocessableEntity"];
-                /** @description 세션 잠금 상태 */
-                423: {
-                    headers: {
-                        [name: string]: unknown;
-                    };
-                    content: {
-                        "application/problem+json": components["schemas"]["Problem"];
-                    };
-                };
-                429: components["responses"]["TooManyRequests"];
-            };
-        };
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -881,6 +1438,8 @@ export interface components {
             status?: number;
             detail?: string;
             instance?: string;
+            /** @description 서비스 정의 오류 코드(예: `CAPACITY_EXCEEDED`) */
+            code?: string;
         };
         /** @enum {string} */
         RoleCode: "RESIDENT" | "FLOOR_MANAGER" | "ADMIN";
@@ -949,6 +1508,52 @@ export interface components {
             /** Format: date-time */
             updatedAt: string;
         };
+        AdminUser: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            room?: string | null;
+            floor?: number | null;
+            roomCode?: string | null;
+            personalNo?: number | null;
+            role: components["schemas"]["RoleCode"];
+            roles?: components["schemas"]["RoleCode"][];
+            /** @enum {string} */
+            status: "ACTIVE" | "INACTIVE";
+            lastLogin: string;
+            penalties: number;
+        };
+        AdminUsersResponse: {
+            items: components["schemas"]["AdminUser"][];
+        };
+        AdminPoliciesResponse: {
+            notification: {
+                batchTime: string;
+                dailyLimit: number;
+                ttlHours: number;
+            };
+            penalty: {
+                limit: number;
+                template: string;
+            };
+        };
+        UpdateUserStatusRequest: {
+            /** @enum {string} */
+            status: "INACTIVE";
+        };
+        UpdateAdminPoliciesRequest: {
+            notification: components["schemas"]["UpdateNotificationPolicy"];
+            penalty: components["schemas"]["UpdatePenaltyPolicy"];
+        };
+        UpdateNotificationPolicy: {
+            batchTime: string;
+            dailyLimit: number;
+            ttlHours: number;
+        };
+        UpdatePenaltyPolicy: {
+            limit: number;
+            template: string;
+        };
         /** @enum {string} */
         SlotType: "CHILL" | "FREEZE";
         /** @enum {string} */
@@ -967,6 +1572,7 @@ export interface components {
             lockedUntil?: string | null;
             capacity?: number | null;
             displayName?: string | null;
+            occupiedCount?: number | null;
         };
         UpdateCompartmentConfigRequest: {
             maxBundleCount?: number;
@@ -1031,6 +1637,113 @@ export interface components {
             /** Format: int64 */
             totalCount: number;
         };
+        ReallocationPreviewRequest: {
+            /** Format: int32 */
+            floor: number;
+        };
+        ReallocationPreviewResponse: {
+            /** Format: int32 */
+            floor: number;
+            rooms: components["schemas"]["ReallocationRoomSummary"][];
+            allocations: components["schemas"]["ReallocationCompartmentAllocation"][];
+            /** Format: int32 */
+            chillCompartmentCount: number;
+        };
+        ReallocationRoomSummary: {
+            /** Format: uuid */
+            roomId: string;
+            roomNumber: string;
+            roomType: string;
+            /** Format: int32 */
+            floor: number;
+        };
+        ReallocationCompartmentAllocation: {
+            /** Format: uuid */
+            compartmentId: string;
+            /** Format: uuid */
+            fridgeUnitId: string;
+            /** Format: int32 */
+            slotIndex: number;
+            slotLabel: string;
+            /** @enum {string} */
+            compartmentType: "CHILL" | "FREEZE";
+            /** @enum {string} */
+            status: "ACTIVE" | "SUSPENDED" | "REPORTED" | "RETIRED";
+            locked: boolean;
+            currentRoomIds: string[];
+            recommendedRoomIds: string[];
+            warnings: string[];
+        };
+        ReallocationApplyRequest: {
+            /** Format: int32 */
+            floor: number;
+            allocations: components["schemas"]["ReallocationApplyAllocation"][];
+        };
+        ReallocationApplyAllocation: {
+            /** Format: uuid */
+            compartmentId: string;
+            roomIds: string[];
+        };
+        ReallocationApplyResponse: {
+            /** Format: int32 */
+            floor: number;
+            /** Format: int32 */
+            affectedCompartments: number;
+            /** Format: int32 */
+            releasedAssignments: number;
+            /** Format: int32 */
+            createdAssignments: number;
+            /** Format: date-time */
+            appliedAt: string;
+        };
+        /** @enum {string} */
+        NotificationState: "UNREAD" | "READ" | "EXPIRED";
+        NotificationItem: {
+            /** Format: uuid */
+            id: string;
+            /** @description 알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등) */
+            kindCode: string;
+            title: string;
+            body: string;
+            state: components["schemas"]["NotificationState"];
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            readAt?: string | null;
+            /** Format: date-time */
+            ttlAt?: string | null;
+            /** Format: uuid */
+            correlationId?: string | null;
+            metadata?: {
+                [key: string]: unknown;
+            };
+        };
+        NotificationListResponse: {
+            items: components["schemas"]["NotificationItem"][];
+            /** Format: int32 */
+            page: number;
+            /** Format: int32 */
+            size: number;
+            /** Format: int64 */
+            totalElements: number;
+            /** Format: int64 */
+            unreadCount: number;
+        };
+        NotificationPreferenceItem: {
+            /** @description 알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등) */
+            kindCode: string;
+            displayName: string;
+            description: string;
+            enabled: boolean;
+            allowBackground: boolean;
+        };
+        NotificationPreferenceResponse: {
+            items: components["schemas"]["NotificationPreferenceItem"][];
+        };
+        UpdateNotificationPreferenceRequest: {
+            enabled: boolean;
+            allowBackground: boolean;
+        };
         CreateBundleItemInput: {
             name: string;
             /** Format: date */
@@ -1078,6 +1791,42 @@ export interface components {
             action: components["schemas"]["InspectionAction"];
             count: number;
         };
+        InspectionActionItem: {
+            /** Format: int64 */
+            id?: number;
+            /** Format: uuid */
+            fridgeItemId?: string | null;
+            snapshotName?: string | null;
+            /** Format: date */
+            snapshotExpiresOn?: string | null;
+            quantityAtAction?: number | null;
+        };
+        PenaltyHistory: {
+            /** Format: uuid */
+            id?: string;
+            points?: number;
+            reason?: string | null;
+            /** Format: date-time */
+            issuedAt?: string;
+            /** Format: date-time */
+            expiresAt?: string | null;
+        };
+        InspectionActionDetail: {
+            /** Format: int64 */
+            actionId?: number;
+            actionType?: components["schemas"]["InspectionAction"];
+            /** Format: uuid */
+            bundleId?: string | null;
+            /** Format: uuid */
+            targetUserId?: string | null;
+            /** Format: date-time */
+            recordedAt?: string;
+            /** Format: uuid */
+            recordedBy?: string | null;
+            note?: string | null;
+            items?: components["schemas"]["InspectionActionItem"][];
+            penalties?: components["schemas"]["PenaltyHistory"][];
+        };
         InspectionSession: {
             /** Format: uuid */
             sessionId: string;
@@ -1096,6 +1845,7 @@ export interface components {
             endedAt?: string | null;
             bundles: components["schemas"]["FridgeBundle"][];
             summary: components["schemas"]["InspectionActionSummary"][];
+            actions?: components["schemas"]["InspectionActionDetail"][];
             notes?: string | null;
         };
         InspectionActionEntry: {
@@ -1111,23 +1861,6 @@ export interface components {
         };
         SubmitInspectionRequest: {
             notes?: string | null;
-        };
-        PollEvent: {
-            /** Format: int64 */
-            eventId: number;
-            type: string;
-            /** Format: int64 */
-            resourceId?: number | null;
-            floorCode?: string | null;
-            data: string;
-            correlationId?: string | null;
-            /** Format: date-time */
-            createdAt?: string | null;
-        };
-        PollResponse: {
-            /** Format: int64 */
-            lastId: number;
-            events: components["schemas"]["PollEvent"][];
         };
     };
     responses: {

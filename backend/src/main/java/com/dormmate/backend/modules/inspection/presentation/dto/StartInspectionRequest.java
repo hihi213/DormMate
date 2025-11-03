@@ -8,6 +8,7 @@ import jakarta.validation.constraints.NotNull;
 
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record StartInspectionRequest(
-        @NotNull UUID slotId
+        @NotNull UUID slotId,
+        UUID scheduleId
 ) {
 }

@@ -5,6 +5,11 @@ import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.Objects;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 
 import com.dormmate.backend.modules.auth.presentation.dto.LoginRequest;
 import com.dormmate.backend.modules.auth.presentation.dto.LoginResponse;
@@ -30,8 +35,17 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 @Service
-@Transactional
+@Transactional(noRollbackFor = ResponseStatusException.class)
 public class AuthService {
+
+    private static final String REASON_EXPIRED = "EXPIRED";
+    private static final String REASON_ROTATED = "ROTATED";
+    private static final String REASON_LOGOUT = "LOGOUT";
+    private static final String REASON_DEVICE_MISMATCH = "DEVICE_MISMATCH";
+    private static final String REASON_USER_INACTIVE = "USER_INACTIVE";
+    private static final int DEVICE_ID_MAX_LENGTH = 100;
+    private static final HexFormat HEX_FORMAT = HexFormat.of();
+    private static final String REFRESH_TOKEN_HASH_ALGORITHM = "SHA-256";
 
     private final DormUserRepository dormUserRepository;
     private final UserRoleRepository userRoleRepository;
@@ -72,10 +86,15 @@ public class AuthService {
         }
 
         List<String> roleCodes = extractActiveRoleCodes(user.getId());
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        revokeExpiredSessions(user.getId(), now);
+
         String refreshToken = UUID.randomUUID().toString();
+        String refreshTokenHash = hashRefreshToken(refreshToken);
+        String deviceId = normalizeDeviceId(request.deviceId());
 
         TokenPairResponse tokens = jwtTokenService.issueTokenPair(user.getId(), user.getLoginId(), roleCodes, refreshToken);
-        persistSession(user, refreshToken, tokens);
+        persistSession(user, refreshTokenHash, tokens, deviceId);
 
         UserProfileResponse profile = buildUserProfile(user, roleCodes);
         return new LoginResponse(tokens, profile);
@@ -83,28 +102,45 @@ public class AuthService {
 
     public LoginResponse refresh(RefreshRequest request) {
         OffsetDateTime now = OffsetDateTime.now(clock);
-        UserSession session = userSessionRepository.findActiveByRefreshToken(request.refreshToken())
+        String requestRefreshTokenHash = hashRefreshToken(request.refreshToken());
+
+        UserSession session = userSessionRepository.findByRefreshTokenHash(requestRefreshTokenHash)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN"));
 
-        if (session.getRevokedAt() != null || session.getExpiresAt().isBefore(now)) {
-            revokeSession(session, "EXPIRED");
+        if (session.getRevokedAt() != null) {
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN");
+        }
+
+        if (session.getExpiresAt().isBefore(now)) {
+            revokeSession(session, REASON_EXPIRED);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_EXPIRED");
+        }
+
+        String requestDeviceId = normalizeDeviceId(request.deviceId());
+        String sessionDeviceId = normalizeDeviceId(session.getDeviceId());
+        if (sessionDeviceId != null && requestDeviceId != null && !Objects.equals(sessionDeviceId, requestDeviceId)) {
+            revokeSession(session, REASON_DEVICE_MISMATCH);
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_DEVICE_MISMATCH");
         }
 
         DormUser user = session.getDormUser();
         if (user.getStatus() != DormUserStatus.ACTIVE) {
-            revokeSession(session, "USER_INACTIVE");
+            revokeSession(session, REASON_USER_INACTIVE);
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "USER_INACTIVE");
         }
 
         // 재사용 방지: 기존 세션은 즉시 폐기하고 새 토큰을 발급한다.
-        revokeSession(session, "ROTATED");
+        revokeSession(session, REASON_ROTATED);
+
+        revokeExpiredSessions(user.getId(), now);
 
         List<String> roleCodes = extractActiveRoleCodes(user.getId());
         String refreshToken = UUID.randomUUID().toString();
+        String refreshTokenHash = hashRefreshToken(refreshToken);
+        String effectiveDeviceId = requestDeviceId != null ? requestDeviceId : sessionDeviceId;
 
         TokenPairResponse tokens = jwtTokenService.issueTokenPair(user.getId(), user.getLoginId(), roleCodes, refreshToken);
-        persistSession(user, refreshToken, tokens);
+        persistSession(user, refreshTokenHash, tokens, effectiveDeviceId);
 
         UserProfileResponse profile = buildUserProfile(user, roleCodes);
         return new LoginResponse(tokens, profile);
@@ -112,7 +148,8 @@ public class AuthService {
 
     public void logout(LogoutRequest request) {
         OffsetDateTime now = OffsetDateTime.now(clock);
-        int updated = userSessionRepository.revokeByRefreshToken(request.refreshToken(), now, "LOGOUT");
+        String refreshTokenHash = hashRefreshToken(request.refreshToken());
+        int updated = userSessionRepository.revokeByRefreshTokenHash(refreshTokenHash, now, REASON_LOGOUT);
         if (updated == 0) {
             // 기등록되지 않은 토큰도 동일한 응답을 반환해 토큰 유효 여부가 노출되지 않도록 한다.
             return;
@@ -125,19 +162,6 @@ public class AuthService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "USER_NOT_FOUND"));
         List<String> roleCodes = extractActiveRoleCodes(user.getId());
         return buildUserProfile(user, roleCodes);
-    }
-
-    private void persistSession(DormUser user, String refreshToken, TokenPairResponse tokens) {
-        OffsetDateTime issuedAt = tokens.issuedAt();
-        OffsetDateTime refreshExpiry = issuedAt.plusSeconds(tokens.refreshExpiresIn());
-
-        UserSession session = new UserSession();
-        session.setDormUser(user);
-        session.setRefreshToken(refreshToken);
-        session.setIssuedAt(issuedAt);
-        session.setExpiresAt(refreshExpiry);
-
-        userSessionRepository.save(session);
     }
 
     private void revokeSession(UserSession session, String reason) {
@@ -183,5 +207,47 @@ public class AuthService {
                 user.getCreatedAt(),
                 user.getUpdatedAt()
         );
+    }
+
+    private void persistSession(DormUser user, String refreshTokenHash, TokenPairResponse tokens, String deviceId) {
+        OffsetDateTime issuedAt = tokens.issuedAt();
+        OffsetDateTime refreshExpiry = issuedAt.plusSeconds(tokens.refreshExpiresIn());
+
+        UserSession session = new UserSession();
+        session.setDormUser(user);
+        session.setRefreshTokenHash(refreshTokenHash);
+        session.setIssuedAt(issuedAt);
+        session.setExpiresAt(refreshExpiry);
+        session.setDeviceId(deviceId);
+
+        userSessionRepository.save(session);
+    }
+
+    private void revokeExpiredSessions(UUID userId, OffsetDateTime now) {
+        userSessionRepository.revokeExpiredSessions(userId, now, now, REASON_EXPIRED);
+    }
+
+    private String hashRefreshToken(String refreshToken) {
+        try {
+            MessageDigest digest = MessageDigest.getInstance(REFRESH_TOKEN_HASH_ALGORITHM);
+            byte[] hashed = digest.digest(refreshToken.getBytes(StandardCharsets.UTF_8));
+            return HEX_FORMAT.formatHex(hashed);
+        } catch (NoSuchAlgorithmException e) {
+            throw new IllegalStateException("Failed to initialize refresh token hash algorithm", e);
+        }
+    }
+
+    private String normalizeDeviceId(String rawDeviceId) {
+        if (rawDeviceId == null) {
+            return null;
+        }
+        String trimmed = rawDeviceId.trim();
+        if (trimmed.isEmpty()) {
+            return null;
+        }
+        if (trimmed.length() > DEVICE_ID_MAX_LENGTH) {
+            return trimmed.substring(0, DEVICE_ID_MAX_LENGTH);
+        }
+        return trimmed;
     }
 }

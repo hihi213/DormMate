@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
-import { DEMO_ACCOUNTS, getCurrentUser, loginWithCredentials } from "@/lib/auth"
+import { getCurrentUser, loginWithCredentials } from "@/lib/auth"
 
 type LoginPanelProps = {
   redirectTo: string
@@ -24,6 +24,15 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
 
   // redirect query 우선 사용
   const finalRedirect = useMemo(() => params.get("redirect") ?? redirectTo ?? "/", [params, redirectTo])
+  const reason = params.get("reason")
+  const sessionMessage = useMemo(() => {
+    switch (reason) {
+      case "sessionExpired":
+        return "세션이 만료되어 다시 로그인해 주세요."
+      default:
+        return ""
+    }
+  }, [reason])
 
   const [loginId, setLoginId] = useState("")
   const [password, setPassword] = useState("")
@@ -75,12 +84,6 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
     })
   }
 
-  const fillDemoAccount = (id: string, pwd: string) => {
-    setLoginId(id)
-    setPassword(pwd)
-    setError("")
-  }
-
   return (
     <form
       className="space-y-6"
@@ -90,6 +93,12 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
         handleSubmit()
       }}
     >
+      {sessionMessage && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+          {sessionMessage}
+        </div>
+      )}
+
       <div className="space-y-2">
         <label htmlFor="login-id" className="text-sm font-medium text-gray-800">
           {"아이디"}
@@ -161,26 +170,9 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
         {pending && <Loader2 className="mr-2 size-4 animate-spin" />}
         {"로그인"}
       </Button>
-
-      <div className="rounded-2xl border border-emerald-100 bg-emerald-50/60 px-4 py-4 text-xs text-emerald-800 shadow-inner">
-        <p className="font-semibold">{"테스트 계정 체험"}</p>
-        <p className="mt-1 text-[11px] text-emerald-600">{"버튼을 누르면 아이디와 비밀번호가 자동으로 채워집니다."}</p>
-        <div className="mt-3 grid gap-2 sm:grid-cols-3">
-          {DEMO_ACCOUNTS.map((account) => (
-            <button
-              key={account.id}
-              type="button"
-              onClick={() => fillDemoAccount(account.id, account.password)}
-              className="flex flex-col rounded-xl border border-emerald-200 bg-white px-3 py-2 text-left transition hover:border-emerald-300 hover:bg-emerald-100"
-              aria-label={`${account.roleLabel} ${account.displayName} 계정 자동 입력`}
-            >
-              <span className="text-sm font-semibold text-emerald-800">{account.id}</span>
-              <span className="text-[11px] text-emerald-600">{`${account.roleLabel} · ${account.displayName}`}</span>
-              <span className="text-[11px] text-emerald-500">{`비밀번호 ${account.password}`}</span>
-            </button>
-          ))}
-        </div>
-      </div>
+      <p className="text-xs text-gray-500">
+        {"계정을 발급받지 않았다면 기숙사 관리자에게 문의해 주세요."}
+      </p>
 
       <button
         type="button"

@@ -1,10 +1,4 @@
-import {
-  FRIDGE_BUNDLES_KEY,
-  FRIDGE_SLOTS_KEY,
-  FRIDGE_UNITS_KEY,
-  generateDefaultFridgeData,
-} from "@/features/fridge/utils/data-shaping"
-import { addDays } from "@/lib/date-utils"
+import { safeApiCall } from "@/lib/api-client"
 
 const SCHEDULE_KEY = "fridge-inspections-schedule-v1"
 const HISTORY_KEY = "fridge-inspections-history-v1"
@@ -17,71 +11,22 @@ const CLEAR_ONLY_KEYS = [
   "library-my-loans",
 ]
 
-const toIsoAtHour = (base: Date, hour: number) => {
-  const d = new Date(base)
-  d.setHours(hour, 0, 0, 0)
-  return d.toISOString()
-}
+const LEGACY_FRIDGE_CACHE_KEYS = ["fridge-slots", "fridge-bundles", "fridge-units"]
 
-function generateInspectionScheduleSeed() {
-  const now = new Date()
-  return [
-    {
-      id: "seed-past-1",
-      dateISO: toIsoAtHour(addDays(now, -5), 9),
-      title: "주간 점검",
-      notes: "2층 냉장고",
-      completed: true,
-      completedAt: toIsoAtHour(addDays(now, -5), 11),
-      completedBy: "bob",
-      summary: { passed: 3, warned: 1, discarded: 0 },
-    },
-    {
-      id: "seed-upcoming-1",
-      dateISO: toIsoAtHour(addDays(now, 2), 9),
-      title: "정기 점검",
-      notes: "2층 전체",
-      completed: false,
-    },
-    {
-      id: "seed-upcoming-2",
-      dateISO: toIsoAtHour(addDays(now, 8), 10),
-      title: "월간 위생 점검",
-      notes: "상층 포함",
-      completed: false,
-    },
-  ]
-}
-
-function generateInspectionHistorySeed() {
-  const now = new Date()
-  return [
-    {
-      id: "seed-history-1",
-      dateISO: toIsoAtHour(addDays(now, -6), 12),
-      passed: 2,
-      warned: 1,
-      discarded: 0,
-      notes: "처리 3건",
-    },
-  ]
-}
-
-export function resetAndSeedAll(forceUserId?: string) {
-  if (typeof window === "undefined") return
-
-  const fridgeData = generateDefaultFridgeData()
-
-  localStorage.setItem(FRIDGE_SLOTS_KEY, JSON.stringify(fridgeData.slots))
-  localStorage.setItem(FRIDGE_BUNDLES_KEY, JSON.stringify(fridgeData.bundles))
-  localStorage.setItem(FRIDGE_UNITS_KEY, JSON.stringify(fridgeData.units))
-
-  localStorage.setItem(SCHEDULE_KEY, JSON.stringify(generateInspectionScheduleSeed()))
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(generateInspectionHistorySeed()))
-
-  CLEAR_ONLY_KEYS.forEach((key) => localStorage.removeItem(key))
-
-  if (forceUserId) {
-    localStorage.setItem("auth-user", forceUserId)
+export async function resetAndSeedAll() {
+  if (typeof window === "undefined") {
+    return
   }
+
+  const { error } = await safeApiCall<{ message?: string }>("/admin/seed/fridge-demo", {
+    method: "POST",
+  })
+
+  if (error) {
+    throw new Error(error.message ?? "데모 데이터를 초기화하지 못했습니다. 관리자 권한을 확인해 주세요.")
+  }
+
+  const keysToClear = [SCHEDULE_KEY, HISTORY_KEY, ...LEGACY_FRIDGE_CACHE_KEYS, ...CLEAR_ONLY_KEYS]
+  keysToClear.forEach((key) => window.localStorage.removeItem(key))
+
 }

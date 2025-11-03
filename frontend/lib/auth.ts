@@ -1,4 +1,5 @@
 import { safeApiCall } from "@/lib/api-client"
+import { getDeviceId } from "@/lib/device-id"
 
 export type UserRole = "RESIDENT" | "FLOOR_MANAGER" | "ADMIN"
 
@@ -63,19 +64,6 @@ const ACCESS_TOKEN_SKEW_MS = 5_000
 const authListeners = new Set<(user: AuthUser | null) => void>()
 
 let refreshPromise: Promise<boolean> | null = null
-
-type DemoAccount = {
-  id: string
-  password: string
-  displayName: string
-  roleLabel: string
-}
-
-export const DEMO_ACCOUNTS: DemoAccount[] = [
-  { id: "alice", password: "alice123!", displayName: "Alice Kim", roleLabel: "거주자" },
-  { id: "bob", password: "bob123!", displayName: "Bob Lee", roleLabel: "층별장" },
-  { id: "carol", password: "carol123!", displayName: "Carol Park", roleLabel: "거주자" },
-]
 
 function mapUserProfile(profile: UserProfile): AuthUser {
   return {
@@ -206,7 +194,7 @@ async function ensureTokens(forceRefresh: boolean): Promise<boolean> {
 
     const { data, error } = await safeApiCall<LoginResponse>("/auth/refresh", {
       method: "POST",
-      body: { refreshToken: current.refreshToken },
+      body: { refreshToken: current.refreshToken, deviceId: getDeviceId() },
       skipAuth: true,
     })
 
@@ -260,7 +248,7 @@ export async function forceRefreshAccessToken(): Promise<string | null> {
 export async function loginWithCredentials({ id, password }: { id: string; password: string }) {
   const { data, error } = await safeApiCall<LoginResponse>("/auth/login", {
     method: "POST",
-    body: { loginId: id, password },
+    body: { loginId: id, password, deviceId: getDeviceId() },
     skipAuth: true,
   })
 
@@ -309,13 +297,29 @@ export function getAuthorizationHeader(): string | null {
   return `${tokens.tokenType} ${tokens.accessToken}`
 }
 
-export function resetAuthDemo() {
+export function redirectToLogin(redirectUrl?: string, reason?: string) {
+  if (
+    process.env.NEXT_PUBLIC_FIXTURE === "1" ||
+    (typeof window !== "undefined" && window.localStorage.getItem("dm.fixture") === "1")
+  ) {
+    return
+  }
   clearSession()
-}
-
-export function getAllAuthUsers(): AuthUser[] {
-  const user = getCurrentUser()
-  return user ? [user] : []
+  if (typeof window === "undefined") {
+    return
+  }
+  const fallback = window.location.pathname + window.location.search
+  const target = redirectUrl ?? fallback
+  const params = new URLSearchParams({ redirect: target })
+  if (reason) {
+    params.set("reason", reason)
+  }
+  const loginUrl = `/auth/login?${params.toString()}`
+  if (window.location.pathname.startsWith("/auth/login")) {
+    window.location.href = loginUrl
+    return
+  }
+  window.location.href = loginUrl
 }
 
 export async function registerUser(): Promise<AuthUser> {

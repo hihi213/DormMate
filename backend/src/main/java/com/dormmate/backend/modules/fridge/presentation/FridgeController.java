@@ -1,6 +1,5 @@
 package com.dormmate.backend.modules.fridge.presentation;
 
-import java.util.List;
 import java.util.UUID;
 
 import com.dormmate.backend.modules.fridge.presentation.dto.AddItemRequest;
@@ -9,7 +8,7 @@ import com.dormmate.backend.modules.fridge.presentation.dto.CreateBundleRequest;
 import com.dormmate.backend.modules.fridge.presentation.dto.CreateBundleResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeBundleResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeItemResponse;
-import com.dormmate.backend.modules.fridge.presentation.dto.FridgeSlotResponse;
+import com.dormmate.backend.modules.fridge.presentation.dto.FridgeSlotListResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.UpdateBundleRequest;
 import com.dormmate.backend.modules.fridge.presentation.dto.UpdateItemRequest;
 import com.dormmate.backend.modules.fridge.application.FridgeService;
@@ -41,11 +40,13 @@ public class FridgeController {
     }
 
     @GetMapping("/slots")
-    public ResponseEntity<List<FridgeSlotResponse>> getSlots(
+    public ResponseEntity<FridgeSlotListResponse> getSlots(
             @RequestParam(name = "floor", required = false) Integer floor,
-            @RequestParam(name = "view", required = false) String view
+            @RequestParam(name = "view", required = false) String view,
+            @RequestParam(name = "page", required = false) Integer page,
+            @RequestParam(name = "size", required = false) Integer size
     ) {
-        return ResponseEntity.ok(fridgeService.getSlots(floor, view));
+        return ResponseEntity.ok(fridgeService.getSlots(floor, view, page, size));
     }
 
     @GetMapping("/bundles")
@@ -53,9 +54,11 @@ public class FridgeController {
             @RequestParam(name = "slotId", required = false) UUID slotId,
             @RequestParam(name = "owner", required = false) String owner,
             @RequestParam(name = "status", required = false) String status,
-            @RequestParam(name = "search", required = false) String search
+            @RequestParam(name = "search", required = false) String search,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size
     ) {
-        return ResponseEntity.ok(fridgeService.getBundles(slotId, owner, status, search));
+        return ResponseEntity.ok(fridgeService.getBundles(slotId, owner, status, search, page, size));
     }
 
     @Operation(

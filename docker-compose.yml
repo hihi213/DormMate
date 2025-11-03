@@ -39,6 +39,9 @@ services: # 이 파일로 관리할 컨테이너(서비스)들의 목록을 정�
   pgadmin:
     image: dpage/pgadmin4:8.6 # pgAdmin4의 8.6 버전 이미지를 사용합니다.
     container_name: dorm_pgadmin # 컨테이너에 고정 이름을 부여합니다.
+    profiles:
+      - dev
+      - demo
     depends_on:
       # 서비스 시작 순서를 제어합니다. pgadmin은 db 서비스가 'healthy' 상태가 된 후에 시작됩니다.
       # 이를 통해 DB가 준비되지 않은 상태에서 pgadmin이 실행되어 연결 오류가 발생하는 것을 방지합니다.
@@ -72,7 +75,6 @@ services: # 이 파일로 관리할 컨테이너(서비스)들의 목록을 정�
       # 호스트 머신의 SQL 마이그레이션 파일들을 컨테이너의 Flyway가 인식하는 경로로 마운트합니다.
       # ':ro'는 read-only(읽기 전용)를 의미하며, 컨테이너가 실수로 마이그레이션 파일을 수정하는 것을 방지하는 좋은 습관입니다.
       - ./backend/src/main/resources/db/migration:/flyway/sql:ro
-    restart: "unless-stopped" # 컨테이너가 비정상 종료되었을 때, 사용자가 명시적으로 중지하지 않는 한 자동으로 재시작합니다. 마이그레이션은 보통 한 번만 실행되지만, 이 설정은 docker-compose up 시 항상 실행을 시도하도록 보장합니다.
 
 volumes:
   # 이 docker-compose 파일 내에서 사용할 명명된 볼륨(named volume)을 정의합니다.
