@@ -37,10 +37,10 @@ services:
     healthcheck:
       # Spring Boot Actuator가 제공하는 health check 엔드포인트를 호출하여 서비스의 실제 건강 상태를 확인합니다.
       test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"] # '/healthz' 엔드포인트에 요청을 보내고, HTTP 상태코드가 2xx가 아니면 실패로 간주합니다.
-      interval: 30s # 30초마다 검사
-      timeout: 10s # 10초 내 응답이 없으면 실패
+      interval: 10s # 10초마다 검사
+      timeout: 5s # 5초 내 응답이 없으면 실패
       retries: 3 # 3번 연속 실패 시 'unhealthy' 상태가 됨
-      start_period: 40s # 컨테이너 시작 후 40초의 유예 시간을 줍니다. 이 시간 동안의 실패는 재시도 횟수에 포함되지 않습니다. JVM 애플리케이션의 느린 시작 시간을 고려한 설정입니다.
+      start_period: 10s # 컨테이너 시작 후 10초만 유예합니다. 빠른 상태 전이를 위해 축소된 값입니다.
 
   # PostgreSQL - 운영용 보안 강화
   # 기본 yml의 'db' 서비스 설정을 '덮어씁니다'.
