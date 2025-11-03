@@ -9,7 +9,7 @@ on:
 
 env:
   POSTGRES_DB: dormmate_ci
-  POSTGRES_USER: dormmate_ci_user
+  POSTGRES_USER: dormmate_user
   POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
   NEXT_TELEMETRY_DISABLED: "1"
   PYTHONUNBUFFERED: "1"
