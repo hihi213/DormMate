@@ -2,10 +2,12 @@
 # 멀티스테이지 빌드로 최적화된 이미지 생성
 
 # 빌드 스테이지
-FROM gradle:8.9.0-jdk21 AS builder
-
+FROM eclipse-temurin:21-jdk-alpine AS builder
 # 작업 디렉토리 설정
 WORKDIR /app
+
+# Gradle Wrapper가 필요한 유틸리티 설치
+RUN apk add --no-cache bash unzip curl
 
 # 의존성 다운로드를 위한 build.gradle과 settings.gradle 복사
 COPY build.gradle settings.gradle ./
@@ -24,7 +26,7 @@ COPY src/ src/
 RUN ./gradlew build -x test -x generateGitProperties --no-daemon
 
 # 실행 스테이지
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:21.0.5_8-jre-jammy
 
 # 작업 디렉토리 설정
 WORKDIR /app
