@@ -8,9 +8,9 @@ on:
   pull_request:
 
 env:
-  POSTGRES_DB: dormitory_db
-  POSTGRES_USER: dorm_user
-  POSTGRES_PASSWORD: dorm_password
+  POSTGRES_DB: dormmate_ci
+  POSTGRES_USER: dormmate_ci_user
+  POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
   NEXT_TELEMETRY_DISABLED: "1"
   PYTHONUNBUFFERED: "1"
   GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-cache
