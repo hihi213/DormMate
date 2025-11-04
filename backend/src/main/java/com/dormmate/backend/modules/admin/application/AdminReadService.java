@@ -9,6 +9,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -27,6 +28,7 @@ import com.dormmate.backend.modules.admin.presentation.dto.AdminUserStatusFilter
 import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.auth.domain.DormUserStatus;
 import com.dormmate.backend.modules.auth.domain.UserRole;
+import com.dormmate.backend.modules.auth.domain.Role;
 import com.dormmate.backend.modules.auth.domain.RoomAssignment;
 import com.dormmate.backend.modules.auth.domain.UserSession;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
@@ -270,6 +272,7 @@ public class AdminReadService {
                 .collect(Collectors.groupingBy(session -> session.getDormUser().getId()));
 
         List<AdminUsersResponse.User> users = uniqueUsers.values().stream()
+                .filter(user -> !hasActiveRole(user, "ADMIN"))
                 .map(user -> mapUser(
                         user,
                         now,
@@ -381,6 +384,21 @@ public class AdminReadService {
             return "RESIDENT";
         }
         return roles.isEmpty() ? "RESIDENT" : roles.get(0);
+    }
+
+    private boolean hasActiveRole(DormUser user, String roleCode) {
+        if (roleCode == null || roleCode.isBlank()) {
+            return false;
+        }
+        String normalized = roleCode.trim().toUpperCase(Locale.ROOT);
+        return user.getRoles().stream()
+                .filter(role -> role.getRevokedAt() == null)
+                .map(UserRole::getRole)
+                .filter(Objects::nonNull)
+                .map(Role::getCode)
+                .filter(Objects::nonNull)
+                .map(code -> code.toUpperCase(Locale.ROOT))
+                .anyMatch(normalized::equals);
     }
 
     private String buildTimelineTitle(InspectionSchedule schedule) {

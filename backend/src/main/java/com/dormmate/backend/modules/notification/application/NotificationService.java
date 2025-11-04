@@ -38,9 +38,11 @@ import org.springframework.web.server.ResponseStatusException;
 public class NotificationService {
 
     private static final String KIND_INSPECTION_RESULT = "FRIDGE_RESULT";
+    public static final String KIND_FRIDGE_SCHEDULE = "FRIDGE_SCHEDULE";
     public static final String KIND_FRIDGE_EXPIRY = "FRIDGE_EXPIRY";
     public static final String KIND_FRIDGE_EXPIRED = "FRIDGE_EXPIRED";
     private static final int DEFAULT_TTL_HOURS = 24 * 7;
+    public static final int DEFAULT_SCHEDULE_TTL_HOURS = 24 * 3;
     private static final String DEDUPE_PREFIX = "FRIDGE_RESULT:";
 
     private static final List<PreferenceDefinition> SUPPORTED_PREFERENCES = List.of(
@@ -48,6 +50,13 @@ public class NotificationService {
                     KIND_INSPECTION_RESULT,
                     "냉장고 검사 결과",
                     "검사 조치 및 벌점 알림",
+                    true,
+                    true
+            ),
+            new PreferenceDefinition(
+                    KIND_FRIDGE_SCHEDULE,
+                    "냉장고 검사 일정",
+                    "다가오는 검사 일정을 안내합니다",
                     true,
                     true
             ),

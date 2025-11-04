@@ -1,5 +1,11 @@
 import { ensureValidAccessToken, forceRefreshAccessToken, redirectToLogin } from "@/lib/auth"
-import { ApiError, ApiErrorDictionary, ApiErrorTemplate, resolveApiError } from "./api-errors"
+import {
+  ApiError,
+  ApiErrorDictionary,
+  ApiErrorTemplate,
+  resolveApiError,
+  getDefaultErrorMessage,
+} from "./api-errors"
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE"
 
@@ -125,9 +131,23 @@ export async function safeApiCall<T>(
   path: string,
   options?: ApiRequestOptions,
 ): Promise<{ data?: T; error?: ApiError }> {
-  const result = await apiClient<T>(path, options)
-  if (result.ok) {
-    return { data: result.data }
+  try {
+    const result = await apiClient<T>(path, options)
+    if (result.ok) {
+      return { data: result.data }
+    }
+    return { error: result.error }
+  } catch (err) {
+    const fallbackMessage =
+      options?.errorMessages?.DEFAULT?.message ??
+      getDefaultErrorMessage("NETWORK_ERROR") ??
+      "서버와 통신하지 못했습니다. 네트워크 상태를 확인한 뒤 다시 시도해 주세요."
+    const networkError: ApiError = {
+      code: "NETWORK_ERROR",
+      message: fallbackMessage,
+      status: 0,
+      raw: err,
+    }
+    return { error: networkError }
   }
-  return { error: result.error }
 }
