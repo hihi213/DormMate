@@ -16,9 +16,6 @@ DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위�
 ## 빠른 시작
 
 ```bash
-# 필수 환경 변수 템플릿 확인
-cp .env.example .env
-
 # 개발용 인프라 기동 (Docker Compose)
 docker compose up -d
 # 또는 자동화 스크립트 사용
@@ -37,7 +34,7 @@ docker compose up -d
 cd frontend && npm install && npm run dev
 ```
 
-> DB 컨테이너는 5432 포트를 호스트에 노출합니다. 로컬 툴(IDE, psql)에서는 `localhost:5432`로 접속하고, 다른 컨테이너에서 접근할 때는 `db:5432` 호스트명을 사용하세요.
+> DB 컨테이너는 5432 포트를 호스트에 노출합니다. 로컬 툴(IDE, psql)에서는 `localhost:5432`로 접속하고, 다른 컨테이너에서 접근할 때는 `db:5432` 호스트명을 사용하세요. 필요한 환경 변수 목록은 `backend/ENV_SETUP.md`를 참고해 직접 `.env`를 작성하세요.
 
 > CI 런너(예: GitHub Actions)는 Java 21, Node.js 22, Docker(Compose), PostgreSQL 16, Redis 7.2 이미지를 사용할 수 있는 환경이어야 합니다. 기본 워크플로(`.github/workflows/ci.yml`)는 이러한 런타임을 기준으로 구성되어 있습니다.
 
