@@ -321,6 +321,7 @@ type CreateInspectionSchedulePayload = {
   scheduledAt: string
   title?: string | null
   notes?: string | null
+  fridgeCompartmentId: string
 }
 
 export async function createInspectionSchedule(
@@ -330,12 +331,16 @@ export async function createInspectionSchedule(
     scheduledAt: payload.scheduledAt,
     title: payload.title ?? undefined,
     notes: payload.notes ?? undefined,
+    fridgeCompartmentId: payload.fridgeCompartmentId,
   }
   const { data, error } = await safeApiCall<InspectionScheduleDto>("/fridge/inspection-schedules", {
     method: "POST",
     body,
   })
   if (error) {
+    if (error.code === "SCHEDULE_CONFLICT") {
+      throw new Error("이미 같은 시간대에 예약된 검사 일정이 있습니다.")
+    }
     throw new Error(error.message ?? "검사 일정을 생성하지 못했습니다.")
   }
   return data ? mapScheduleDto(data) : null
@@ -349,6 +354,7 @@ type UpdateInspectionSchedulePayload = {
   completedAt?: string | null
   inspectionSessionId?: string | null
   detachInspectionSession?: boolean
+  fridgeCompartmentId?: string
 }
 
 export async function updateInspectionSchedule(
@@ -363,12 +369,16 @@ export async function updateInspectionSchedule(
   if (payload.completedAt !== undefined) body.completedAt = payload.completedAt
   if (payload.inspectionSessionId !== undefined) body.inspectionSessionId = payload.inspectionSessionId
   if (payload.detachInspectionSession) body.detachInspectionSession = true
+  if (payload.fridgeCompartmentId !== undefined) body.fridgeCompartmentId = payload.fridgeCompartmentId
 
   const { data, error } = await safeApiCall<InspectionScheduleDto>(`/fridge/inspection-schedules/${scheduleId}`, {
     method: "PATCH",
     body,
   })
   if (error) {
+    if (error.code === "SCHEDULE_CONFLICT") {
+      throw new Error("이미 같은 시간대에 예약된 검사 일정이 있습니다.")
+    }
     throw new Error(error.message ?? "검사 일정을 수정하지 못했습니다.")
   }
   return data ? mapScheduleDto(data) : null

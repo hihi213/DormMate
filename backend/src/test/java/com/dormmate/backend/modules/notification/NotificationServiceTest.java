@@ -139,7 +139,19 @@ class NotificationServiceTest {
         NotificationService.NotificationPreferenceView view = notificationService.getPreferences(userId);
 
         assertThat(view.items()).extracting(NotificationService.NotificationPreferenceItem::kindCode)
-                .containsExactlyInAnyOrder("FRIDGE_RESULT", NotificationService.KIND_FRIDGE_EXPIRY, NotificationService.KIND_FRIDGE_EXPIRED);
+                .containsExactlyInAnyOrder(
+                        "FRIDGE_RESULT",
+                        NotificationService.KIND_FRIDGE_SCHEDULE,
+                        NotificationService.KIND_FRIDGE_EXPIRY,
+                        NotificationService.KIND_FRIDGE_EXPIRED
+                );
+
+        NotificationService.NotificationPreferenceItem schedulePref = view.items().stream()
+                .filter(item -> item.kindCode().equals(NotificationService.KIND_FRIDGE_SCHEDULE))
+                .findFirst()
+                .orElseThrow();
+        assertThat(schedulePref.enabled()).isTrue();
+        assertThat(schedulePref.allowBackground()).isTrue();
 
         NotificationService.NotificationPreferenceItem expiryPref = view.items().stream()
                 .filter(item -> item.kindCode().equals(NotificationService.KIND_FRIDGE_EXPIRY))
