@@ -1,5 +1,6 @@
 package com.dormmate.backend.modules.inspection;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -50,6 +51,7 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
 
     @BeforeEach
     void setUp() throws Exception {
+        jdbcTemplate.update("DELETE FROM notification");
         jdbcTemplate.update("DELETE FROM inspection_schedule");
         managerToken = login("bob", "bob123!");
         residentToken = login("alice", "alice123!");
@@ -73,6 +75,7 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
 
     @AfterEach
     void tearDown() {
+        jdbcTemplate.update("DELETE FROM notification");
         jdbcTemplate.update("DELETE FROM inspection_schedule");
     }
 
@@ -196,6 +199,78 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
         mockMvc.perform(delete("/fridge/inspection-schedules/" + scheduleId)
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isForbidden());
+    }
+
+    @Test
+    void managerCannotCreateDuplicateScheduleForSameSlotAndTime() throws Exception {
+        OffsetDateTime scheduledAt = OffsetDateTime.now(ZoneOffset.UTC).plusDays(4).withNano(0);
+        String payload = """
+                {
+                  "scheduledAt": "%s",
+                  "title": "중복 예약 테스트",
+                  "fridgeCompartmentId": "%s"
+                }
+                """.formatted(scheduledAt, slot2FAId);
+
+        mockMvc.perform(post("/fridge/inspection-schedules")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isCreated());
+
+        mockMvc.perform(post("/fridge/inspection-schedules")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(payload))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("SCHEDULE_CONFLICT"));
+    }
+
+    @Test
+    void creatingScheduleSendsNotificationsToResidents() throws Exception {
+        OffsetDateTime scheduledAt = OffsetDateTime.now(ZoneOffset.UTC).plusDays(5).withNano(0);
+
+        MvcResult result = mockMvc.perform(post("/fridge/inspection-schedules")
+                        .header("Authorization", "Bearer " + managerToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "scheduledAt": "%s",
+                                  "title": "알림 검증",
+                                  "fridgeCompartmentId": "%s"
+                                }
+                                """.formatted(scheduledAt, slot2FAId)))
+                .andExpect(status().isCreated())
+                .andReturn();
+
+        JsonNode created = objectMapper.readTree(result.getResponse().getContentAsString());
+        UUID scheduleId = UUID.fromString(created.path("scheduleId").asText());
+
+        Integer notificationCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM notification WHERE kind_code = 'FRIDGE_SCHEDULE'",
+                Integer.class
+        );
+        assertThat(notificationCount).isNotNull();
+        assertThat(notificationCount).isGreaterThan(0);
+
+        UUID aliceId = jdbcTemplate.queryForObject(
+                "SELECT id FROM dorm_user WHERE login_id = 'alice'",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id"))
+        );
+        Integer aliceNotifications = jdbcTemplate.queryForObject(
+                """
+                        SELECT COUNT(*)
+                        FROM notification
+                        WHERE user_id = ?
+                          AND kind_code = 'FRIDGE_SCHEDULE'
+                          AND dedupe_key = ?
+                        """,
+                Integer.class,
+                aliceId,
+                "FRIDGE_SCHEDULE:" + scheduleId + ":" + aliceId
+        );
+        assertThat(aliceNotifications).isNotNull();
+        assertThat(aliceNotifications).isGreaterThan(0);
     }
 
     private String login(String loginId, String password) throws Exception {

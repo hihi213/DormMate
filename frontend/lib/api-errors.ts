@@ -128,6 +128,10 @@ export const defaultCodeDictionary: Record<string, ApiErrorTemplate> = {
     code: "SCHEDULE_NOT_ACTIVE",
     message: "진행 중인 검사 일정만 선택할 수 있습니다.",
   },
+  SCHEDULE_CONFLICT: {
+    code: "SCHEDULE_CONFLICT",
+    message: "이미 동일한 시간에 예약된 검사 일정이 있습니다.",
+  },
   PREFERENCE_NOT_FOUND: {
     code: "PREFERENCE_NOT_FOUND",
     message: "알림 설정 정보를 찾을 수 없습니다.",
@@ -211,6 +215,10 @@ export const defaultCodeDictionary: Record<string, ApiErrorTemplate> = {
   COMPARTMENTS_NOT_FOUND_ON_FLOOR: {
     code: "COMPARTMENTS_NOT_FOUND_ON_FLOOR",
     message: "해당 층에 배정 가능한 냉장고 칸이 없습니다.",
+  },
+  NETWORK_ERROR: {
+    code: "NETWORK_ERROR",
+    message: "네트워크 연결에 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.",
   },
 }
 

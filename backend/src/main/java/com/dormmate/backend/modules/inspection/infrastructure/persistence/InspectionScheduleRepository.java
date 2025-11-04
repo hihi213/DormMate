@@ -1,6 +1,7 @@
 package com.dormmate.backend.modules.inspection.infrastructure.persistence;
 
 import java.time.OffsetDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -17,6 +18,19 @@ public interface InspectionScheduleRepository extends JpaRepository<InspectionSc
     Optional<InspectionSchedule> findTopByStatusAndScheduledAtGreaterThanEqualOrderByScheduledAtAsc(
             InspectionScheduleStatus status,
             OffsetDateTime scheduledAt
+    );
+
+    boolean existsByFridgeCompartment_IdAndStatusInAndScheduledAt(
+            UUID fridgeCompartmentId,
+            Collection<InspectionScheduleStatus> statuses,
+            OffsetDateTime scheduledAt
+    );
+
+    boolean existsByFridgeCompartment_IdAndStatusInAndScheduledAtAndIdNot(
+            UUID fridgeCompartmentId,
+            Collection<InspectionScheduleStatus> statuses,
+            OffsetDateTime scheduledAt,
+            UUID scheduleId
     );
 
     Optional<InspectionSchedule> findByInspectionSessionId(UUID inspectionSessionId);
