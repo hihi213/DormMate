@@ -75,7 +75,7 @@ public class EnvironmentValidator {
                 invalidVars.forEach(v -> System.err.println("    - " + v));
             }
             
-            System.err.println("\n.env 파일을 확인하고 .env.example을 참조하세요.");
+            System.err.println("\n.env 파일을 확인하고 backend/ENV_SETUP.md를 참조하세요.");
             System.exit(1);
         }
 
