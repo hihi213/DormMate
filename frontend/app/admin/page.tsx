@@ -32,7 +32,7 @@ const defaultWatchlist: WatchlistItem[] = [
   {
     id: "fridge-lock",
     category: "조치 필요",
-    title: "A동 냉장고 2칸 잠금 해제 요청",
+    title: "냉장고 2칸 잠금 해제 요청",
     due: "오늘 14:00 마감",
     owner: "3층 층별장",
     link: "/admin/fridge?unit=A&compartment=2",
@@ -62,7 +62,7 @@ const moduleSnapshots = [
   {
     id: "fridge",
     label: "냉장고",
-    summary: "층별 임박 12건 · 검사 예정 3건",
+    summary: "임박 물품 12건 · 검사 예정 3건",
     metrics: [
       { label: "임박 물품", value: "12", trend: "+2", tone: "warn" as const },
       { label: "폐기 조치", value: "3", trend: "-1", tone: "critical" as const },

@@ -62,3 +62,6 @@ upsert_items AS (
 )
 SELECT COUNT(*) AS inserted_count
 FROM upsert_items;
+
+-- 자동 시드도 최신 상태로 재구성
+SELECT public.fn_populate_fridge_auto_seed(20);

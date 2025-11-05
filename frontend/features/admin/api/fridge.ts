@@ -105,6 +105,11 @@ export async function fetchAdminDeletedBundles(
 ): Promise<BundleListResponseDto> {
   const search = new URLSearchParams()
 
+  const trimmedSearch = params.search?.trim()
+  if (trimmedSearch) {
+    search.set("search", trimmedSearch)
+  }
+
   const trimmedSince = params.since?.trim()
   if (trimmedSince) {
     search.set("since", trimmedSince)

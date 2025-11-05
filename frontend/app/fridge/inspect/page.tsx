@@ -102,6 +102,7 @@ function InspectInner() {
   const [filter, setFilter] = useState<FilterType>("ALL")
   const [query, setQuery] = useState("")
   const [showExpired, setShowExpired] = useState(false)
+  const [showUpdatedOnly, setShowUpdatedOnly] = useState(false)
   const [results, setResults] = useState<ResultEntry[]>([])
   const [submitDialogOpen, setSubmitDialogOpen] = useState(false)
   const [cancelOpen, setCancelOpen] = useState(false)
@@ -148,6 +149,8 @@ function InspectInner() {
         }
         setSession(data)
         setStage(data.status === "SUBMITTED" ? "committed" : "in-progress")
+        setShowExpired(false)
+        setShowUpdatedOnly(false)
       } catch (err) {
         const message = err instanceof Error ? err.message : "검사 세션을 불러오지 못했습니다."
         toast({
@@ -244,6 +247,9 @@ function InspectInner() {
     if (showExpired) {
       list = list.filter((item) => daysLeft(item.expiryDate) < 0)
     }
+    if (showUpdatedOnly) {
+      list = list.filter((item) => item.updatedAfterInspection)
+    }
     if (query.trim()) {
       const q = query.trim().toLowerCase()
       list = list.filter((item) => {
@@ -252,7 +258,7 @@ function InspectInner() {
       })
     }
     return list
-  }, [items, processedUnitIds, showExpired, query])
+  }, [items, processedUnitIds, showExpired, showUpdatedOnly, query])
 
   const itemGroups = useMemo<ItemGroup[]>(() => {
     const map = new Map<string, ItemGroup & { order: number }>()
@@ -827,6 +833,14 @@ function InspectInner() {
                     aria-pressed={showExpired}
                   >
                     {"만료"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant={showUpdatedOnly ? "default" : "outline"}
+                    onClick={() => setShowUpdatedOnly((v) => !v)}
+                    aria-pressed={showUpdatedOnly}
+                  >
+                    {"검사 후 수정"}
                   </Button>
                   <Button size="sm" variant="outline" onClick={openStickerDialog}>
                     <Tag className="size-4 mr-1" />

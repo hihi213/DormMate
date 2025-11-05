@@ -69,8 +69,8 @@ export const mockResources: AdminResource[] = [
   {
     id: "fridge-3a",
     facility: "fridge",
-    name: "냉장 A동 3층-1",
-    location: "기숙사 A동 3층",
+    name: "냉장 3층-1",
+    location: "기숙사 3층",
     status: "ACTIVE",
     capacity: "7/8",
     manager: "박층장",
@@ -81,8 +81,8 @@ export const mockResources: AdminResource[] = [
   {
     id: "fridge-3b",
     facility: "fridge",
-    name: "냉장 A동 3층-2",
-    location: "기숙사 A동 3층",
+    name: "냉장 3층-2",
+    location: "기숙사 3층",
     status: "SUSPENDED",
     capacity: "2/8",
     manager: "박층장",
@@ -99,7 +99,7 @@ export const mockResources: AdminResource[] = [
     status: "ACTIVE",
     capacity: "예약 6/12",
     manager: "시설팀",
-    rooms: "A/B동 공용",
+    rooms: "공용 구역",
     lastInspection: "2025-10-29",
   },
   {
@@ -122,7 +122,7 @@ export const mockResources: AdminResource[] = [
     status: "ACTIVE",
     capacity: "예약 4/6",
     manager: "행정팀",
-    rooms: "A동",
+    rooms: "공용",
     lastInspection: "2025-10-25",
   },
 ]
