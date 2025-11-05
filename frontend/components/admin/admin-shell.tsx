@@ -58,9 +58,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "입주자 & 제재",
-    items: [
-      { label: "입주자·제재", href: "/admin/users", icon: Users },
-    ],
+    items: [{ label: "입주자·제재", href: "/admin/users", icon: Users }],
   },
   {
     label: "시설 모듈",
@@ -202,11 +200,23 @@ export default function AdminShell({ children }: AdminShellProps) {
 
   const userInitials = useMemo(() => {
     if (!user?.name) return "A"
-    const parts = user.name.trim().split(" ")
+    const raw = user.name.trim()
+    if (raw.length === 0) return "A"
+
+    const KOREAN_CHAR_REGEX = /[\uac00-\ud7a3]/
+    const parts = raw.split(/\s+/)
+    const lastPart = parts[parts.length - 1] ?? raw
+
+    if (KOREAN_CHAR_REGEX.test(lastPart)) {
+      return lastPart.slice(0, 1)
+    }
+
     if (parts.length === 1) {
       return parts[0].slice(0, 2).toUpperCase()
     }
-    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+
+    const initials = `${parts[0][0] ?? ""}${lastPart[0] ?? ""}`
+    return initials.toUpperCase()
   }, [user?.name])
 
   const handleLogout = async () => {
@@ -223,7 +233,7 @@ export default function AdminShell({ children }: AdminShellProps) {
         본문으로 건너뛰기
       </a>
       <div className="flex min-h-screen w-full">
-        <aside className="hidden w-[260px] flex-col border-r border-slate-200 bg-white lg:flex">
+        <aside className="hidden w-[260px] flex-col border-r border-slate-200 bg-white lg:flex lg:sticky lg:top-0 lg:h-screen lg:shrink-0">
           <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-4">
             <span className="rounded-full bg-emerald-100 p-2">
               <ShieldCheck className="size-5 text-emerald-600" aria-hidden />
@@ -233,7 +243,9 @@ export default function AdminShell({ children }: AdminShellProps) {
               <p className="text-xs text-slate-500">운영 허브</p>
             </div>
           </div>
-          <NavList />
+          <div className="flex-1 overflow-y-auto pb-8">
+            <NavList />
+          </div>
         </aside>
 
         <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>

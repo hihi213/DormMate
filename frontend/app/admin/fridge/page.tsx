@@ -1,13 +1,12 @@
 "use client"
 
 import Link from "next/link"
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
 import {
   AlertCircle,
   AlertTriangle,
   ArrowLeftRight,
   ArrowRight,
-  Check,
   History,
   Loader2,
   Lock,
@@ -16,12 +15,12 @@ import {
   Settings2,
   Shuffle,
   Snowflake,
+  RotateCcw,
 } from "lucide-react"
 import { format, formatDistanceToNowStrict, parseISO, subMonths } from "date-fns"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
@@ -29,12 +28,13 @@ import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import { getDefaultErrorMessage } from "@/lib/api-errors"
 import { useToast } from "@/hooks/use-toast"
+import { useIsMobile } from "@/hooks/use-mobile"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import {
   applyReallocation,
   fetchAdminBundleList,
@@ -155,6 +155,11 @@ function formatFreshness(freshness?: string | null) {
   return entry
 }
 
+function truncateText(value: string | null | undefined, limit: number) {
+  if (!value) return ""
+  return value.length > limit ? `${value.slice(0, limit)}…` : value
+}
+
 function sortRoomLabels(labels: string[]): string[] {
   return [...labels].sort((a, b) => a.localeCompare(b, "ko", { numeric: true, sensitivity: "base" }))
 }
@@ -203,18 +208,31 @@ type InspectionState = {
   status: AdminInspectionSession["status"] | "ALL"
 }
 
+type DetailTabValue = "bundles" | "inspections"
+
+type SlotConfigDialogState = {
+  open: boolean
+  slot: AdminFridgeSlot | null
+  status: ResourceStatus
+  capacity: string
+  saving: boolean
+}
+
 export default function AdminFridgePage() {
   const { toast } = useToast()
-  const slotConfigRef = useRef<HTMLDivElement | null>(null)
+  const isMobile = useIsMobile()
   const [selectedFloor, setSelectedFloor] = useState<number>(FLOOR_OPTIONS[0]!)
   const [slots, setSlots] = useState<AdminFridgeSlot[]>([])
   const [slotsLoading, setSlotsLoading] = useState(false)
   const [slotsError, setSlotsError] = useState<string | null>(null)
   const [selectedSlotId, setSelectedSlotId] = useState<string | null>(null)
-  const [slotStatusDraft, setSlotStatusDraft] = useState<ResourceStatus>("ACTIVE")
-  const [slotCapacityDraft, setSlotCapacityDraft] = useState<string>("")
-  const [slotSaving, setSlotSaving] = useState(false)
-  const [statusUpdatingMap, setStatusUpdatingMap] = useState<Record<string, boolean>>({})
+  const [slotConfigDialog, setSlotConfigDialog] = useState<SlotConfigDialogState>({
+    open: false,
+    slot: null,
+    status: "ACTIVE",
+    capacity: "",
+    saving: false,
+  })
 
   const [bundleState, setBundleState] = useState<BundleState>(INITIAL_BUNDLE_STATE)
   const [bundleSearchInput, setBundleSearchInput] = useState("")
@@ -235,11 +253,19 @@ export default function AdminFridgePage() {
 
   const handleSlotSelect = useCallback(
     (slotId: string) => {
-      if (slotId === selectedSlotId) return
+      if (slotId === selectedSlotId) {
+        if (isMobile) {
+          setMobileDetailOpen(true)
+        }
+        return
+      }
       resetBundleFilters()
       setSelectedSlotId(slotId)
+      if (isMobile) {
+        setMobileDetailOpen(true)
+      }
     },
-    [selectedSlotId, resetBundleFilters],
+    [selectedSlotId, resetBundleFilters, isMobile],
   )
 
   const handleFloorChange = useCallback(
@@ -267,6 +293,8 @@ export default function AdminFridgePage() {
     sinceMonths: 3,
     response: null,
   })
+  const [detailTab, setDetailTab] = useState<DetailTabValue>("bundles")
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
 
   const [reallocationOpen, setReallocationOpen] = useState(false)
   const [reallocationLoading, setReallocationLoading] = useState(false)
@@ -281,18 +309,20 @@ export default function AdminFridgePage() {
   )
 
   useEffect(() => {
-    if (!selectedSlot) {
-      setSlotStatusDraft("ACTIVE")
-      setSlotCapacityDraft("")
-      return
+    setDetailTab("bundles")
+  }, [selectedSlotId])
+
+  useEffect(() => {
+    if (!isMobile) {
+      setMobileDetailOpen(false)
     }
-    setSlotStatusDraft(selectedSlot.resourceStatus)
-    setSlotCapacityDraft(
-      typeof selectedSlot.capacity === "number" && selectedSlot.capacity > 0
-        ? String(selectedSlot.capacity)
-        : "",
-    )
-  }, [selectedSlot])
+  }, [isMobile])
+
+  useEffect(() => {
+    if (!selectedSlotId) {
+      setMobileDetailOpen(false)
+    }
+  }, [selectedSlotId])
 
   const actionShortcuts = useMemo(
     () => [
@@ -314,8 +344,8 @@ export default function AdminFridgePage() {
       },
       {
         id: "slot-config",
-        label: "칸 설정 편집",
-        description: "선택된 칸의 상태와 최대 포장 용량을 빠르게 설정합니다.",
+        label: "칸 상태·용량 편집",
+        description: "선택된 칸의 상태와 최대 포장 용량을 빠르게 조정합니다.",
         onClick: () => {
           if (!selectedSlot) {
             toast({
@@ -324,7 +354,7 @@ export default function AdminFridgePage() {
             })
             return
           }
-          slotConfigRef.current?.scrollIntoView({ behavior: "smooth", block: "center" })
+          openSlotConfigDialog(selectedSlot)
         },
       },
     ],
@@ -624,11 +654,48 @@ export default function AdminFridgePage() {
     }))
   }
 
-  const handleSaveSlotConfig = async () => {
-    if (!selectedSlot) return
+  const openSlotConfigDialog = (slot: AdminFridgeSlot) => {
+    setSlotConfigDialog({
+      open: true,
+      slot,
+      status: slot.resourceStatus,
+      capacity:
+        typeof slot.capacity === "number" && slot.capacity > 0 ? String(slot.capacity) : "",
+      saving: false,
+    })
+  }
 
-    const trimmedCapacity = slotCapacityDraft.trim()
-    const parsedCapacity = trimmedCapacity.length > 0 ? Number(trimmedCapacity) : undefined
+  const resetSlotConfigDialog = () => {
+    setSlotConfigDialog({
+      open: false,
+      slot: null,
+      status: "ACTIVE",
+      capacity: "",
+      saving: false,
+    })
+  }
+
+  const slotConfigHasChanges = useMemo(() => {
+    const target = slotConfigDialog.slot
+    if (!target) return false
+    const trimmed = slotConfigDialog.capacity.trim()
+    const parsed =
+      trimmed.length > 0 && !Number.isNaN(Number(trimmed)) ? Number(trimmed) : undefined
+    const currentCapacity =
+      typeof target.capacity === "number" ? target.capacity : undefined
+    const capacityChanged =
+      parsed !== undefined ? parsed !== currentCapacity : false
+    const statusChanged = slotConfigDialog.status !== target.resourceStatus
+    return capacityChanged || statusChanged
+  }, [slotConfigDialog])
+
+  const handleSlotConfigSubmit = async () => {
+    const target = slotConfigDialog.slot
+    if (!target) return
+
+    const trimmed = slotConfigDialog.capacity.trim()
+    const parsedCapacity =
+      trimmed.length > 0 ? Number(trimmed) : undefined
 
     if (parsedCapacity !== undefined && (Number.isNaN(parsedCapacity) || parsedCapacity <= 0)) {
       toast({
@@ -640,10 +707,11 @@ export default function AdminFridgePage() {
     }
 
     const payload: Partial<UpdateCompartmentConfigPayload> = {}
-    if (slotStatusDraft !== selectedSlot.resourceStatus) {
-      payload.status = slotStatusDraft
+    if (slotConfigDialog.status !== target.resourceStatus) {
+      payload.status = slotConfigDialog.status
     }
-    const currentCapacity = typeof selectedSlot.capacity === "number" ? selectedSlot.capacity : undefined
+    const currentCapacity =
+      typeof target.capacity === "number" ? target.capacity : undefined
     if (parsedCapacity !== undefined && parsedCapacity !== currentCapacity) {
       payload.maxBundleCount = parsedCapacity
     }
@@ -656,13 +724,14 @@ export default function AdminFridgePage() {
       return
     }
 
-    setSlotSaving(true)
+    setSlotConfigDialog((prev) => ({ ...prev, saving: true }))
     try {
-      const updated = await updateFridgeCompartment(selectedSlot.slotId, payload)
+      const updated = await updateFridgeCompartment(target.slotId, payload)
       setSlots((prev) =>
         prev.map((slot) => {
           if (slot.slotId !== updated.slotId) return slot
-          const capacity = typeof updated.capacity === "number" ? updated.capacity : slot.capacity ?? null
+          const capacity =
+            typeof updated.capacity === "number" ? updated.capacity : slot.capacity ?? null
           const occupied =
             typeof updated.occupiedCount === "number"
               ? updated.occupiedCount
@@ -681,107 +750,521 @@ export default function AdminFridgePage() {
       )
       toast({
         title: "칸 설정이 저장되었습니다",
-        description: `${selectedSlot.displayName ?? `${selectedSlot.floorNo}F ${selectedSlot.slotLetter}`} 설정을 갱신했습니다.`,
+        description: `${
+          updated.displayName ??
+          target.displayName ??
+          `${target.floorNo}F ${target.slotLetter ?? ""}`
+        } 설정을 갱신했습니다.`,
       })
-      setSlotStatusDraft(updated.resourceStatus)
-      setSlotCapacityDraft(
-        typeof updated.capacity === "number" && updated.capacity > 0 ? String(updated.capacity) : "",
-      )
+      resetSlotConfigDialog()
     } catch (error) {
       toast({
         title: "칸 설정 저장 실패",
         description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
         variant: "destructive",
       })
-    } finally {
-      setSlotSaving(false)
+      setSlotConfigDialog((prev) => ({ ...prev, saving: false }))
     }
   }
 
-  const slotHasChanges = selectedSlot
-    ? (() => {
-        const trimmed = slotCapacityDraft.trim()
-        if (trimmed.length === 0) {
-          return slotStatusDraft !== selectedSlot.resourceStatus
-        }
-        const parsed = Number(trimmed)
-        if (Number.isNaN(parsed)) return false
-        const currentCapacity =
-          typeof selectedSlot.capacity === "number" ? selectedSlot.capacity : undefined
-        const capacityChanged = parsed !== currentCapacity
-        const statusChanged = slotStatusDraft !== selectedSlot.resourceStatus
-        return capacityChanged || statusChanged
-      })()
-    : false
+  const renderSlotCard = (slot: AdminFridgeSlot) => {
+    const badge = STATUS_BADGE[slot.resourceStatus]
+    const isSelected = slot.slotId === selectedSlotId
+    const utilization =
+      typeof slot.utilization === "number" ? Math.round(slot.utilization * 100) : null
+    const isConfigSaving =
+      slotConfigDialog.saving && slotConfigDialog.slot?.slotId === slot.slotId
 
-  const handleQuickStatusUpdate = async (slot: AdminFridgeSlot, status: ResourceStatus) => {
-    if (status === slot.resourceStatus) {
-      return
-    }
-    if (statusUpdatingMap[slot.slotId]) {
-      return
-    }
-
-    setStatusUpdatingMap((prev) => ({ ...prev, [slot.slotId]: true }))
-    const previousStatus = slot.resourceStatus
-
-    setSlots((prev) =>
-      prev.map((item) =>
-        item.slotId === slot.slotId
-          ? {
-              ...item,
-              resourceStatus: status,
-            }
-          : item,
-      ),
-    )
-
-    try {
-      const updated = await updateFridgeCompartment(slot.slotId, { status })
-      setSlots((prev) =>
-        prev.map((item) => {
-          if (item.slotId !== updated.slotId) return item
-          const capacity = typeof updated.capacity === "number" ? updated.capacity : item.capacity ?? null
-          const occupied =
-            typeof updated.occupiedCount === "number"
-              ? updated.occupiedCount
-              : item.occupiedCount ?? null
-          return {
-            ...item,
-            resourceStatus: updated.resourceStatus,
-            capacity,
-            locked: updated.locked,
-            lockedUntil: updated.lockedUntil ?? null,
-            displayName: updated.displayName ?? item.displayName,
-            occupiedCount: occupied,
-            utilization: computeUtilization(capacity, occupied),
+    return (
+      <div
+        key={slot.slotId}
+        role="button"
+        tabIndex={0}
+        aria-pressed={isSelected}
+        onClick={() => handleSlotSelect(slot.slotId)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter" || event.key === " ") {
+            event.preventDefault()
+            handleSlotSelect(slot.slotId)
           }
-        }),
-      )
-      const statusLabel = STATUS_BADGE[updated.resourceStatus]?.label ?? updated.resourceStatus
-      toast({
-        title: "칸 상태가 변경되었습니다",
-        description: `${updated.displayName ?? `${slot.floorNo}F ${slot.slotLetter}`} → ${statusLabel}`,
-      })
-    } catch (error) {
-      setSlots((prev) =>
-        prev.map((item) =>
-          item.slotId === slot.slotId ? { ...item, resourceStatus: previousStatus } : item,
-        ),
-      )
-      toast({
-        title: "칸 상태 변경 실패",
-        description: error instanceof Error ? error.message : "잠시 후 다시 시도해주세요.",
-        variant: "destructive",
-      })
-    } finally {
-      setStatusUpdatingMap((prev) => {
-        const next = { ...prev }
-        delete next[slot.slotId]
-        return next
-      })
-    }
+        }}
+        className={cn(
+          "flex h-full w-full max-w-full flex-col cursor-pointer rounded-2xl border bg-white p-4 text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2 xl:max-w-[540px]",
+          isSelected
+            ? "border-emerald-400 ring-1 ring-emerald-200"
+            : "border-slate-200 hover:border-emerald-200 hover:shadow-md",
+        )}
+      >
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-slate-900">
+              {slot.displayName ?? `${slot.floorNo}F · ${slot.slotLetter}`}
+            </p>
+            <p className="text-xs text-slate-500">
+              {slot.compartmentType} · 인덱스 {slot.slotIndex}
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {badge ? <Badge className={badge.className}>{badge.label}</Badge> : null}
+            <Badge
+              variant={slot.locked ? "destructive" : "outline"}
+              className={cn(
+                "gap-1",
+                slot.locked
+                  ? "border-rose-200 bg-rose-50 text-rose-600"
+                  : "border-emerald-200 text-emerald-600",
+              )}
+            >
+              {slot.locked ? (
+                <>
+                  <Lock className="size-3" aria-hidden />
+                  잠금
+                </>
+              ) : (
+                <>
+                  <LockOpen className="size-3" aria-hidden />
+                  해제
+                </>
+              )}
+            </Badge>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-8 min-w-[132px]"
+              onClick={(event) => {
+                event.stopPropagation()
+                if (isConfigSaving) return
+                openSlotConfigDialog(slot)
+              }}
+              onKeyDown={(event) => event.stopPropagation()}
+              disabled={isConfigSaving}
+            >
+              {isConfigSaving ? (
+                <>
+                  <Loader2 className="size-3 animate-spin" aria-hidden />
+                  적용 중
+                </>
+              ) : (
+                <>
+                  <Settings2 className="size-3.5" aria-hidden />
+                  상태·설정
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <div className="flex items-baseline gap-1 text-lg font-semibold text-slate-900">
+            <span>{typeof slot.occupiedCount === "number" ? slot.occupiedCount : "-"}</span>
+            <span className="text-sm font-medium text-slate-400">
+              /{typeof slot.capacity === "number" ? slot.capacity : "-"}
+            </span>
+          </div>
+          {utilization !== null ? (
+            <div className="flex min-w-[160px] flex-1 items-center gap-2">
+              <Progress value={utilization} className="h-1.5 flex-1" />
+              <span className="text-xs font-semibold text-emerald-600">{utilization}%</span>
+            </div>
+          ) : (
+            <span className="text-xs text-slate-400">용량 정보 없음</span>
+          )}
+        </div>
+        <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
+          <span>마지막 갱신 {formatRelative(slot.lockedUntil) || "-"}</span>
+          {isSelected ? (
+            <Badge className="bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">선택됨</Badge>
+          ) : (
+            <span className="font-medium text-emerald-600">상세 보기</span>
+          )}
+        </div>
+      </div>
+    )
   }
+
+  const renderSlotList = (containerClassName: string): JSX.Element => {
+    if (slotsLoading) {
+      return (
+        <div className="flex items-center justify-center rounded-lg border border-dashed border-emerald-200 bg-emerald-50/40 py-12 text-sm text-emerald-700">
+          <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+          칸 정보를 불러오는 중입니다…
+        </div>
+      )
+    }
+
+    if (slotsError) {
+      return (
+        <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-600">
+          {slotsError}
+        </div>
+      )
+    }
+
+    if (slots.length === 0) {
+      return (
+        <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
+          선택한 층에 표시할 칸이 없습니다.
+        </div>
+      )
+    }
+
+    return <div className={containerClassName}>{slots.map((slot) => renderSlotCard(slot))}</div>
+  }
+
+  const detailSection = (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <h2 className="text-lg font-semibold text-slate-900">상세</h2>
+        {selectedSlot ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
+              <Badge
+                variant="outline"
+                className="border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-600"
+              >
+                {selectedSlot.displayName ?? `${selectedSlot.floorNo}F ${selectedSlot.slotLetter}`}
+              </Badge>
+              <span>{selectedSlot.compartmentType}</span>
+              <span className="text-slate-300">·</span>
+              <span>인덱스 {selectedSlot.slotIndex}</span>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1"
+                onClick={() => openSlotConfigDialog(selectedSlot)}
+              >
+                <Settings2 className="size-4" aria-hidden />
+                상태·설정
+              </Button>
+              {detailTab === "bundles" ? (
+                <>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-1 text-slate-600 hover:text-emerald-600"
+                    onClick={handleResetSearch}
+                    disabled={bundleState.loading}
+                  >
+                    <RotateCcw className="size-4" aria-hidden />
+                    검색 초기화
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="gap-1"
+                    onClick={() => handleDeletedOpenChange(true)}
+                  >
+                    <History className="size-4" aria-hidden />
+                    삭제 이력
+                  </Button>
+                </>
+              ) : null}
+              <Button variant="ghost" size="sm" className="gap-1 text-emerald-600" asChild>
+                <Link href={`/admin/audit?module=fridge&slotId=${selectedSlot.slotId}`}>
+                  감사 로그 이동
+                  <ArrowRight className="size-3" aria-hidden />
+                </Link>
+              </Button>
+            </div>
+          </div>
+        ) : null}
+      </div>
+      {selectedSlot ? (
+        <Tabs
+          value={detailTab}
+          onValueChange={(value) => setDetailTab(value as DetailTabValue)}
+          className="space-y-4"
+        >
+          <TabsList className="sticky top-0 z-20 w-full justify-start gap-2 rounded-xl border border-slate-200 bg-white/90 p-1 shadow-sm backdrop-blur lg:top-3">
+            <TabsTrigger
+              value="bundles"
+              className="flex-none rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 transition data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700"
+            >
+              포장 목록
+            </TabsTrigger>
+            <TabsTrigger
+              value="inspections"
+              className="flex-none rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 transition data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700"
+            >
+              검사 기록
+            </TabsTrigger>
+          </TabsList>
+          <TabsContent value="bundles" className="space-y-4">
+            <form onSubmit={handleSearchSubmit}>
+              <Label htmlFor="bundle-search" className="mb-2 block text-xs text-slate-500">
+                라벨·포장명·호실 검색
+              </Label>
+              <div className="flex gap-2">
+                <Input
+                  id="bundle-search"
+                  placeholder="예: A301, 김도미, 과일"
+                  value={bundleSearchInput}
+                  onChange={(event) => setBundleSearchInput(event.target.value)}
+                />
+                <Button type="submit" className="gap-1">
+                  <Search className="size-4" aria-hidden />
+                  검색
+                </Button>
+              </div>
+            </form>
+            <div className="text-xs text-slate-500 sm:text-right">
+              총 {bundleState.totalCount.toLocaleString()}건 · 페이지 {bundleState.page + 1}/{totalBundlePages}
+            </div>
+            <div className="rounded-lg border border-slate-200">
+              {bundleState.loading ? (
+                <div className="flex items-center justify-center py-12 text-sm text-slate-500">
+                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                  포장 목록을 불러오는 중입니다…
+                </div>
+              ) : bundleState.error ? (
+                <div className="p-4 text-sm text-rose-600">{bundleState.error}</div>
+              ) : bundleState.items.length === 0 ? (
+                <div className="p-4 text-sm text-slate-500">
+                  조건에 맞는 포장이 없습니다. 검색어와 필터를 조정해 보세요.
+                </div>
+              ) : (
+                <div className="max-h-[360px] overflow-auto">
+                  <Table className="min-w-[640px] table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[72px] px-2 text-center text-xs font-semibold text-slate-500">
+                          라벨
+                        </TableHead>
+                        <TableHead className="w-[220px] px-2 text-xs font-semibold text-slate-500">
+                          포장명
+                        </TableHead>
+                        <TableHead className="w-[96px] px-2 text-xs font-semibold text-slate-500">
+                          보관자
+                        </TableHead>
+                        <TableHead className="w-[160px] px-2 text-xs font-semibold text-slate-500">
+                          상태
+                        </TableHead>
+                        <TableHead className="w-[132px] px-2 text-right text-xs font-semibold text-slate-500">
+                          최근 업데이트
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {bundleState.items.map((bundle) => {
+                        const freshnessBadge = formatFreshness(bundle.freshness)
+                        const reuseKey = `${bundle.slotId}::${bundle.labelDisplay}`
+                        const reuseInfo = labelReuseLookup[reuseKey]
+                        const reuseDisplayDate = reuseInfo ? formatDateTime(reuseInfo, "-") : null
+                        const bundleNameDisplay = truncateText(bundle.bundleName, 11)
+                        const memoDisplay = bundle.memo ? truncateText(bundle.memo, 30) : null
+                        const ownerDisplay = truncateText(bundle.ownerDisplayName ?? "-", 4)
+                        return (
+                          <TableRow key={bundle.bundleId}>
+                            <TableCell className="px-2 py-2 text-center text-sm font-semibold text-slate-900">
+                              {bundle.labelDisplay}
+                            </TableCell>
+                            <TableCell className="px-2 py-2">
+                              <div className="max-w-[200px] truncate font-medium text-slate-900" title={bundle.bundleName}>
+                                {bundleNameDisplay}
+                              </div>
+                              {memoDisplay ? (
+                                <p className="max-w-[200px] truncate text-[11px] text-slate-500" title={bundle.memo ?? undefined}>
+                                  {memoDisplay}
+                                </p>
+                              ) : null}
+                            </TableCell>
+                            <TableCell className="px-2 py-2 text-sm text-slate-700">
+                              <div className="truncate" title={bundle.ownerDisplayName ?? "-"}>{ownerDisplay}</div>
+                              <p className="text-xs text-slate-500">
+                                {bundle.ownerRoomNumber ?? "호실 정보 없음"}
+                              </p>
+                            </TableCell>
+                            <TableCell className="px-2 py-2">
+                              <div className="flex flex-wrap items-center gap-1">
+                                <Badge variant="outline" className="border-slate-200 px-2 py-0.5 text-xs">
+                                  {bundle.status}
+                                </Badge>
+                                {freshnessBadge ? (
+                                  <Badge className={cn("px-2 py-0.5 text-xs", freshnessBadge.className)}>
+                                    {freshnessBadge.label}
+                                  </Badge>
+                                ) : null}
+                                {reuseInfo ? (
+                                  <Badge
+                                    className="bg-sky-100 px-2 py-0.5 text-xs text-sky-700"
+                                    title={reuseDisplayDate ? `최근 삭제 시각 ${reuseDisplayDate}` : undefined}
+                                  >
+                                    라벨 재사용
+                                  </Badge>
+                                ) : null}
+                              </div>
+                            </TableCell>
+                            <TableCell className="px-2 py-2 text-right">
+                              <div className="text-xs font-medium text-slate-700">
+                                {formatDateTime(bundle.updatedAt, "-")}
+                              </div>
+                              <div className="text-[11px] text-slate-400">
+                                {formatRelative(bundle.updatedAt) || "-"}
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </div>
+            <div className="flex items-center justify-between text-xs text-slate-500">
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setBundleState((prev) => ({
+                      ...prev,
+                      page: Math.max(0, prev.page - 1),
+                    }))
+                  }
+                  disabled={bundleState.page === 0 || bundleState.loading}
+                >
+                  이전
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() =>
+                    setBundleState((prev) => ({
+                      ...prev,
+                      page: Math.min(totalBundlePages - 1, prev.page + 1),
+                    }))
+                  }
+                  disabled={bundleState.page >= totalBundlePages - 1 || bundleState.loading}
+                >
+                  다음
+                </Button>
+              </div>
+              <span>
+                {bundleState.page + 1} / {totalBundlePages} 페이지
+              </span>
+            </div>
+          </TabsContent>
+          <TabsContent value="inspections" className="space-y-4">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <Label htmlFor="inspection-status" className="text-xs text-slate-500">
+                  검사 상태
+                </Label>
+                <Select
+                  value={inspectionState.status}
+                  onValueChange={(value) =>
+                    setInspectionState((prev) => ({
+                      ...prev,
+                      status: value as InspectionState["status"],
+                    }))
+                  }
+                >
+                  <SelectTrigger id="inspection-status" className="mt-1 h-8 w-[160px]">
+                    <SelectValue placeholder="상태 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALL">전체</SelectItem>
+                    <SelectItem value="IN_PROGRESS">진행 중</SelectItem>
+                    <SelectItem value="SUBMITTED">제출 완료</SelectItem>
+                    <SelectItem value="CANCELED">취소됨</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  setInspectionState((prev) => ({
+                    ...prev,
+                    status: "SUBMITTED",
+                  }))
+                }
+              >
+                기본값으로
+              </Button>
+            </div>
+            <div className="rounded-lg border border-slate-200">
+              {inspectionState.loading ? (
+                <div className="flex items-center justify-center py-12 text-sm text-slate-500">
+                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                  검사 기록을 불러오는 중입니다…
+                </div>
+              ) : inspectionState.error ? (
+                <div className="p-4 text-sm text-rose-600">{inspectionState.error}</div>
+              ) : inspectionState.items.length === 0 ? (
+                <div className="p-4 text-sm text-slate-500">
+                  선택한 조건에 해당하는 검사 기록이 없습니다.
+                </div>
+              ) : (
+                <div className="max-h-[360px] divide-y divide-slate-200 overflow-auto">
+                  {inspectionState.items.map((inspection) => (
+                    <div key={inspection.sessionId} className="p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-slate-900">
+                            {formatDateTime(inspection.startedAt, "-")}
+                          </p>
+                          <p className="text-xs text-slate-500">
+                            검사자 {inspection.startedBy.slice(0, 8)} · {inspection.slotLabel}
+                          </p>
+                        </div>
+                        <Badge variant="outline" className="border-slate-200 text-slate-600">
+                          {INSPECTION_STATUS_LABEL[inspection.status]}
+                        </Badge>
+                      </div>
+                      <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-600">
+                        <span className="flex items-center gap-1">
+                          <AlertTriangle className="size-3 text-amber-500" aria-hidden />
+                          경고 {inspection.warningCount}
+                        </span>
+                        <span className="flex items-center gap-1">
+                          <AlertCircle className="size-3 text-rose-500" aria-hidden />
+                          폐기 {inspection.disposalCount}
+                        </span>
+                        <span className="flex items-center gap-1">정상 {inspection.passCount}</span>
+                      </div>
+                      {inspection.summary.length > 0 ? (
+                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
+                          {inspection.summary.map((entry) => (
+                            <div
+                              key={`${inspection.sessionId}-${entry.action}`}
+                              className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
+                            >
+                              <p className="font-medium text-slate-700">
+                                {formatInspectionActionLabel(entry.action)}
+                              </p>
+                              <p>{entry.count}건</p>
+                            </div>
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                        <Button
+                          asChild
+                          variant="outline"
+                          size="sm"
+                          className="h-8 px-3 text-xs"
+                        >
+                          <Link href={`/admin/audit?module=fridge&sessionId=${inspection.sessionId}`}>
+                            감사 로그 이동
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </TabsContent>
+        </Tabs>
+      ) : (
+        <div className="rounded-lg border border-dashed border-slate-200 p-6 text-sm text-slate-500">
+          좌측에서 확인할 칸을 먼저 선택하세요.
+        </div>
+      )}
+    </section>
+  )
 
   const handleReallocationOpenChange = (open: boolean) => {
     setReallocationOpen(open)
@@ -1112,672 +1595,255 @@ export default function AdminFridgePage() {
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] xl:gap-8">
-        <section className="space-y-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      {isMobile ? (
+        <section className="space-y-4 lg:hidden">
+          <div className="flex flex-col gap-3">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">칸 목록</h2>
               <p className="text-xs text-slate-500">
-                카드를 선택하면 포장/검사 상세가 우측 패널에 표시됩니다.
+                칸을 선택하면 상세 정보가 하단 팝업으로 열립니다.
               </p>
             </div>
           </div>
-          {slotsLoading ? (
-            <div className="flex items-center justify-center rounded-lg border border-dashed border-emerald-200 bg-emerald-50/40 py-12 text-sm text-emerald-700">
-              <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-              칸 정보를 불러오는 중입니다…
-            </div>
-          ) : slotsError ? (
-            <div className="rounded-lg border border-rose-200 bg-rose-50 p-4 text-sm text-rose-600">
-              {slotsError}
-            </div>
-          ) : slots.length === 0 ? (
-            <div className="rounded-lg border border-dashed border-slate-200 p-6 text-center text-sm text-slate-500">
-              선택한 층에 표시할 칸이 없습니다.
-            </div>
+          {renderSlotList("grid grid-cols-1 gap-4")}
+          {selectedSlot ? (
+            <Button
+              variant="outline"
+              className="flex w-full items-center justify-between rounded-2xl border-emerald-200 bg-emerald-50/60 px-4 py-3 text-sm font-semibold text-emerald-700"
+              onClick={() => setMobileDetailOpen(true)}
+            >
+              <span>
+                {selectedSlot.displayName ?? `${selectedSlot.floorNo}F ${selectedSlot.slotLetter}`}
+              </span>
+              <ArrowRight className="size-4" aria-hidden />
+            </Button>
           ) : (
-            <div className="grid gap-5">
-              {slots.map((slot) => {
-                const badge = STATUS_BADGE[slot.resourceStatus]
-                const isSelected = slot.slotId === selectedSlotId
-                const utilization =
-                  typeof slot.utilization === "number" ? Math.round(slot.utilization * 100) : null
-                const isStatusUpdating = Boolean(statusUpdatingMap[slot.slotId])
-                return (
-                  <div
-                    key={slot.slotId}
-                    role="button"
-                    tabIndex={0}
-                    aria-pressed={isSelected}
-                    onClick={() => handleSlotSelect(slot.slotId)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        event.preventDefault()
-                        handleSlotSelect(slot.slotId)
-                      }
-                    }}
-                    className={cn(
-                      "flex h-full flex-col cursor-pointer rounded-2xl border bg-white p-5 text-left shadow-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:ring-offset-2",
-                      isSelected
-                        ? "border-emerald-400 ring-1 ring-emerald-200"
-                        : "border-slate-200 hover:border-emerald-200 hover:shadow-md",
-                    )}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-semibold text-slate-900">
-                          {slot.displayName ?? `${slot.floorNo}F · ${slot.slotLetter}`}
-                        </p>
-                        <p className="text-xs text-slate-500">
-                          {slot.compartmentType} · 인덱스 {slot.slotIndex}
-                        </p>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        {badge ? (
-                          <Badge className={badge.className}>{badge.label}</Badge>
-                        ) : null}
-                        <Badge
-                          variant={slot.locked ? "destructive" : "outline"}
-                          className={cn(
-                            "gap-1",
-                            slot.locked
-                              ? "border-rose-200 bg-rose-50 text-rose-600"
-                              : "border-emerald-200 text-emerald-600",
-                          )}
-                        >
-                          {slot.locked ? (
-                            <>
-                              <Lock className="size-3" aria-hidden />
-                              잠금
-                            </>
-                          ) : (
-                            <>
-                              <LockOpen className="size-3" aria-hidden />
-                              해제
-                            </>
-                          )}
-                        </Badge>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="h-8 min-w-[112px]"
-                              onClick={(event) => event.stopPropagation()}
-                              onKeyDown={(event) => event.stopPropagation()}
-                              disabled={isStatusUpdating}
-                            >
-                              {isStatusUpdating ? (
-                                <>
-                                  <Loader2 className="size-3 animate-spin" aria-hidden />
-                                  변경 중
-                                </>
-                              ) : (
-                                <>
-                                  <Settings2 className="size-3.5" aria-hidden />
-                                  상태 변경
-                                </>
-                              )}
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end" className="min-w-[180px]">
-                            <DropdownMenuLabel>상태 선택</DropdownMenuLabel>
-                            <DropdownMenuSeparator />
-                            {RESOURCE_STATUS_OPTIONS.map((status) => {
-                              const optionLabel = STATUS_BADGE[status]?.label ?? status
-                              const isCurrent = status === slot.resourceStatus
-                              return (
-                                <DropdownMenuItem
-                                  key={status}
-                                  disabled={isStatusUpdating || isCurrent}
-                                  className="flex items-center gap-2"
-                                  onSelect={() => {
-                                    if (isStatusUpdating || isCurrent) return
-                                    handleQuickStatusUpdate(slot, status)
-                                  }}
-                                >
-                                  {isCurrent ? (
-                                    <Check className="size-3.5 text-emerald-600" aria-hidden />
-                                  ) : (
-                                    <span className="inline-flex size-3.5 shrink-0" aria-hidden="true" />
-                                  )}
-                                  <span>{optionLabel}</span>
-                                  {isCurrent ? (
-                                    <span className="ml-auto text-xs text-emerald-600">현재</span>
-                                  ) : null}
-                                </DropdownMenuItem>
-                              )
-                            })}
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      </div>
-                    </div>
-                    <Separator className="my-4" />
-                    <div className="flex items-baseline justify-between">
-                      <div>
-                        <p className="text-2xl font-semibold text-slate-900">
-                          {typeof slot.occupiedCount === "number" ? slot.occupiedCount : "-"}
-                          <span className="text-base font-medium text-slate-400">
-                            /{typeof slot.capacity === "number" ? slot.capacity : "-"}
-                          </span>
-                        </p>
-                        <p className="text-xs text-slate-500">점유/용량</p>
-                      </div>
-                      {utilization !== null ? (
-                        <div className="text-right">
-                          <p className="text-sm font-semibold text-emerald-600">{utilization}%</p>
-                          <p className="text-xs text-slate-500">활용률</p>
-                        </div>
-                      ) : (
-                        <p className="text-xs text-slate-400">용량 정보 없음</p>
-                      )}
-                    </div>
-                    {utilization !== null ? (
-                      <Progress value={utilization} className="mt-3 h-2" />
-                    ) : null}
-                    <div className="mt-3 flex items-center justify-between text-xs">
-                      <span className="text-slate-500">
-                        마지막 갱신 {formatRelative(slot.lockedUntil) || "-"}
-                      </span>
-                      {isSelected ? (
-                        <Badge className="bg-emerald-100 text-emerald-700">선택됨</Badge>
-                      ) : (
-                        <span className="text-emerald-600">상세 보기</span>
-                      )}
-                    </div>
-                  </div>
-                )
-              })}
+            <div className="rounded-2xl border border-dashed border-slate-200 px-4 py-6 text-center text-xs text-slate-500">
+              상세 정보를 보려면 칸을 선택하세요.
             </div>
           )}
         </section>
-
-        <section className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-semibold text-slate-900">상세</h2>
-            {selectedSlot ? (
-              <div className="flex items-center gap-2 text-xs text-slate-500">
-                <span>{selectedSlot.displayName ?? `${selectedSlot.floorNo}F ${selectedSlot.slotLetter}`}</span>
-                <Separator orientation="vertical" className="h-4" />
-                <Link
-                  href={`/admin/audit?module=fridge&slotId=${selectedSlot.slotId}`}
-                  className="flex items-center gap-1 text-emerald-600"
-                >
-                  감사 로그 이동
-                  <ArrowRight className="size-3" aria-hidden />
-                </Link>
-              </div>
-            ) : null}
-          </div>
-          {selectedSlot ? (
-            <Tabs defaultValue="bundles" className="space-y-4">
-              <TabsList>
-                <TabsTrigger value="bundles">포장 목록</TabsTrigger>
-                <TabsTrigger value="inspections">검사 기록</TabsTrigger>
-              </TabsList>
-              <TabsContent value="bundles" className="space-y-4">
-                <form onSubmit={handleSearchSubmit}>
-                  <Label htmlFor="bundle-search" className="mb-2 block text-xs text-slate-500">
-                    라벨·포장명·호실 검색
-                  </Label>
-                  <div className="flex gap-2">
-                    <Input
-                      id="bundle-search"
-                      placeholder="예: A301, 김도미, 과일"
-                      value={bundleSearchInput}
-                      onChange={(event) => setBundleSearchInput(event.target.value)}
-                    />
-                    <Button type="submit" className="gap-1">
-                      <Search className="size-4" aria-hidden />
-                      검색
-                    </Button>
-                    <Button type="button" variant="ghost" onClick={handleResetSearch}>
-                      초기화
-                    </Button>
-                  </div>
-                </form>
-                <div className="flex items-center justify-between">
+      ) : (
+        <div className="grid items-start gap-6 lg:grid-cols-[340px_minmax(0,1fr)] xl:grid-cols-[360px_minmax(0,1fr)] xl:gap-8">
+          <div className="lg:sticky lg:top-28">
+            <section className="space-y-4 lg:max-h-[calc(100vh-9rem)] lg:overflow-y-auto lg:self-start lg:pr-1">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-lg font-semibold text-slate-900">칸 목록</h2>
                   <p className="text-xs text-slate-500">
-                    총 {bundleState.totalCount.toLocaleString()}건 · 페이지 {bundleState.page + 1}/
-                    {totalBundlePages}
+                    카드를 선택하면 포장/검사 상세가 우측 패널에 표시됩니다.
                   </p>
-                  <Dialog open={deletedState.open} onOpenChange={handleDeletedOpenChange}>
-                    <DialogTrigger asChild>
-                      <Button variant="outline" size="sm" className="gap-2">
-                        <History className="size-4" aria-hidden />
-                        삭제 이력
-                      </Button>
-                    </DialogTrigger>
-                    <DialogContent className="max-w-3xl">
-                      <DialogHeader>
-                        <DialogTitle>삭제된 포장 목록</DialogTitle>
-                        <DialogDescription>
-                          최근 {deletedState.sinceMonths}개월 이내 삭제된 포장을 확인할 수 있습니다.
-                        </DialogDescription>
-                      </DialogHeader>
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                          <span>조회 범위</span>
-                          <Select
-                            value={String(deletedState.sinceMonths)}
-                            onValueChange={(value) => handleDeletedRangeChange(Number(value))}
-                          >
-                            <SelectTrigger className="h-8 w-[120px]">
-                              <SelectValue placeholder="최근 3개월" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="3">최근 3개월</SelectItem>
-                              <SelectItem value="6">최근 6개월</SelectItem>
-                              <SelectItem value="12">최근 12개월</SelectItem>
-                              <SelectItem value="0">전체</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="flex items-center gap-2 text-xs text-slate-500">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDeletedPageChange("prev")}
-                            disabled={deletedState.page === 0 || deletedState.loading}
-                          >
-                            이전
-                          </Button>
-                          <span>
-                            {deletedState.page + 1} 페이지 /{" "}
-                            {Math.max(
-                              1,
-                              Math.ceil(
-                                (deletedState.response?.totalCount ?? 0) / DELETED_PAGE_SIZE,
-                              ),
-                            )}
-                          </span>
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleDeletedPageChange("next")}
-                            disabled={deletedState.loading}
-                          >
-                            다음
-                          </Button>
-                        </div>
-                      </div>
-                      {deletedState.loading ? (
-                        <div className="flex items-center justify-center py-16 text-sm text-slate-500">
-                          <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-                          삭제 이력을 불러오는 중입니다…
-                        </div>
-                      ) : deletedState.error ? (
-                        <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-600">
-                          {deletedState.error}
-                        </div>
-                      ) : (
-                        <ScrollArea className="max-h-[360px]">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="w-[120px]">라벨</TableHead>
-                                <TableHead>포장명</TableHead>
-                                <TableHead>보관자</TableHead>
-                                <TableHead>삭제 시각</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {(deletedState.response?.items ?? []).map((item) => {
-                                const bundle = mapAdminBundleSummary(item)
-                                const deletedAt =
-                                  bundle.deletedAt ?? bundle.removedAt ?? bundle.updatedAt
-                                return (
-                                  <TableRow key={`${bundle.bundleId}-${deletedAt}`}>
-                                    <TableCell className="font-medium">{bundle.labelDisplay}</TableCell>
-                                    <TableCell>{bundle.bundleName}</TableCell>
-                                    <TableCell>
-                                      {bundle.ownerDisplayName ?? bundle.ownerRoomNumber ?? "-"}
-                                    </TableCell>
-                                    <TableCell>
-                                      <div className="text-xs font-medium text-slate-700">
-                                        {formatDateTime(deletedAt, "-")}
-                                      </div>
-                                      <div className="text-[11px] text-slate-400">
-                                        {formatRelative(deletedAt) || "-"}
-                                      </div>
-                                    </TableCell>
-                                  </TableRow>
-                                )
-                              })}
-                            </TableBody>
-                          </Table>
-                        </ScrollArea>
-                      )}
-                    </DialogContent>
-                  </Dialog>
                 </div>
-                <div className="rounded-lg border border-slate-200">
-                  {bundleState.loading ? (
-                    <div className="flex items-center justify-center py-12 text-sm text-slate-500">
-                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-                      포장 목록을 불러오는 중입니다…
-                    </div>
-                  ) : bundleState.error ? (
-                    <div className="p-4 text-sm text-rose-600">{bundleState.error}</div>
-                  ) : bundleState.items.length === 0 ? (
-                    <div className="p-4 text-sm text-slate-500">
-                      조건에 맞는 포장이 없습니다. 검색어와 필터를 조정해 보세요.
-                    </div>
-                  ) : (
-                    <ScrollArea className="max-h-[360px]">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-[120px]">라벨</TableHead>
-                            <TableHead>포장명</TableHead>
-                            <TableHead>보관자</TableHead>
-                            <TableHead>상태</TableHead>
-                            <TableHead>최근 업데이트</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {bundleState.items.map((bundle) => {
-                            const freshnessBadge = formatFreshness(bundle.freshness)
-                            const reuseKey = `${bundle.slotId}::${bundle.labelDisplay}`
-                            const reuseInfo = labelReuseLookup[reuseKey]
-                            const reuseDisplayDate = reuseInfo ? formatDateTime(reuseInfo, "-") : null
-                            return (
-                              <TableRow key={bundle.bundleId}>
-                                <TableCell className="font-medium">{bundle.labelDisplay}</TableCell>
-                                <TableCell>
-                                  <div className="font-medium text-slate-900">{bundle.bundleName}</div>
-                                  {bundle.memo ? (
-                                    <p className="text-xs text-slate-500">{bundle.memo}</p>
-                                  ) : null}
-                                </TableCell>
-                                <TableCell>
-                                  <p className="text-sm text-slate-700">
-                                    {bundle.ownerDisplayName ?? "-"}
-                                  </p>
-                                  <p className="text-xs text-slate-500">
-                                    {bundle.ownerRoomNumber ?? "호실 정보 없음"}
-                                  </p>
-                                </TableCell>
-                                <TableCell className="space-y-1">
-                                  <Badge variant="outline" className="border-slate-200">
-                                    {bundle.status}
-                                  </Badge>
-                                  {freshnessBadge ? (
-                                    <Badge className={freshnessBadge.className}>
-                                      {freshnessBadge.label}
-                                    </Badge>
-                                  ) : null}
-                                  {reuseInfo ? (
-                                    <Badge
-                                      className="bg-sky-100 text-sky-700"
-                                      title={
-                                        reuseDisplayDate
-                                          ? `최근 삭제 시각 ${reuseDisplayDate}`
-                                          : undefined
-                                      }
-                                    >
-                                      라벨 재사용
-                                    </Badge>
-                                  ) : null}
-                                </TableCell>
-                                <TableCell>
-                                  <div className="text-xs font-medium text-slate-700">
-                                    {formatDateTime(bundle.updatedAt, "-")}
-                                  </div>
-                                  <div className="text-[11px] text-slate-400">
-                                    {formatRelative(bundle.updatedAt) || "-"}
-                                  </div>
-                                </TableCell>
-                              </TableRow>
-                            )
-                          })}
-                        </TableBody>
-                      </Table>
-                    </ScrollArea>
-                  )}
-                </div>
-                <div className="flex items-center justify-between text-xs text-slate-500">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setBundleState((prev) => ({
-                          ...prev,
-                          page: Math.max(0, prev.page - 1),
-                        }))
-                      }
-                      disabled={bundleState.page === 0 || bundleState.loading}
-                    >
-                      이전
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        setBundleState((prev) => ({
-                          ...prev,
-                          page: Math.min(totalBundlePages - 1, prev.page + 1),
-                        }))
-                      }
-                      disabled={bundleState.page >= totalBundlePages - 1 || bundleState.loading}
-                    >
-                      다음
-                    </Button>
-                  </div>
-                  <span>
-                    {bundleState.page + 1} / {totalBundlePages} 페이지
-                  </span>
-                </div>
-              </TabsContent>
-              <TabsContent value="inspections" className="space-y-4">
-                <div className="flex items-center justify-between gap-2">
-                  <div>
-                    <Label htmlFor="inspection-status" className="text-xs text-slate-500">
-                      검사 상태
-                    </Label>
-                    <Select
-                      value={inspectionState.status}
-                      onValueChange={(value) =>
-                        setInspectionState((prev) => ({
-                          ...prev,
-                          status: value as InspectionState["status"],
-                        }))
-                      }
-                    >
-                      <SelectTrigger id="inspection-status" className="mt-1 h-8 w-[160px]">
-                        <SelectValue placeholder="상태 선택" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="ALL">전체</SelectItem>
-                        <SelectItem value="IN_PROGRESS">진행 중</SelectItem>
-                        <SelectItem value="SUBMITTED">제출 완료</SelectItem>
-                        <SelectItem value="CANCELED">취소됨</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() =>
-                      setInspectionState((prev) => ({
-                        ...prev,
-                        status: "SUBMITTED",
-                      }))
-                    }
-                  >
-                    기본값으로
-                  </Button>
-                </div>
-                <div className="rounded-lg border border-slate-200">
-                  {inspectionState.loading ? (
-                    <div className="flex items-center justify-center py-12 text-sm text-slate-500">
-                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-                      검사 기록을 불러오는 중입니다…
-                    </div>
-                  ) : inspectionState.error ? (
-                    <div className="p-4 text-sm text-rose-600">{inspectionState.error}</div>
-                  ) : inspectionState.items.length === 0 ? (
-                    <div className="p-4 text-sm text-slate-500">
-                      선택한 조건에 해당하는 검사 기록이 없습니다.
-                    </div>
-                  ) : (
-                    <ScrollArea className="max-h-[360px]">
-                      <div className="divide-y divide-slate-200">
-                        {inspectionState.items.map((inspection) => (
-                          <div key={inspection.sessionId} className="p-4">
-                            <div className="flex flex-wrap items-start justify-between gap-2">
-                              <div>
-                                <p className="text-sm font-semibold text-slate-900">
-                                  {formatDateTime(inspection.startedAt, "-")}
-                                </p>
-                                <p className="text-xs text-slate-500">
-                                  검사자 {inspection.startedBy.slice(0, 8)} · {inspection.slotLabel}
-                                </p>
-                              </div>
-                              <Badge variant="outline" className="border-slate-200 text-slate-600">
-                                {INSPECTION_STATUS_LABEL[inspection.status]}
-                              </Badge>
-                            </div>
-                            <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-600">
-                              <span className="flex items-center gap-1">
-                                <AlertTriangle className="size-3 text-amber-500" aria-hidden />
-                                경고 {inspection.warningCount}
-                              </span>
-                              <span className="flex items-center gap-1">
-                                <AlertCircle className="size-3 text-rose-500" aria-hidden />
-                                폐기 {inspection.disposalCount}
-                              </span>
-                              <span className="flex items-center gap-1">정상 {inspection.passCount}</span>
-                            </div>
-                            {inspection.summary.length > 0 ? (
-                              <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
-                                {inspection.summary.map((entry) => (
-                                  <div
-                                    key={`${inspection.sessionId}-${entry.action}`}
-                                    className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
-                                  >
-                                    <p className="font-medium text-slate-700">
-                                      {formatInspectionActionLabel(entry.action)}
-                                    </p>
-                                    <p>{entry.count}건</p>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : null}
-                            <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                              <Button
-                                asChild
-                                variant="outline"
-                                size="sm"
-                                className="h-8 px-3 text-xs"
-                              >
-                                <Link href={`/admin/audit?module=fridge&sessionId=${inspection.sessionId}`}>
-                                  감사 로그 이동
-                                </Link>
-                              </Button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                  )}
-                </div>
-              </TabsContent>
-            </Tabs>
-          ) : (
-            <div className="rounded-lg border border-dashed border-slate-200 p-6 text-sm text-slate-500">
-            좌측에서 확인할 칸을 먼저 선택하세요.
+              </div>
+              {renderSlotList("grid grid-cols-1 gap-5")}
+            </section>
           </div>
-        )}
-      </section>
-    </div>
-    <aside
-        data-admin-slot="rail"
-        className="space-y-4"
-        aria-label="냉장고 운영 퀵 액션"
-      >
-        <section className="rounded-2xl border border-emerald-100 bg-white/90 p-5 shadow-sm">
-          <h2 className="text-sm font-semibold text-slate-900">빠른 실행</h2>
-          <p className="mt-1 text-xs text-slate-500">
-            재배분, 삭제 이력 확인, 칸 설정 편집을 빠르게 수행할 수 있습니다. Cmd/Ctrl + K로 전역 검색창에 집중하세요.
-          </p>
-          <ul className="mt-4 space-y-3 text-sm text-slate-700">
-            {actionShortcuts.map((item) => (
-              <li key={item.id} className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 shadow-sm">
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <p className="font-semibold text-emerald-700">{item.label}</p>
-                    <p className="mt-1 text-xs text-slate-500">{item.description}</p>
-                  </div>
-                  {item.href ? (
-                    <Button asChild size="icon" variant="ghost" className="text-emerald-600">
-                      <Link href={item.href} aria-label={`${item.label} 이동`}>
+          {detailSection}
+        </div>
+      )}
+
+      {!isMobile ? (
+        <aside
+          data-admin-slot="rail"
+          className="space-y-4"
+          aria-label="냉장고 운영 퀵 액션"
+        >
+          <section className="rounded-2xl border border-emerald-100 bg-white/90 p-5 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-900">빠른 실행</h2>
+            <p className="mt-1 text-xs text-slate-500">
+              재배분, 삭제 이력 확인, 칸 설정 편집을 빠르게 수행할 수 있습니다. Cmd/Ctrl + K로 전역 검색창에 집중하세요.
+            </p>
+            <ul className="mt-4 space-y-3 text-sm text-slate-700">
+              {actionShortcuts.map((item) => (
+                <li key={item.id} className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 shadow-sm">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-semibold text-emerald-700">{item.label}</p>
+                      <p className="mt-1 text-xs text-slate-500">{item.description}</p>
+                    </div>
+                    {item.href ? (
+                      <Button asChild size="icon" variant="ghost" className="text-emerald-600">
+                        <Link href={item.href} aria-label={`${item.label} 이동`}>
+                          <ArrowRight className="size-4" aria-hidden />
+                        </Link>
+                      </Button>
+                    ) : (
+                      <Button
+                        size="icon"
+                        variant="ghost"
+                        className="text-emerald-600"
+                        onClick={item.onClick}
+                        aria-label={`${item.label} 실행`}
+                      >
                         <ArrowRight className="size-4" aria-hidden />
-                      </Link>
-                    </Button>
-                  ) : (
-                    <Button
-                      size="icon"
-                      variant="ghost"
-                      className="text-emerald-600"
-                      onClick={item.onClick}
-                      aria-label={`${item.label} 실행`}
-                    >
-                      <ArrowRight className="size-4" aria-hidden />
-                    </Button>
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-        </section>
-        {selectedSlot ? (
-          <section
-            ref={slotConfigRef}
-            className="rounded-2xl border border-slate-200 bg-white/90 p-5 shadow-sm"
-            aria-label="선택된 칸 요약"
-          >
-            <h2 className="text-sm font-semibold text-slate-900">선택된 칸</h2>
-            <dl className="mt-3 space-y-2 text-xs text-slate-600">
-              <div className="flex items-center justify-between">
-                <dt>칸</dt>
-                <dd className="font-medium text-slate-900">
-                  {selectedSlot.displayName ?? `${selectedSlot.floorNo}F ${selectedSlot.slotLetter}`}
-                </dd>
+                      </Button>
+                    )}
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        </aside>
+      ) : null}
+
+      {isMobile && selectedSlot ? (
+        <Sheet open={mobileDetailOpen} onOpenChange={setMobileDetailOpen}>
+          <SheetContent side="bottom" className="h-[85vh] overflow-y-auto px-4">
+            <SheetHeader className="sr-only">
+              <SheetTitle>칸 상세 정보</SheetTitle>
+              <SheetDescription>선택한 냉장고 칸의 포장 및 검사 내역을 확인합니다.</SheetDescription>
+            </SheetHeader>
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-6 py-4">
+              {detailSection}
+            </div>
+          </SheetContent>
+        </Sheet>
+      ) : null}
+
+      <Dialog open={deletedState.open} onOpenChange={handleDeletedOpenChange}>
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>삭제된 포장 목록</DialogTitle>
+            <DialogDescription>
+              최근 {deletedState.sinceMonths}개월 이내 삭제된 포장을 확인할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2 text-xs text-slate-500">
+              <span>조회 범위</span>
+              <Select
+                value={String(deletedState.sinceMonths)}
+                onValueChange={(value) => handleDeletedRangeChange(Number(value))}
+              >
+                <SelectTrigger className="h-8 w-[120px]">
+                  <SelectValue placeholder="최근 3개월" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="3">최근 3개월</SelectItem>
+                  <SelectItem value="6">최근 6개월</SelectItem>
+                  <SelectItem value="12">최근 12개월</SelectItem>
+                  <SelectItem value="0">전체</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex w-full flex-col-reverse gap-2 text-xs text-slate-500 sm:w-auto sm:flex-row sm:items-center sm:justify-end sm:gap-3">
+              <span className="text-center sm:min-w-[140px] sm:text-right">
+                {deletedState.page + 1} 페이지 /{" "}
+                {Math.max(1, Math.ceil((deletedState.response?.totalCount ?? 0) / DELETED_PAGE_SIZE))}
+              </span>
+              <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center sm:gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  onClick={() => handleDeletedPageChange("prev")}
+                  disabled={deletedState.page === 0 || deletedState.loading}
+                >
+                  이전
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="w-full sm:w-auto"
+                  onClick={() => handleDeletedPageChange("next")}
+                  disabled={deletedState.loading}
+                >
+                  다음
+                </Button>
               </div>
-              <div className="flex items-center justify-between">
-                <dt>상태</dt>
-                <dd className="font-medium text-slate-900">
-                  {STATUS_BADGE[selectedSlot.resourceStatus]?.label ?? selectedSlot.resourceStatus}
-                </dd>
+            </div>
+          </div>
+          {deletedState.loading ? (
+            <div className="flex items-center justify-center py-16 text-sm text-slate-500">
+              <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+              삭제 이력을 불러오는 중입니다…
+            </div>
+          ) : deletedState.error ? (
+            <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-600">
+              {deletedState.error}
+            </div>
+                      ) : (
+                        <div className="max-h-[360px] overflow-auto">
+                          <Table className="min-w-[720px]">
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[120px]">라벨</TableHead>
+                      <TableHead>포장명</TableHead>
+                      <TableHead>보관자</TableHead>
+                      <TableHead>삭제 시각</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {(deletedState.response?.items ?? []).map((item) => {
+                      const bundle = mapAdminBundleSummary(item)
+                      const deletedAt = bundle.deletedAt ?? bundle.removedAt ?? bundle.updatedAt
+                      return (
+                        <TableRow key={`${bundle.bundleId}-${deletedAt}`}>
+                          <TableCell className="font-medium">{bundle.labelDisplay}</TableCell>
+                          <TableCell>{bundle.bundleName}</TableCell>
+                          <TableCell>
+                            {bundle.ownerDisplayName ?? bundle.ownerRoomNumber ?? "-"}
+                          </TableCell>
+                          <TableCell>
+                            <div className="text-xs font-medium text-slate-700">
+                              {formatDateTime(deletedAt, "-")}
+                            </div>
+                            <div className="text-[11px] text-slate-400">
+                              {formatRelative(deletedAt) || "-"}
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })}
+                  </TableBody>
+                          </Table>
+                        </div>
+          )}
+        </DialogContent>
+      </Dialog>
+      <Dialog
+        open={slotConfigDialog.open}
+        onOpenChange={(open) => {
+          if (!open) {
+            if (slotConfigDialog.saving) return
+            resetSlotConfigDialog()
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>칸 상태·설정 편집</DialogTitle>
+            <DialogDescription>
+              선택한 칸의 상태와 최대 포장 용량을 한 번에 조정할 수 있습니다.
+            </DialogDescription>
+          </DialogHeader>
+          {slotConfigDialog.slot ? (
+            <div className="space-y-4">
+              <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <p className="font-semibold text-slate-900">
+                  {slotConfigDialog.slot.displayName ??
+                    `${slotConfigDialog.slot.floorNo}F · ${slotConfigDialog.slot.slotLetter}`}
+                </p>
+                <p className="mt-1">
+                  현재 상태{" "}
+                  {STATUS_BADGE[slotConfigDialog.slot.resourceStatus]?.label ??
+                    slotConfigDialog.slot.resourceStatus}
+                </p>
+                {typeof slotConfigDialog.slot.capacity === "number" ? (
+                  <p className="mt-1">현재 용량 {slotConfigDialog.slot.capacity}</p>
+                ) : null}
               </div>
-              <div className="flex items-center justify-between">
-                <dt>점유</dt>
-                <dd className="font-medium text-slate-900">
-                  {typeof selectedSlot.occupiedCount === "number" && typeof selectedSlot.capacity === "number"
-                    ? `${selectedSlot.occupiedCount}/${selectedSlot.capacity}`
-                    : "정보 없음"}
-                </dd>
-              </div>
-              {selectedSlot.locked ? (
-                <div className="flex items-center justify-between">
-                  <dt>잠금 해제 예정</dt>
-                  <dd className="font-medium text-amber-600">
-                    {formatRelative(selectedSlot.lockedUntil) || "확인 필요"}
-                  </dd>
-                </div>
-              ) : null}
-            </dl>
-            <Button asChild variant="outline" size="sm" className="mt-4 w-full">
-              <Link href={`/admin/audit?module=fridge&slotId=${selectedSlot.slotId}`}>
-                감사 로그 상세 보기
-              </Link>
-            </Button>
-            <div className="mt-4 space-y-3 text-xs text-slate-600">
               <div className="space-y-1">
-                <Label className="text-xs text-muted-foreground">상태</Label>
-                <Select value={slotStatusDraft} onValueChange={(value) => setSlotStatusDraft(value as ResourceStatus)}>
+                <Label className="text-xs text-muted-foreground">상태 선택</Label>
+                <Select
+                  value={slotConfigDialog.status}
+                  onValueChange={(value) =>
+                    setSlotConfigDialog((prev) => ({
+                      ...prev,
+                      status: value as ResourceStatus,
+                    }))
+                  }
+                >
                   <SelectTrigger className="h-9">
                     <SelectValue placeholder="상태 선택" />
                   </SelectTrigger>
@@ -1793,26 +1859,53 @@ export default function AdminFridgePage() {
               <div className="space-y-1">
                 <Label className="text-xs text-muted-foreground">최대 포장 용량</Label>
                 <Input
-                  value={slotCapacityDraft}
-                  onChange={(event) => setSlotCapacityDraft(event.target.value)}
+                  value={slotConfigDialog.capacity}
+                  onChange={(event) =>
+                    setSlotConfigDialog((prev) => ({
+                      ...prev,
+                      capacity: event.target.value,
+                    }))
+                  }
                   inputMode="numeric"
                   pattern="[0-9]*"
-                  placeholder="예: 12"
+                  placeholder="예: 20 (비워두면 변경하지 않음)"
                 />
+                <p className="text-[10px] text-slate-400">
+                  숫자를 입력하면 용량이 변경되며, 비워두면 기존 용량을 유지합니다.
+                </p>
               </div>
-              <Button
-                type="button"
-                size="sm"
-                className="w-full"
-                disabled={slotSaving || !slotHasChanges}
-                onClick={() => void handleSaveSlotConfig()}
-              >
-                {slotSaving ? "저장 중..." : "칸 설정 저장"}
-              </Button>
             </div>
-          </section>
-        ) : null}
-    </aside>
+          ) : (
+            <p className="py-6 text-sm text-slate-500">편집할 칸 정보를 찾지 못했습니다.</p>
+          )}
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={resetSlotConfigDialog}
+              disabled={slotConfigDialog.saving}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              onClick={() => void handleSlotConfigSubmit()}
+              disabled={
+                slotConfigDialog.saving || !slotConfigDialog.slot || !slotConfigHasChanges
+              }
+            >
+              {slotConfigDialog.saving ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                  적용 중…
+                </>
+              ) : (
+                "변경 적용"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
   </Fragment>
   )
 }

@@ -43,9 +43,11 @@ export default function AdminToolsPage() {
             />
           </div>
           <DangerZoneModal
-            title="데모 Seed를 실행하시겠습니까?"
-            description="현재 데이터가 전시용 데이터로 대체됩니다. 운영 환경에서는 절대 실행하지 마세요."
-            confirmLabel="Seed 실행"
+            title="데모 데이터를 초기화하시겠습니까?"
+            description="현재 저장된 포장·물품 데이터가 모두 삭제되고 전시용 예시 데이터로 덮어씌워집니다. 이 작업은 되돌릴 수 없습니다."
+            confirmLabel="데모 데이터 초기화"
+            cancelLabel="취소"
+            triggerLabel="데모 데이터 초기화"
             onConfirm={async () => undefined}
             destructive
           />
