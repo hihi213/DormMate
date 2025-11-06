@@ -17,7 +17,7 @@ DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위�
 
 ```bash
 # 개발용 인프라 기동 (Docker Compose)
-docker compose up -d
+docker compose --env-file deploy/.env.prod up -d
 # 또는 자동화 스크립트 사용
 ./auto dev up
 
@@ -34,7 +34,7 @@ docker compose up -d
 cd frontend && npm install && npm run dev
 ```
 
-> DB 컨테이너는 5432 포트를 호스트에 노출합니다. 로컬 툴(IDE, psql)에서는 `localhost:5432`로 접속하고, 다른 컨테이너에서 접근할 때는 `db:5432` 호스트명을 사용하세요. 필요한 환경 변수 목록은 `backend/ENV_SETUP.md`를 참고해 직접 `.env`를 작성하세요.
+> DB 컨테이너는 5432 포트를 호스트에 노출합니다. 로컬 툴(IDE, psql)에서는 `localhost:5432`로 접속하고, 다른 컨테이너에서 접근할 때는 `db:5432` 호스트명을 사용하세요. 필요한 환경 변수 목록은 `backend/ENV_SETUP.md`를 참고해 `deploy/.env.prod`를 작성하세요.
 
 > CI 런너(예: GitHub Actions)는 Java 21, Node.js 22, Docker(Compose), PostgreSQL 16, Redis 7.2 이미지를 사용할 수 있는 환경이어야 합니다. 기본 워크플로(`.github/workflows/ci.yml`)는 이러한 런타임을 기준으로 구성되어 있습니다.
 
@@ -77,17 +77,17 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
    ```
 2. Docker 이미지 태깅  
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml build app
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml build app
    docker tag dorm_app:latest dormmate/app:<TAG>
-   ```
+```
 3. 배포/업데이트  
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app
    ```
 4. 실패 시 롤백  
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml down
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app --build --no-cache  # 안정 버전으로 재배포
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml down
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app --build --no-cache  # 안정 버전으로 재배포
    ```
 
 > 운영 배포 전에는 `./auto tests core --full-playwright` 결과를 확인하세요.

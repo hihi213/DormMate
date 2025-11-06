@@ -3,24 +3,23 @@
 ## 🚀 **개발 환경 설정**
 
 ### **1. 환경변수 파일 생성**
-프로젝트 루트에 `.env.dev` 파일을 생성하세요:
+프로젝트 루트의 `deploy/.env.prod` 파일 하나만 관리하면 됩니다. 파일은 `.gitignore`에 포함되어 저장소에 커밋되지 않습니다.
 
 ```bash
-# backend/.env.dev
-DB_URL=jdbc:postgresql://localhost:5432/dormitory_db
-DB_USERNAME=dormmate_user
-DB_PASSWORD=pleasesetup
-REDIS_HOST=localhost
+# deploy/.env.prod
+DB_URL=
+DB_USERNAME=
+DB_PASSWORD=
+
 REDIS_PORT=6379
 JWT_SECRET=dev-jwt-secret-key-change-in-production-2025
 JWT_REFRESH_EXPIRATION=604800000
-AWS_S3_BUCKET=dormmate-dev-storage
+AWS_S3_BUCKET=dormmate-storage
 AWS_REGION=ap-northeast-2
-AWS_ACCESS_KEY=dev-access-key
-AWS_SECRET_KEY=dev-secret-key
-ADMIN_USERNAME=dormmate_admin
-ADMIN_PASSWORD=ChangeMe!Dev2025
-# ↑ 예시 값입니다. 실제 환경에서는 더 강력한 값으로 교체하세요.
+AWS_ACCESS_KEY=change-me
+AWS_SECRET_KEY=change-me
+ADMIN_USERNAME=
+ADMIN_PASSWORD=
 SERVER_PORT=8080
 ```
 
@@ -30,64 +29,56 @@ SERVER_PORT=8080
 터미널에서 다음 명령어로 환경변수를 로드하세요:
 
 ```bash
-# macOS/Linux
-export $(cat .env.dev | xargs)
+# macOS/Linux (프로젝트 루트 기준)
+set -a
+source deploy/.env.prod
+set +a
+```
 
-# 또는 수동으로 설정
-export DB_URL=jdbc:postgresql://localhost:5432/dormitory_db
-export DB_USERNAME=dormmate_user
-export DB_PASSWORD=pleasesetup
+> `direnv`를 사용하면 `dotenv deploy/.env.prod`만 `.envrc`에 추가하여 디렉터리 진입 시 자동으로 로드할 수 있습니다.
+
+### **3. Flyway 마이그레이션 실행**
+환경 파일을 지정하지 않으면 `deploy/.env.prod`가 기본으로 사용됩니다.
+
+```bash
+# 기본 환경
+backend/scripts/flyway.sh
+
+# 다른 파일을 사용하려면 명시적으로 전달
+backend/scripts/flyway.sh secrets/prod.env
+backend/scripts/flyway.sh secrets/prod.env clean
 ```
 
 ## 🏭 **운영 환경 설정**
 
-### **1. AWS Lightsail 서버에서**
+### **1. 서버용 `.env` 관리**
+- 배포 스크립트가 필요한 값을 이용해 `deploy/.env.prod`를 생성합니다.
+- 값은 Secret Manager, 환경변수, Vault 등 안전한 저장소에 보관하세요.
+
+### **2. 배포 시 적용**
+배포 스크립트가 `.env`를 만든 뒤 필요한 명령을 실행하고, 완료 후 파일을 삭제합니다.
+
 ```bash
-# /etc/environment 파일에 추가
-sudo nano /etc/environment
+# 예시: 프로덕션 마이그레이션
+backend/scripts/flyway.sh deploy/.env.prod
 
-# 추가할 내용
-DB_URL=jdbc:postgresql://your-rds-endpoint:5432/dormitory_db
-DB_USERNAME=prod_user
-DB_PASSWORD=super-strong-password-here
-REDIS_HOST=your-redis-endpoint
-REDIS_PORT=6379
-REDIS_PASSWORD=your-redis-password
-JWT_SECRET=random-256-bit-secret-key-here
-JWT_REFRESH_EXPIRATION=604800000
-AWS_S3_BUCKET=your-prod-bucket
-AWS_REGION=ap-northeast-2
-AWS_ACCESS_KEY=your-aws-access-key
-AWS_SECRET_KEY=your-aws-secret-key
-ADMIN_USERNAME=dormmate_admin
-ADMIN_PASSWORD=SuperStrongAdminPass!2025
-# ↑ 운영 환경에서는 길고 예측 불가능한 값을 사용하세요.
-SERVER_PORT=8080
-```
-
-### **2. 환경변수 적용**
-```bash
-# 환경변수 적용
-source /etc/environment
-
-# 또는 시스템 재시작
-sudo reboot
+# 예시: 애플리케이션 실행
+set -a && source deploy/.env.prod && set +a
+./gradlew bootRun --args='--spring.profiles.active=prod'
 ```
 
 ## 🔒 **보안 체크리스트**
 
 ### **개발 환경**
-- [ ] `.env.dev` 파일이 `.gitignore`에 포함되어 있는지 확인
+- [ ] `deploy/.env.prod` 파일이 `.gitignore`에 포함되어 있는지 확인
 - [ ] 하드코딩된 비밀번호가 없는지 확인
 - [ ] JWT 시크릿이 예측 가능하지 않은지 확인
-- [ ] `ADMIN_USERNAME`, `ADMIN_PASSWORD` 값을 Flyway 마이그레이션 전에 반드시 설정했는지 확인
 
 ### **운영 환경**
 - [ ] 모든 비밀번호가 강력한지 확인 (16자 이상, 특수문자 포함)
 - [ ] 데이터베이스가 프라이빗 서브넷에 있는지 확인
 - [ ] 방화벽 규칙이 적절히 설정되어 있는지 확인
 - [ ] SSL/TLS 인증서가 설정되어 있는지 확인
-- [ ] `ADMIN_USERNAME`, `ADMIN_PASSWORD` 환경변수가 안전한 값인지 주기적으로 변경
 
 ## 🚨 **주의사항**
 
@@ -95,7 +86,6 @@ sudo reboot
 2. **환경변수 파일은 절대 Git에 커밋하지 마세요**
 3. **운영 환경의 비밀번호는 정기적으로 변경하세요**
 4. **JWT 시크릿은 256비트 이상의 랜덤 문자열을 사용하세요**
-5. **Flyway 마이그레이션(`./gradlew flywayMigrate`)을 실행하기 전에 `ADMIN_USERNAME`, `ADMIN_PASSWORD`를 반드시 지정하세요**
 
 ## 📝 **환경별 실행 방법**
 
@@ -113,8 +103,8 @@ SPRING_PROFILES_ACTIVE=dev ./auto dev backend
 
 ### **Docker 환경**
 ```bash
-# 환경변수 파일을 사용하여 Docker 실행
-docker run --env-file .env.prod your-app-image
+docker compose --env-file deploy/.env.prod up migrate
+docker compose --env-file deploy/.env.prod up app
 ```
 
 ## 🚢 **배포 절차 요약**
@@ -125,17 +115,17 @@ docker run --env-file .env.prod your-app-image
    ```
 2. 이미지 태그 및 배포  
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml build app
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml build app
    docker tag dorm_app:latest dormmate/app:<TAG>
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app
    ```
 3. 롤백  
    ```bash
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml down
-   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app --build --no-cache
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml down
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app --build --no-cache
    ```
 
-배포 전에는 `./auto tests core --full-playwright` 결과를 확인하고, `.env.prod`가 최신인지 점검하세요.
+배포 전에는 `./auto tests core --full-playwright` 결과를 확인하고, `deploy/.env.prod`가 최신인지 점검하세요.
 
 ## 🧊 냉장고 라벨 시드 참고
 

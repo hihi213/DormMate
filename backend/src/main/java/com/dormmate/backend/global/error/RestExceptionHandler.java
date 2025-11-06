@@ -1,5 +1,8 @@
 package com.dormmate.backend.global.error;
 
+import com.dormmate.backend.global.error.ProblemException;
+import com.dormmate.backend.global.error.ProblemResponse;
+
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
@@ -26,11 +29,7 @@ public class RestExceptionHandler {
                     null,
                     problemException.getProblemType()
             );
-            ResponseEntity.BodyBuilder builder = ResponseEntity.status(status);
-            if (problemException instanceof RetryableProblemException retryable) {
-                builder.header("Retry-After", String.valueOf(retryable.getRetryAfterSeconds()));
-            }
-            return builder.body(body);
+            return ResponseEntity.status(status).body(body);
         }
         String message = ex.getReason() != null ? ex.getReason() : status.getReasonPhrase();
         ProblemResponse body = ProblemResponse.of(status, message, message, null);
@@ -52,7 +51,7 @@ public class RestExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemResponse> handleGenericException(Exception ex) {
         HttpStatus status = HttpStatus.INTERNAL_SERVER_ERROR;
-        ProblemResponse body = ProblemResponse.of(status, "internal_error", status.getReasonPhrase(), null);
+        ProblemResponse body = ProblemResponse.of(status, "internal_error", ex.getMessage(), null);
         return ResponseEntity.status(status).body(body);
     }
 }

@@ -29,7 +29,7 @@ class AdminReadIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminCanReadDashboardAndResources() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
 
         mockMvc.perform(get("/admin/dashboard")
                         .header("Authorization", "Bearer " + adminToken))

@@ -35,17 +35,6 @@ public class DemoSeedController {
         return ResponseEntity.ok(new SeedResponse("FRIDGE_DEMO_DATA_REFRESHED", OffsetDateTime.now(ZoneOffset.UTC)));
     }
 
-    @Operation(summary = "데모 데이터 전체 초기화", description = "관리자가 fn_reset_demo_dataset 함수를 실행합니다.")
-    @ApiResponses({
-            @ApiResponse(responseCode = "200", description = "초기화 성공"),
-            @ApiResponse(responseCode = "403", description = "관리자 권한 필요")
-    })
-    @PostMapping("/demo-reset")
-    public ResponseEntity<SeedResponse> resetDemoDataset() {
-        demoSeedService.resetDemoDataset();
-        return ResponseEntity.ok(new SeedResponse("DEMO_DATASET_RESET", OffsetDateTime.now(ZoneOffset.UTC)));
-    }
-
     public record SeedResponse(String message, OffsetDateTime executedAt) {
     }
 }

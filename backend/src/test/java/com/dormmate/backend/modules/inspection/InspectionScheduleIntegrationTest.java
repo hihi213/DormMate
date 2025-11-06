@@ -55,7 +55,7 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
         jdbcTemplate.update("DELETE FROM inspection_schedule");
         managerToken = login("bob", "bob123!");
         residentToken = login("alice", "alice123!");
-        adminToken = login("admin", "password");
+        adminToken = login("dormate", "admin123!");
         slot2FAId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
     }
 

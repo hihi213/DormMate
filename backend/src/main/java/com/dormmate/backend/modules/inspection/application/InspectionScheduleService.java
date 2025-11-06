@@ -126,38 +126,6 @@ public class InspectionScheduleService {
         return toResponse(saved);
     }
 
-    public InspectionScheduleResponse createReinspectionSchedule(
-            InspectionSession session,
-            OffsetDateTime scheduledAt,
-            String title,
-            String notes
-    ) {
-        ensureManagerOrAdminRole();
-        FridgeCompartment compartment = session.getFridgeCompartment();
-        if (compartment == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "COMPARTMENT_REQUIRED");
-        }
-        if (!SecurityUtils.hasRole("ADMIN")) {
-            ensureManagerAssignmentOnFloor(compartment);
-        }
-        if (!compartment.getStatus().isActive()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "COMPARTMENT_INACTIVE");
-        }
-
-        ensureNoScheduleConflict(compartment.getId(), scheduledAt, null);
-
-        InspectionSchedule schedule = new InspectionSchedule();
-        schedule.setScheduledAt(scheduledAt);
-        schedule.setTitle(trimToNull(title));
-        schedule.setNotes(trimToNull(notes));
-        schedule.setStatus(InspectionScheduleStatus.SCHEDULED);
-        schedule.setFridgeCompartment(compartment);
-
-        InspectionSchedule saved = saveSchedule(schedule);
-        notifyResidentsOfSchedule(saved, compartment);
-        return toResponse(saved);
-    }
-
     public InspectionScheduleResponse updateSchedule(UUID scheduleId, UpdateInspectionScheduleRequest request) {
         ensureManagerRole();
         InspectionSchedule schedule = inspectionScheduleRepository.findById(scheduleId)
@@ -365,13 +333,6 @@ public class InspectionScheduleService {
             return;
         }
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_MANAGER_ONLY");
-    }
-
-    private void ensureManagerOrAdminRole() {
-        if (SecurityUtils.hasRole("FLOOR_MANAGER") || SecurityUtils.hasRole("ADMIN")) {
-            return;
-        }
-        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_MANAGER_OR_ADMIN_ONLY");
     }
 
     private FridgeCompartment loadCompartmentForManager(UUID compartmentId) {

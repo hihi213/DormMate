@@ -80,7 +80,7 @@ public class AdminMutationService {
     }
 
     public void demoteFloorManager(UUID targetUserId) {
-        findUser(targetUserId);
+        DormUser target = findUser(targetUserId);
         ensureNoActiveInspection(targetUserId);
 
         List<UserRole> activeRoles = userRoleRepository.findActiveRoles(targetUserId);

@@ -48,7 +48,7 @@ class FridgeReallocationIntegrationTest extends AbstractPostgresIntegrationTest 
 
     @BeforeEach
     void setUp() throws Exception {
-        adminToken = loginAndGetAccessToken("admin", "password");
+        adminToken = loginAndGetAccessToken("dormate", "admin123!");
         residentToken = loginAndGetAccessToken("alice", "alice123!");
     }
 
