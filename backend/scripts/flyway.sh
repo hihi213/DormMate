@@ -24,11 +24,18 @@ fi
 
 echo "[flyway] Loading environment from $ENV_FILE"
 
+TASKS=()
+if [[ $# -gt 0 ]]; then
+  TASKS=("$@")
+else
+  TASKS=("flywayMigrate")
+fi
+
 (
   set -a
   # shellcheck source=/dev/null
   source "$ENV_FILE"
   set +a
   cd "$BACKEND_DIR"
-  ./gradlew flywayMigrate "$@"
+  ./gradlew "${TASKS[@]}"
 )

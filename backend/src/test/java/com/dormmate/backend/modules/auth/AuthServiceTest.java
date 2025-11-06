@@ -37,13 +37,13 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void loginSucceedsWithSeedAdmin() {
-        var response = authService.login(new LoginRequest("dormate", "admin123!", null));
-        assertThat(response.user().loginId()).isEqualTo("dormate");
+        var response = authService.login(new LoginRequest("dormmate", "admin1!", null));
+        assertThat(response.user().loginId()).isEqualTo("dormmate");
     }
 
     @Test
     void loginStoresDeviceIdAndRevokesExpiredSessions() {
-        DormUser admin = dormUserRepository.findByLoginIdIgnoreCase("dormate").orElseThrow();
+        DormUser admin = dormUserRepository.findByLoginIdIgnoreCase("dormmate").orElseThrow();
 
         UserSession expired = new UserSession();
         expired.setDormUser(admin);
@@ -54,7 +54,7 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
         expired.setDeviceId("legacy-device");
         userSessionRepository.save(expired);
 
-        var response = authService.login(new LoginRequest("dormate", "admin123!", "  ios-device-1234567890   "));
+        var response = authService.login(new LoginRequest("dormmate", "admin1!", "  ios-device-1234567890   "));
 
         UserSession freshSession = userSessionRepository.findByRefreshTokenHash(hashToken(response.tokens().refreshToken())).orElseThrow();
         assertThat(freshSession.getDeviceId()).isEqualTo("ios-device-1234567890");
@@ -69,7 +69,7 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void refreshFailsWhenDeviceChanges() {
-        var login = authService.login(new LoginRequest("dormate", "admin123!", "web-browser"));
+        var login = authService.login(new LoginRequest("dormmate", "admin1!", "web-browser"));
         String refreshToken = login.tokens().refreshToken();
 
         ResponseStatusException exception = assertThrows(
