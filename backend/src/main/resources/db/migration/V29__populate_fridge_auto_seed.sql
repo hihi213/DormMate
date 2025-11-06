@@ -1,17 +1,15 @@
--- 자동 냉장고 시드 로직은 프리셋 함수로 대체한다.
--- 기존 fn_populate_fridge_auto_seed 호출을 유지하면서 내부적으로 프리셋 리셋 함수를 실행한다.
+-- 더 이상 사용하지 않는 자동 시드 함수 제거
 
 SET TIME ZONE 'UTC';
 
-CREATE OR REPLACE FUNCTION public.fn_populate_fridge_auto_seed(target_limit INTEGER DEFAULT 20)
-RETURNS void
-LANGUAGE plpgsql
-AS $$
+DO $$
 BEGIN
-    RAISE NOTICE 'fn_populate_fridge_auto_seed(target_limit=%) delegates to fn_seed_fridge_presets()', target_limit;
-    PERFORM public.fn_seed_fridge_presets();
+    PERFORM 1
+    FROM pg_proc
+    WHERE proname = 'fn_populate_fridge_auto_seed' AND pg_function_is_visible(oid);
+
+    IF FOUND THEN
+        EXECUTE 'DROP FUNCTION IF EXISTS public.fn_populate_fridge_auto_seed(INTEGER) CASCADE';
+    END IF;
 END;
 $$;
-
--- Demo/테스트 환경에서는 필요 시 수동으로 실행합니다.
---   SELECT public.fn_populate_fridge_auto_seed();

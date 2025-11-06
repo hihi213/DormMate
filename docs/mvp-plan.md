@@ -35,7 +35,7 @@
 - **Status ID**: EN-102
 - **체크리스트**
   - [x] Flyway 베이스라인과 전시용 데모 시드(`db/demo/fridge_exhibition_items.sql`) 자동화를 검증하고 롤백 절차를 문서화.
-  - [x] 데모 환경 `.env`·Docker Compose 구성 정리 및 비상 전환 플랜(mvp-scenario.md §4) 기록.
+  - [x] 데모 환경 `deploy/.env.prod`·Docker Compose 구성 정리 및 비상 전환 플랜(mvp-scenario.md §4) 기록.
 - **목표**: 데모/로컬 환경에서 동일한 데이터로 기동·롤백을 수행할 수 있다.
 - **참고**: [mvp-scenario.md §2](mvp-scenario.md#2-사전-준비), [feature-inventory.md §2](feature-inventory.md#2-냉장고--일반-기숙사생)
 

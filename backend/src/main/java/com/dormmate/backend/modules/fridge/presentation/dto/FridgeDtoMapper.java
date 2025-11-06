@@ -6,7 +6,6 @@ import java.time.ZoneOffset;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 
 import com.dormmate.backend.modules.auth.domain.RoomAssignment;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundle;
@@ -20,15 +19,6 @@ public final class FridgeDtoMapper {
     private static final int EXPIRING_THRESHOLD_DAYS = 3;
 
     private FridgeDtoMapper() {
-    }
-
-    public record BundleInspectionSummary(
-            UUID lastInspectionId,
-            OffsetDateTime lastInspectionAt,
-            int warningCount,
-            int disposalCount,
-            String alertState
-    ) {
     }
 
     public static FridgeSlotResponse toSlotResponse(FridgeCompartment compartment, boolean includeCapacity) {
@@ -63,22 +53,13 @@ public final class FridgeDtoMapper {
     }
 
     public static FridgeBundleSummaryResponse toSummary(FridgeBundle bundle, RoomAssignment assignment) {
-        return toSummary(bundle, assignment, true, null);
+        return toSummary(bundle, assignment, true);
     }
 
     public static FridgeBundleSummaryResponse toSummary(
             FridgeBundle bundle,
             RoomAssignment assignment,
             boolean includeMemo
-    ) {
-        return toSummary(bundle, assignment, includeMemo, null);
-    }
-
-    public static FridgeBundleSummaryResponse toSummary(
-            FridgeBundle bundle,
-            RoomAssignment assignment,
-            boolean includeMemo,
-            BundleInspectionSummary inspectionSummary
     ) {
         FridgeCompartment compartment = bundle.getFridgeCompartment();
         int slotIndex = compartment.getSlotIndex();
@@ -88,9 +69,7 @@ public final class FridgeDtoMapper {
         int activeItemCount = (int) bundle.getItems().stream()
                 .filter(item -> item.getStatus() == FridgeItemStatus.ACTIVE)
                 .count();
-        Long version = computeVersion(bundle);
         return new FridgeBundleSummaryResponse(
-                bundle.getId(),
                 bundle.getId(),
                 compartment.getId(),
                 slotIndex,
@@ -107,13 +86,7 @@ public final class FridgeDtoMapper {
                 activeItemCount,
                 bundle.getCreatedAt(),
                 bundle.getUpdatedAt(),
-                bundle.getDeletedAt(),
-                version,
-                inspectionSummary != null ? inspectionSummary.lastInspectionId() : null,
-                inspectionSummary != null ? inspectionSummary.lastInspectionAt() : null,
-                inspectionSummary != null ? inspectionSummary.warningCount() : null,
-                inspectionSummary != null ? inspectionSummary.disposalCount() : null,
-                inspectionSummary != null ? inspectionSummary.alertState() : null
+                bundle.getDeletedAt()
         );
     }
 
@@ -138,9 +111,7 @@ public final class FridgeDtoMapper {
         int activeItemCount = (int) bundle.getItems().stream()
                 .filter(item -> item.getStatus() == FridgeItemStatus.ACTIVE)
                 .count();
-        Long version = computeVersion(bundle);
         return new FridgeBundleResponse(
-                bundle.getId(),
                 bundle.getId(),
                 compartment.getId(),
                 slotIndex,
@@ -158,7 +129,6 @@ public final class FridgeDtoMapper {
                 bundle.getCreatedAt(),
                 bundle.getUpdatedAt(),
                 bundle.getDeletedAt(),
-                version,
                 items
         );
     }
@@ -220,10 +190,5 @@ public final class FridgeDtoMapper {
                 ? "냉동"
                 : "냉장";
         return floorNo + "F " + typeLabel + " " + (compartment.getSlotIndex() + 1) + "칸";
-    }
-
-    private static Long computeVersion(FridgeBundle bundle) {
-        OffsetDateTime source = bundle.getUpdatedAt() != null ? bundle.getUpdatedAt() : bundle.getCreatedAt();
-        return source != null ? source.toInstant().toEpochMilli() : null;
     }
 }

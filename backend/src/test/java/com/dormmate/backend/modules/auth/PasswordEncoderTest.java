@@ -21,9 +21,9 @@ class PasswordEncoderTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void matchesSeedHash() {
-        String hash = dormUserRepository.findByLoginIdIgnoreCase("admin")
+        String hash = dormUserRepository.findByLoginIdIgnoreCase("dormate")
                 .orElseThrow()
                 .getPasswordHash();
-        assertThat(passwordEncoder.matches("password", hash)).isTrue();
+        assertThat(passwordEncoder.matches("admin123!", hash)).isTrue();
     }
 }

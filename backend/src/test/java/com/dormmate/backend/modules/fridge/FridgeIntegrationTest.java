@@ -476,7 +476,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
     @Test
     void adminCanUpdateCompartmentConfigViaApi() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
         String residentToken = loginAndGetAccessToken("alice", "alice123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -624,7 +624,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminCannotLowerCapacityBelowActiveBundles() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
         String residentToken = loginAndGetAccessToken("alice", "alice123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -700,7 +700,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     void bundleListAndDetailIncludeOwnerAndCounts() throws Exception {
         String aliceToken = loginAndGetAccessToken("alice", "alice123!");
         String managerToken = loginAndGetAccessToken("bob", "bob123!");
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -751,7 +751,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void bundleSearchSupportsMultiLetterSlotCodeAndOwnerRoom() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
         String residentToken = loginAndGetAccessToken("alice", "alice123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -814,7 +814,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void deletedBundleListingCanFilterBySlotId() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
         String aliceToken = loginAndGetAccessToken("alice", "alice123!");
         String dianaToken = loginAndGetAccessToken("diana", "diana123!");
         UUID slotFloor2 = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
@@ -939,7 +939,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     @Test
     void adminCanViewAllBundlesButMemoIsHidden() throws Exception {
         String residentToken = loginAndGetAccessToken("alice", "alice123!");
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -999,7 +999,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminBundleSearchSupportsKeywordAndCaseInsensitiveMatch() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
         String residentToken = loginAndGetAccessToken("alice", "alice123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -1032,7 +1032,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminBundleSearchSupportsLabelLookup() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
         String residentToken = loginAndGetAccessToken("alice", "alice123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -1062,7 +1062,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminBundleListWithDeletedFilterReturnsOnlyDeletedBundles() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
         String residentToken = loginAndGetAccessToken("alice", "alice123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -1119,7 +1119,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminGetsDeletedBundlesWithinDefaultWindow() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
         String residentToken = loginAndGetAccessToken("alice", "alice123!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -1259,7 +1259,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void deletingBundleRecyclesLabelForNextCreation() throws Exception {
-        String managerToken = loginAndGetAccessToken("admin", "password");
+        String managerToken = loginAndGetAccessToken("dormate", "admin123!");
         UUID slotId = fetchSlotId(4, SLOT_INDEX_A);
 
         LabelSequenceState originalLabelState = jdbcTemplate.query(

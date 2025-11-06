@@ -32,21 +32,4 @@ public interface InspectionSessionRepository extends JpaRepository<InspectionSes
             @Param("status") InspectionStatus status,
             @Param("userIds") Set<UUID> userIds
     );
-
-    @Query("""
-            select s
-              from InspectionSession s
-             where s.fridgeCompartment.id in :compartmentIds
-               and s.status = :status
-               and coalesce(s.endedAt, s.submittedAt, s.startedAt, s.createdAt) = (
-                    select max(coalesce(s2.endedAt, s2.submittedAt, s2.startedAt, s2.createdAt))
-                      from InspectionSession s2
-                     where s2.fridgeCompartment = s.fridgeCompartment
-                       and s2.status = :status
-               )
-            """)
-    List<InspectionSession> findLatestSessionsByCompartmentIds(
-            @Param("compartmentIds") Set<UUID> compartmentIds,
-            @Param("status") InspectionStatus status
-    );
 }

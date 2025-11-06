@@ -9,7 +9,6 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record FridgeBundleResponse(
         UUID bundleId,
-        UUID canonicalId,
         UUID slotId,
         int slotIndex,
         String slotLabel,
@@ -26,7 +25,6 @@ public record FridgeBundleResponse(
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
         OffsetDateTime removedAt,
-        Long version,
         List<FridgeItemResponse> items
 ) {
 }

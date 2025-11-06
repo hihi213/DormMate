@@ -54,7 +54,7 @@ class AuthIntegrationTest extends AbstractPostgresIntegrationTest {
                                 .header("Authorization", "Bearer " + accessToken)
                 )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.loginId").value("admin"))
+                .andExpect(jsonPath("$.loginId").value("dormate"))
                 .andExpect(jsonPath("$.isAdmin").value(true));
     }
 
@@ -129,15 +129,15 @@ class AuthIntegrationTest extends AbstractPostgresIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
-                                          "loginId": "admin",
-                                          "password": "password"
+                                          "loginId": "dormate",
+                                          "password": "admin123!"
                                         }
                                         """)
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tokens.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.tokens.refreshToken").isNotEmpty())
-                .andExpect(jsonPath("$.user.loginId").value("admin"))
+                .andExpect(jsonPath("$.user.loginId").value("dormate"))
                 .andReturn();
 
         return objectMapper.readTree(result.getResponse().getContentAsString());

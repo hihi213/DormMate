@@ -12,17 +12,6 @@
 
 ---
 
-### OPS-DEM-RESET 데모 데이터 초기화 절차 — WIP (Codex)
-- **범위**: 운영 마이그레이션에서는 데이터 변동이 없도록 유지하고, 데모·QA 환경에서만 전체 데이터를 리셋해 일관된 시연 상태를 준비한다.
-- **실행 방법**
-  - `SELECT public.fn_reset_demo_dataset();`
-  - 내부적으로 2~5층 배정을 해제 → `fn_seed_demo_and_resident()`로 데모/기본 거주자 재시드 → 잔여 계정 상태 정리 → `fn_seed_fridge_presets()`로 냉장/냉동 프리셋 재구성 → `fn_refresh_names_and_labels()`로 표시 이름/라벨 갱신 순으로 진행된다.
-- **주의 사항**
-  - 기존 냉장고 포장/물품과 거주자 이름이 모두 덮어써지므로 실제 운영 DB에서는 절대 실행하지 않는다.
-  - 실행 전에 사용자(시연 담당)에게 “기존 사용자 입력 데이터가 삭제된다”는 점을 고지하고 확인을 받는다.
-  - 부분만 초기화하고 싶을 경우 각 함수(`fn_seed_demo_and_resident`, `fn_seed_fridge_presets`, `fn_refresh_names_and_labels`)를 개별적으로 호출할 수 있다.
-- **검증 계획(필요 시)**: `SELECT COUNT(*) FROM fridge_bundle;`, `SELECT COUNT(*) FROM dorm_user WHERE login_id LIKE 'resident%';` 등으로 재시드된 데이터 규모를 확인한다.
-
 ### (Backlog) IN-306 실시간 검사 합류·복구 — Stretch
 - **비고**: MVP 범위 밖 확장 과제. SSE 합류·재연결 설계 노트는 [docs/mvp-plan.md](../mvp-plan.md#in-306-실시간-검사-합류복구)와 [docs/feature-inventory.md](../feature-inventory.md#실시간-협업-및-복구)에 정리되어 있으며, 차기 일정에서 착수한다.
 - **선결 조건**: IN-301~IN-305 안정화 및 회귀 테스트 통과, SSE 이벤트 스키마/세션 락 설계 확정.
@@ -44,11 +33,11 @@
 - **리스크/의존성**: 현재 통합 테스트는 Testcontainers 의존성을 사용하므로 Docker 데몬 비가동 시 실패 가능. 캐시 초기화 후 오프라인 모드 정상 동작 확인.
 
 ### EN-102 데이터 베이스라인 — DONE (2024-11-24, Codex)
-- **범위**: Flyway 베이스라인 및 시드 스크립트(`V6__seed_fridge_sample_data.sql`) 자동화 검증, 롤백/재적용 절차 기록, 데모 `.env`·Docker Compose 구성 점검.
+- **범위**: Flyway 베이스라인 및 시드 스크립트(`V6__seed_fridge_sample_data.sql`) 자동화 검증, 롤백/재적용 절차 기록, 데모 `deploy/.env.prod`·Docker Compose 구성 점검.
 - **세부 작업**
   - `V1~V11` 버전 스키마와 `R__Seed.sql` repeatable 스크립트 적용 상태 확인, 최신 마이그레이션이 성공 이력으로 남아 있음 검증(`flyway_schema_history` 기준).
   - PostgreSQL 16.4와 Flyway 9.22.3 조합에서 지원 경고 노출됨을 확인하고, 필요 시 Flyway 10.x 업그레이드 혹은 PostgreSQL 15 호환 이미지로 전환 TODO 제안.
-  - `.env`, `docker-compose*.yml` 간 변수 매핑·비상 전환 플랜 점검(`mvp-scenario.md §4` 참고) — 로컬/데모 환경 전환 시 `docker compose down && docker compose up -d` 및 `flywayMigrate` 재실행 절차 정리.
+  - `deploy/.env.prod`, `docker-compose*.yml` 간 변수 매핑·비상 전환 플랜 점검(`mvp-scenario.md §4` 참고) — 로컬/데모 환경 전환 시 `docker compose --env-file deploy/.env.prod down && docker compose --env-file deploy/.env.prod up -d` 및 `flywayMigrate` 재실행 절차 정리.
 - **테스트 및 확인 로그**
   - `./gradlew flywayInfo --offline`
     - (PASS, 2024-11-24 — Schema version 11, repeatable seed 성공. PostgreSQL 16.4 호환 경고 기록)

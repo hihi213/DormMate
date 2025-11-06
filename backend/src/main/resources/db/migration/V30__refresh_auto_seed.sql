@@ -1,10 +1,7 @@
--- 자동 시드 리프레시
--- 목적: 함수 업데이트 이후 기존 데이터를 새 규칙으로 재구성한다.
-
-SET TIME ZONE 'UTC';
+-- 더 이상 수행할 작업이 없다. (이전 자동 시드 로직 제거)
 
 DO $$
 BEGIN
-    RAISE NOTICE 'No-op: fridge presets are now seeded on demand via fn_seed_fridge_presets().';
+    NULL;
 END;
 $$;

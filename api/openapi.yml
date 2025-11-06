@@ -55,15 +55,6 @@ components:
       content:
         application/problem+json:
           schema: { $ref: '#/components/schemas/Problem' }
-    ServiceUnavailable:
-      description: 일시적인 장애로 요청을 처리할 수 없음
-      headers:
-        Retry-After:
-          description: 재시도까지 대기할 시간(초)
-          schema: { type: integer, minimum: 0 }
-      content:
-        application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
     UnprocessableEntity:
       description: 비즈니스 규칙 위반
       content:
@@ -330,28 +321,6 @@ components:
           type: string
           format: date-time
           nullable: true
-        lastInspectionId:
-          type: string
-          format: uuid
-          nullable: true
-          description: 마지막으로 제출된 검사 세션 ID
-        lastInspectionAt:
-          type: string
-          format: date-time
-          nullable: true
-          description: 마지막 검사 제출 시각
-        warningCount:
-          type: integer
-          nullable: true
-          description: 마지막 검사에서 경고 조치 건수
-        disposalCount:
-          type: integer
-          nullable: true
-          description: 마지막 검사에서 폐기 조치 건수
-        alertState:
-          type: string
-          nullable: true
-          description: 검사 요약 상태(ok, warn, critical 등)
       required:
         [itemId, bundleId, name, expiryDate, freshness, updatedAfterInspection, createdAt, updatedAt]
     BundleStatus:
@@ -361,7 +330,6 @@ components:
       type: object
       properties:
         bundleId: { type: string, format: uuid }
-        canonicalId: { type: string, format: uuid }
         slotId: { type: string, format: uuid }
         slotIndex: { type: integer }
         slotLabel: { type: string }
@@ -389,13 +357,8 @@ components:
           type: string
           format: date-time
           nullable: true
-        version:
-          type: integer
-          format: int64
-          nullable: true
-          description: 버전 추적용 타임스탬프(밀리초)
       required:
-        [bundleId, canonicalId, slotId, slotIndex, slotLabel, labelNumber, labelDisplay, bundleName, status, freshness, itemCount, createdAt, updatedAt]
+        [bundleId, slotId, slotIndex, slotLabel, labelNumber, labelDisplay, bundleName, status, freshness, itemCount, createdAt, updatedAt]
     FridgeBundle:
       allOf:
         - $ref: '#/components/schemas/FridgeBundleSummary'
@@ -701,70 +664,12 @@ components:
         note:
           type: string
           nullable: true
-        correlationId:
-          type: string
-          format: uuid
-          nullable: true
         items:
           type: array
           items: { $ref: '#/components/schemas/InspectionActionItem' }
         penalties:
           type: array
           items: { $ref: '#/components/schemas/PenaltyHistory' }
-        roomNumber:
-          type: string
-          nullable: true
-        personalNo:
-          type: integer
-          nullable: true
-        notificationStatus:
-          type: string
-          nullable: true
-          description: 검사 결과 알림 발송 상태(UNREAD/READ/EXPIRED 등)
-        penaltyPoints:
-          type: integer
-          nullable: true
-    InspectionSchedule:
-      type: object
-      properties:
-        scheduleId: { type: string, format: uuid }
-        scheduledAt: { type: string, format: date-time }
-        title:
-          type: string
-          nullable: true
-        notes:
-          type: string
-          nullable: true
-        status:
-          type: string
-          enum: [SCHEDULED, COMPLETED, CANCELLED]
-        completedAt:
-          type: string
-          format: date-time
-          nullable: true
-        inspectionSessionId:
-          type: string
-          format: uuid
-          nullable: true
-        fridgeCompartmentId:
-          type: string
-          format: uuid
-          nullable: true
-        slotIndex:
-          type: integer
-          nullable: true
-        slotLetter:
-          type: string
-          nullable: true
-        floorNo:
-          type: integer
-          nullable: true
-        floorCode:
-          type: string
-          nullable: true
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-      required: [scheduleId, scheduledAt, status, createdAt, updatedAt]
     InspectionSession:
       type: object
       properties:
@@ -820,51 +725,6 @@ components:
           minItems: 1
           items: { $ref: '#/components/schemas/InspectionActionEntry' }
       required: [actions]
-    InspectionActionMutation:
-      type: object
-      properties:
-        actionId:
-          type: integer
-          format: int64
-          nullable: true
-        bundleId:
-          type: string
-          format: uuid
-          nullable: true
-        itemId:
-          type: string
-          format: uuid
-          nullable: true
-        action:
-          $ref: '#/components/schemas/InspectionAction'
-        note:
-          type: string
-          nullable: true
-      required: [action]
-    UpdateInspectionSessionRequest:
-      type: object
-      properties:
-        notes:
-          type: string
-          nullable: true
-        mutations:
-          type: array
-          items: { $ref: '#/components/schemas/InspectionActionMutation' }
-        deleteActionIds:
-          type: array
-          items: { type: integer, format: int64 }
-    ReinspectRequest:
-      type: object
-      properties:
-        scheduledAt:
-          type: string
-          format: date-time
-        title:
-          type: string
-          nullable: true
-        notes:
-          type: string
-          nullable: true
     SubmitInspectionRequest:
       type: object
       properties:
@@ -1160,10 +1020,6 @@ paths:
             enum: [me, all]
           description: me 지정 시 내 포장만 반환
         - in: query
-          name: ownerUserId
-          schema: { type: string, format: uuid }
-          description: 관리자 전용 – 특정 사용자 포장만 필터링
-        - in: query
           name: status
           schema:
             type: string
@@ -1189,7 +1045,6 @@ paths:
               schema: { $ref: '#/components/schemas/BundleListResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '503': { $ref: '#/components/responses/ServiceUnavailable' }
     post:
       tags: [Fridge]
       summary: 새 포장 생성
@@ -1235,7 +1090,6 @@ paths:
               schema: { $ref: '#/components/schemas/BundleListResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '503': { $ref: '#/components/responses/ServiceUnavailable' }
   /admin/fridge/reallocations/preview:
     post:
       tags: [FridgeAdmin]
@@ -1521,7 +1375,6 @@ paths:
                 items: { $ref: '#/components/schemas/InspectionSession' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
-        '503': { $ref: '#/components/responses/ServiceUnavailable' }
     post:
       tags: [Inspections]
       summary: 검사 세션 시작
@@ -1584,26 +1437,6 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
-    patch:
-      tags: [Inspections]
-      summary: 제출 완료된 검사 세션 정정
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/UpdateInspectionSessionRequest' }
-      responses:
-        '200':
-          description: 정정된 검사 세션
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InspectionSession' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
     delete:
       tags: [Inspections]
       summary: 검사 세션 취소
@@ -1611,51 +1444,6 @@ paths:
       responses:
         '204':
           description: 취소 완료
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-  /fridge/inspections/{sessionId}/notifications/resend:
-    post:
-      tags: [Inspections]
-      summary: 검사 결과 알림 재발송
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        '200':
-          description: 최신 검사 세션
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InspectionSession' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-  /fridge/inspections/{sessionId}/reinspect:
-    post:
-      tags: [Inspections]
-      summary: 재검 요청 및 일정 생성
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema: { type: string, format: uuid }
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ReinspectRequest' }
-      responses:
-        '201':
-          description: 재검 일정 생성됨
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InspectionSchedule' }
-        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -1669,7 +1457,7 @@ paths:
         - in: path
           name: sessionId
           required: true
-          schema: { type: string, format: uuid }
+          schema: { type: integer, format: int64 }
       requestBody:
         required: true
         content:
@@ -1696,7 +1484,7 @@ paths:
         - in: path
           name: sessionId
           required: true
-          schema: { type: string, format: uuid }
+          schema: { type: integer, format: int64 }
       requestBody:
         required: false
         content:

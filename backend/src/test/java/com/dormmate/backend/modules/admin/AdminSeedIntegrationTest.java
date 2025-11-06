@@ -35,7 +35,7 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
     void adminCanTriggerFridgeDemoSeed() throws Exception {
         jdbcTemplate.update("DELETE FROM fridge_item WHERE item_name LIKE '전시 데모:%'");
 
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
 
         mockMvc.perform(post("/admin/seed/fridge-demo")
                         .header("Authorization", "Bearer " + adminToken))

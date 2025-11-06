@@ -17,8 +17,6 @@ public record InspectionSessionResponse(
         String floorCode,
         String status,
         UUID startedBy,
-        String startedByLogin,
-        String startedByName,
         OffsetDateTime startedAt,
         OffsetDateTime endedAt,
         List<FridgeBundleResponse> bundles,
