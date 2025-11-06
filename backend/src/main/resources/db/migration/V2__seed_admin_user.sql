@@ -1,11 +1,24 @@
 -- Seed 기본 ACTIVE 관리자 계정 및 권한
--- 사용 비밀번호: "password" (BCrypt 해시)
+-- 관리자 아이디·비밀번호는 Flyway placeholder(admin_login, admin_password)로 주입하며
+-- 미설정 시 기본값 dormmate / admin1! 로 초기화합니다.
+
+CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
 DO $$
 DECLARE
     v_admin_id uuid := '11111111-1111-1111-1111-111111111111';
     v_room_id uuid;
+    v_admin_login text := nullif(trim(${admin_login}), '');
+    v_admin_password text := nullif(${admin_password}, '');
 BEGIN
+    IF v_admin_login IS NULL THEN
+        v_admin_login := 'dormmate';
+    END IF;
+
+    IF v_admin_password IS NULL THEN
+        v_admin_password := 'admin1!';
+    END IF;
+
     INSERT INTO role (code, name, description, created_at, updated_at)
     VALUES ('ADMIN', '관리자', '시스템 전역 관리자', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
     ON CONFLICT (code) DO UPDATE
@@ -32,10 +45,10 @@ BEGIN
     INSERT INTO dorm_user (id, login_id, password_hash, full_name, email, status, created_at, updated_at)
     VALUES (
         v_admin_id,
-        'admin',
-        '$2a$10$7EqJtq98hPqEX7fNZaFWoOHi2hYc8lrU/47eT9vZ7B1cZ6F86iLaG',
+        v_admin_login,
+        crypt(v_admin_password, gen_salt('bf', 10)),
         'DormMate 관리자',
-        'admin@dormmate.dev',
+        format('%s@dormmate.dev', v_admin_login),
         'ACTIVE',
         CURRENT_TIMESTAMP,
         CURRENT_TIMESTAMP

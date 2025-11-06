@@ -7,6 +7,7 @@ import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 
 /**
  * 애플리케이션 시작 시 필수 환경변수 검증
@@ -37,23 +38,23 @@ public class EnvironmentValidator {
 
         // 필수 변수 존재 여부 검증
         for (String var : requiredVars) {
-            String value = environment.getProperty(var);
-            if (value == null || value.trim().isEmpty()) {
+            Optional<String> value = Optional.ofNullable(environment.getProperty(var));
+            if (value.isEmpty() || value.map(String::trim).orElse("").isEmpty()) {
                 missingVars.add(var);
             }
         }
 
         // JWT_SECRET 보안 검증
-        String jwtSecret = environment.getProperty("jwt.secret");
-        if (jwtSecret != null && jwtSecret.equals("dev-jwt-secret-key-change-in-production-2025")) {
+        Optional<String> jwtSecret = Optional.ofNullable(environment.getProperty("jwt.secret"));
+        if (jwtSecret.filter(secret -> secret.equals("dev-jwt-secret-key-change-in-production-2025")).isPresent()) {
             invalidVars.add("jwt.secret: 기본값을 실제 랜덤 문자열로 변경하세요");
         }
 
         // JWT_EXPIRATION 숫자 검증
-        String jwtExpiration = environment.getProperty("jwt.expiration");
-        if (jwtExpiration != null) {
+        Optional<String> jwtExpiration = Optional.ofNullable(environment.getProperty("jwt.expiration"));
+        if (jwtExpiration.isPresent()) {
             try {
-                long expiration = Long.parseLong(jwtExpiration);
+                long expiration = Long.parseLong(jwtExpiration.get());
                 if (expiration < 300000 || expiration > 86400000) { // 5분~24시간 (밀리초)
                     invalidVars.add("jwt.expiration: 300000-86400000 밀리초 범위여야 합니다");
                 }

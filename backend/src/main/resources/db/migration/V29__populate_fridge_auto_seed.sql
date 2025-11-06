@@ -13,4 +13,5 @@ BEGIN
 END;
 $$;
 
-SELECT public.fn_populate_fridge_auto_seed();
+-- Demo/테스트 환경에서는 필요 시 수동으로 실행합니다.
+--   SELECT public.fn_populate_fridge_auto_seed();

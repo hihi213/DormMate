@@ -127,6 +127,7 @@ function InspectionsInner() {
   const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
   const [deleteTargetSchedule, setDeleteTargetSchedule] = useState<InspectionSchedule | null>(null)
   const [deletingSchedule, setDeletingSchedule] = useState(false)
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string>("")
   const [startDialogOpen, setStartDialogOpen] = useState(false)
   const [scheduleToStart, setScheduleToStart] = useState<InspectionSchedule | null>(null)
   const [slotToStart, setSlotToStart] = useState<string>("")
@@ -537,12 +538,14 @@ function InspectionsInner() {
   const handleDeleteScheduleRequest = (schedule: InspectionSchedule) => {
     if (!isFloorManager) return
     setDeleteTargetSchedule(schedule)
+    setSelectedScheduleId(schedule.scheduleId)
   }
 
   const handleDeleteDialogChange = (open: boolean) => {
     if (deletingSchedule) return
     if (!open) {
       setDeleteTargetSchedule(null)
+      setSelectedScheduleId("")
     }
   }
 

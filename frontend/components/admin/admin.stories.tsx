@@ -12,11 +12,9 @@ import {
 } from "."
 import { Button } from "@/components/ui/button"
 
-type GalleryProps = Record<string, never>
-
-const meta: Meta<GalleryProps> = {
+const meta: Meta<typeof ComponentGallery> = {
   title: "Admin/Component Gallery",
-  component: FilterBar,
+  component: ComponentGallery,
   parameters: {
     layout: "fullscreen",
   },
@@ -191,6 +189,6 @@ function ComponentGallery() {
   )
 }
 
-export const Gallery: StoryObj<GalleryProps> = {
+export const Gallery: StoryObj<typeof ComponentGallery> = {
   render: () => <ComponentGallery />,
 }

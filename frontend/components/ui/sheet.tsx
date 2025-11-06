@@ -6,25 +6,22 @@ import { XIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 
-type SheetElement<T> = React.ElementRef<T>
-type SheetProps<T> = React.ComponentPropsWithoutRef<T>
-
-const Sheet = React.forwardRef<SheetElement<typeof SheetPrimitive.Root>, SheetProps<typeof SheetPrimitive.Root>>(
-  (props, ref) => <SheetPrimitive.Root ref={ref} data-slot="sheet" {...props} />,
+const Sheet = (props: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Root>) => (
+  <SheetPrimitive.Root data-slot="sheet" {...props} />
 )
 Sheet.displayName = SheetPrimitive.Root.displayName
 
 const SheetTrigger = React.forwardRef<
-  SheetElement<typeof SheetPrimitive.Trigger>,
-  SheetProps<typeof SheetPrimitive.Trigger>
+  React.ElementRef<typeof SheetPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Trigger>
 >((props, ref) => (
   <SheetPrimitive.Trigger ref={ref} data-slot="sheet-trigger" {...props} />
 ))
 SheetTrigger.displayName = SheetPrimitive.Trigger.displayName
 
 const SheetClose = React.forwardRef<
-  SheetElement<typeof SheetPrimitive.Close>,
-  SheetProps<typeof SheetPrimitive.Close>
+  React.ElementRef<typeof SheetPrimitive.Close>,
+  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Close>
 >((props, ref) => <SheetPrimitive.Close ref={ref} data-slot="sheet-close" {...props} />)
 SheetClose.displayName = SheetPrimitive.Close.displayName
 
@@ -35,8 +32,8 @@ const SheetPortal = ({
 )
 
 const SheetOverlay = React.forwardRef<
-  SheetElement<typeof SheetPrimitive.Overlay>,
-  SheetProps<typeof SheetPrimitive.Overlay>
+  React.ElementRef<typeof SheetPrimitive.Overlay>,
+  React.ComponentPropsWithoutRef<typeof SheetPrimitive.Overlay>
 >(({ className, ...props }, ref) => (
   <SheetPrimitive.Overlay
     ref={ref}
@@ -50,12 +47,12 @@ const SheetOverlay = React.forwardRef<
 ))
 SheetOverlay.displayName = SheetPrimitive.Overlay.displayName
 
-type SheetContentProps = SheetProps<typeof SheetPrimitive.Content> & {
+type SheetContentProps = React.ComponentPropsWithoutRef<typeof SheetPrimitive.Content> & {
   side?: "top" | "right" | "bottom" | "left"
 }
 
 const SheetContent = React.forwardRef<
-  SheetElement<typeof SheetPrimitive.Content>,
+  React.ElementRef<typeof SheetPrimitive.Content>,
   SheetContentProps
 >(({ className, children, side = "right", ...props }, ref) => (
   <SheetPortal>

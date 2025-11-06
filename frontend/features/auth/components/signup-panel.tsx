@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
-import { getCurrentUser, loginWithCredentials, registerUser } from "@/lib/auth"
+import { getCurrentUser, registerUser } from "@/lib/auth"
 
 const STEP_LABELS = ["기본 정보", "계정 정보", "연락처 및 동의"] as const
 type Step = 0 | 1 | 2
@@ -120,17 +120,7 @@ export function SignupPanel({ redirectTo, onSwitchToLogin }: SignupPanelProps) {
     setError("")
     startTransition(async () => {
       try {
-        const roomLabel = `${form.roomNumber.trim()}호 ${form.personalNo.trim()}번`
-        await registerUser({
-          id: form.loginId.trim(),
-          password: form.password,
-          name: form.name.trim(),
-          room: roomLabel,
-          email: form.email.trim() || undefined,
-          phone: form.phone.trim() || undefined,
-          personalNo: form.personalNo.trim(),
-        })
-        await loginWithCredentials({ id: form.loginId.trim(), password: form.password })
+        await registerUser()
         toast({
           title: "회원가입 완료",
           description: `${form.name.trim()}님, DormMate에 오신 것을 환영합니다.`,

@@ -8,8 +8,8 @@
 ```bash
 # backend/.env.dev
 DB_URL=jdbc:postgresql://localhost:5432/dormitory_db
-DB_USERNAME=dorm_user
-DB_PASSWORD=dorm_password
+DB_USERNAME=dormmate_user
+DB_PASSWORD=pleasesetup
 REDIS_HOST=localhost
 REDIS_PORT=6379
 JWT_SECRET=dev-jwt-secret-key-change-in-production-2025
@@ -18,8 +18,9 @@ AWS_S3_BUCKET=dormmate-dev-storage
 AWS_REGION=ap-northeast-2
 AWS_ACCESS_KEY=dev-access-key
 AWS_SECRET_KEY=dev-secret-key
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=admin
+ADMIN_USERNAME=dormmate_admin
+ADMIN_PASSWORD=ChangeMe!Dev2025
+# ↑ 예시 값입니다. 실제 환경에서는 더 강력한 값으로 교체하세요.
 SERVER_PORT=8080
 ```
 
@@ -34,8 +35,8 @@ export $(cat .env.dev | xargs)
 
 # 또는 수동으로 설정
 export DB_URL=jdbc:postgresql://localhost:5432/dormitory_db
-export DB_USERNAME=dorm_user
-export DB_PASSWORD=dorm_password
+export DB_USERNAME=dormmate_user
+export DB_PASSWORD=pleasesetup
 ```
 
 ## 🏭 **운영 환경 설정**
@@ -58,8 +59,9 @@ AWS_S3_BUCKET=your-prod-bucket
 AWS_REGION=ap-northeast-2
 AWS_ACCESS_KEY=your-aws-access-key
 AWS_SECRET_KEY=your-aws-secret-key
-ADMIN_USERNAME=admin
-ADMIN_PASSWORD=super-strong-admin-password
+ADMIN_USERNAME=dormmate_admin
+ADMIN_PASSWORD=SuperStrongAdminPass!2025
+# ↑ 운영 환경에서는 길고 예측 불가능한 값을 사용하세요.
 SERVER_PORT=8080
 ```
 
@@ -78,12 +80,14 @@ sudo reboot
 - [ ] `.env.dev` 파일이 `.gitignore`에 포함되어 있는지 확인
 - [ ] 하드코딩된 비밀번호가 없는지 확인
 - [ ] JWT 시크릿이 예측 가능하지 않은지 확인
+- [ ] `ADMIN_USERNAME`, `ADMIN_PASSWORD` 값을 Flyway 마이그레이션 전에 반드시 설정했는지 확인
 
 ### **운영 환경**
 - [ ] 모든 비밀번호가 강력한지 확인 (16자 이상, 특수문자 포함)
 - [ ] 데이터베이스가 프라이빗 서브넷에 있는지 확인
 - [ ] 방화벽 규칙이 적절히 설정되어 있는지 확인
 - [ ] SSL/TLS 인증서가 설정되어 있는지 확인
+- [ ] `ADMIN_USERNAME`, `ADMIN_PASSWORD` 환경변수가 안전한 값인지 주기적으로 변경
 
 ## 🚨 **주의사항**
 
@@ -91,6 +95,7 @@ sudo reboot
 2. **환경변수 파일은 절대 Git에 커밋하지 마세요**
 3. **운영 환경의 비밀번호는 정기적으로 변경하세요**
 4. **JWT 시크릿은 256비트 이상의 랜덤 문자열을 사용하세요**
+5. **Flyway 마이그레이션(`./gradlew flywayMigrate`)을 실행하기 전에 `ADMIN_USERNAME`, `ADMIN_PASSWORD`를 반드시 지정하세요**
 
 ## 📝 **환경별 실행 방법**
 

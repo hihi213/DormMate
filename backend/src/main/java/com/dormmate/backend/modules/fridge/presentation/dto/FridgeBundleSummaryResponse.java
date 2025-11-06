@@ -8,6 +8,7 @@ import com.fasterxml.jackson.annotation.JsonInclude;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public record FridgeBundleSummaryResponse(
         UUID bundleId,
+        UUID canonicalId,
         UUID slotId,
         int slotIndex,
         String slotLabel,
@@ -23,6 +24,12 @@ public record FridgeBundleSummaryResponse(
         int itemCount,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
-        OffsetDateTime removedAt
+        OffsetDateTime removedAt,
+        Long version,
+        UUID lastInspectionId,
+        OffsetDateTime lastInspectionAt,
+        Integer warningCount,
+        Integer disposalCount,
+        String alertState
 ) {
 }

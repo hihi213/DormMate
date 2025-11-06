@@ -162,6 +162,11 @@ public class FridgeReallocationService {
             FridgeCompartment compartment = Optional.ofNullable(compartmentLookup.get(input.compartmentId()))
                     .orElseThrow(() -> problem(NOT_FOUND, "COMPARTMENT_NOT_FOUND", "Compartment %s not found".formatted(input.compartmentId())));
             List<UUID> roomIds = input.roomIds() == null ? List.of() : input.roomIds();
+            if (!compartment.getStatus().isActive()) {
+                // Inactive compartments keep their assignments untouched; allow empty suggestions.
+                requestedAssignments.put(compartment.getId(), List.copyOf(roomIds));
+                continue;
+            }
             if (compartment.getCompartmentType() == CompartmentType.CHILL) {
                 validateExclusiveRooms(roomIds, floorRoomIds, compartment);
             } else {

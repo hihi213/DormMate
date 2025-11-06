@@ -201,7 +201,7 @@ export default function AddItemDialog({
   }, [bundles, metadataSlot, selectedSlot])
   const slotCapacity = selectedSlot?.capacity ?? null
   const remainingCapacity = slotCapacity != null ? Math.max(slotCapacity - currentBundleCount, 0) : null
-  const isSlotFull = slotCapacity != null && remainingCapacity <= 0
+  const isSlotFull = slotCapacity != null && remainingCapacity !== null && remainingCapacity <= 0
   const selectedSlotLabel = selectedSlot
     ? formatSlotDisplayName(selectedSlot)
     : metadataSlot

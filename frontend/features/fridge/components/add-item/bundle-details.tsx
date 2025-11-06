@@ -39,7 +39,7 @@ export function BundleDetails({
         {rows.map((row, idx) => {
           const repNameTrim = name.trim()
           const nameChanged = row.name.trim() !== repNameTrim
-          const valueExpiry = row.customExpiry ? row.expiry : expiry
+          const valueExpiry = row.customExpiry ? row.expiryDate : expiry
           const changedDate = row.customExpiry
 
           return (
@@ -89,7 +89,7 @@ export function BundleDetails({
                     const isSameAsRep = val === expiry
                     onRowUpdate(idx, {
                       customExpiry: !isSameAsRep,
-                      expiry: val,
+                      expiryDate: val,
                     })
                   }}
                   helperText={changedDate ? "대표값에서 변경됨" : "대표값과 동일"}

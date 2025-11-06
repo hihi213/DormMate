@@ -3,4 +3,8 @@
 
 SET TIME ZONE 'UTC';
 
-SELECT public.fn_populate_fridge_auto_seed(20);
+DO $$
+BEGIN
+    RAISE NOTICE 'No-op: fridge presets are now seeded on demand via fn_seed_fridge_presets().';
+END;
+$$;

@@ -37,7 +37,7 @@ type AddBundlePayload = {
   units: { name: string; expiryDate: string; quantity?: number; unitCode?: string | null }[]
 }
 
-type UpdateItemPatch = Partial<Pick<Item, "name" | "expiryDate" | "quantity" | "unitCode" | "freshness">> & {
+type UpdateItemPatch = Partial<Pick<Item, "name" | "expiryDate" | "quantity" | "unitCode" | "freshness" | "memo">> & {
   removedAt?: string | null
 }
 
@@ -393,8 +393,9 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
           {
             name: patch.name,
             expiryDate: patch.expiryDate,
-            quantity: patch.quantity,
+            quantity: patch.quantity ?? undefined,
             unitCode: patch.unitCode ?? null,
+            memo: patch.memo !== undefined ? patch.memo : undefined,
             removedAt: patch.removedAt,
           },
           targetBundle,
@@ -414,6 +415,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
                     lastInspectedAt: updatedUnit.lastInspectedAt ?? null,
                     updatedAfterInspection: updatedUnit.updatedAfterInspection,
                     updatedAt: updatedUnit.updatedAt,
+                    memo: updatedUnit.memo ?? null,
                     removedAt: updatedUnit.removedAt ?? null,
                   }
                 : unit,

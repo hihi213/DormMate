@@ -10,6 +10,95 @@ SET TIME ZONE 'UTC';
 -- pgcrypto는 암호 해시(crypt) 재생성에 필요하다.
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
+CREATE OR REPLACE FUNCTION public.fn_rebuild_compartment_access()
+RETURNS void
+LANGUAGE plpgsql
+AS $$
+BEGIN
+    DROP TABLE IF EXISTS tmp_compartment_targets;
+
+    CREATE TEMP TABLE tmp_compartment_targets ON COMMIT DROP AS
+    WITH active_compartments AS (
+        SELECT
+            c.id,
+            c.fridge_unit_id,
+            c.slot_index,
+            c.compartment_type,
+            u.floor_no
+        FROM fridge_compartment c
+        JOIN fridge_unit u ON u.id = c.fridge_unit_id
+        WHERE c.status = 'ACTIVE'
+          AND u.status = 'ACTIVE'
+    ),
+    rooms AS (
+        SELECT
+            r.id AS room_id,
+            r.floor AS floor_no,
+            CAST(r.room_number AS INTEGER) AS room_no,
+            ROW_NUMBER() OVER (PARTITION BY r.floor ORDER BY CAST(r.room_number AS INTEGER)) AS ordinal,
+            COUNT(*) OVER (PARTITION BY r.floor) AS floor_room_count
+        FROM room r
+        WHERE r.floor BETWEEN 2 AND 5
+    ),
+    chill_counts AS (
+        SELECT floor_no, COUNT(*) AS chill_count
+        FROM active_compartments
+        WHERE compartment_type = 'CHILL'
+        GROUP BY floor_no
+    ),
+    chill_targets AS (
+        SELECT
+            ac.id AS compartment_id,
+            rm.room_id
+        FROM active_compartments ac
+        JOIN chill_counts cc ON cc.floor_no = ac.floor_no
+        JOIN rooms rm ON rm.floor_no = ac.floor_no
+        WHERE ac.compartment_type = 'CHILL'
+          AND cc.chill_count > 0
+          AND ac.slot_index < cc.chill_count
+          AND FLOOR(((rm.ordinal - 1)::NUMERIC * cc.chill_count) / rm.floor_room_count) = ac.slot_index
+    ),
+    freeze_targets AS (
+        SELECT
+            ac.id AS compartment_id,
+            rm.room_id
+        FROM active_compartments ac
+        JOIN rooms rm ON rm.floor_no = ac.floor_no
+        WHERE ac.compartment_type = 'FREEZE'
+    )
+    SELECT DISTINCT compartment_id, room_id
+    FROM (
+        SELECT * FROM chill_targets
+        UNION ALL
+        SELECT * FROM freeze_targets
+    ) t;
+
+    DELETE FROM compartment_room_access
+    WHERE fridge_compartment_id IN (
+        SELECT DISTINCT compartment_id FROM tmp_compartment_targets
+    );
+
+    INSERT INTO compartment_room_access (
+        id,
+        fridge_compartment_id,
+        room_id,
+        assigned_at,
+        created_at,
+        updated_at
+    )
+    SELECT
+        gen_random_uuid(),
+        t.compartment_id,
+        t.room_id,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+    FROM tmp_compartment_targets t;
+
+    DROP TABLE IF EXISTS tmp_compartment_targets;
+END;
+$$;
+
 CREATE OR REPLACE FUNCTION public.fn_seed_demo_and_resident()
 RETURNS void
 LANGUAGE plpgsql
@@ -210,15 +299,17 @@ BEGIN
         updated_at = CURRENT_TIMESTAMP;
 
     -- 3) 빈 슬롯 대상 기본 거주자 계정 / 배정 재생성 (V21 논리 재사용)
-    WITH target_slots AS (
+    WITH base_slots AS (
         SELECT
-            r.id                                         AS room_id,
-            r.floor                                      AS floor_no,
-            r.room_number                                AS room_number,
-            slot.personal_no                             AS personal_no,
+            r.id AS room_id,
+            r.floor AS floor_no,
+            r.room_number AS room_number,
+            slot.personal_no AS personal_no,
             concat(r.floor::text, r.room_number, '-', slot.personal_no::text) AS login_id,
-            format('기숙사생 %s%s-%s', r.floor, r.room_number, slot.personal_no) AS full_name,
-            format('resident%s%s-%s@dormmate.dev', r.floor, r.room_number, slot.personal_no) AS email
+            format('resident%s%s-%s@dormmate.dev', r.floor, r.room_number, slot.personal_no) AS email,
+            ROW_NUMBER() OVER (
+                ORDER BY r.floor, r.room_number::INTEGER, slot.personal_no
+            ) AS global_seq
         FROM room r
         CROSS JOIN LATERAL generate_series(1, r.capacity) AS slot(personal_no)
         LEFT JOIN room_assignment ra
@@ -227,6 +318,45 @@ BEGIN
            AND ra.released_at IS NULL
         WHERE r.floor BETWEEN 2 AND 5
           AND ra.id IS NULL
+    ),
+    max_seq AS (
+        SELECT COALESCE(MAX(global_seq), 0) AS total_slots FROM base_slots
+    ),
+    name_pool AS (
+        SELECT seq, full_name
+        FROM (
+            SELECT
+                ROW_NUMBER() OVER (
+                    ORDER BY (given_ord * 53 + family_ord * 17),
+                             family_ord,
+                             given_ord
+                ) AS seq,
+                fam || given AS full_name
+            FROM unnest(ARRAY[
+                '강','고','곽','구','권','김','노','류','문','박','배','서','손','송','신',
+                '안','양','오','유','윤','이','임','장','전','정','조','차','최','한','허','홍'
+            ]::text[]) WITH ORDINALITY AS f(fam, family_ord)
+            CROSS JOIN unnest(ARRAY[
+                '다연','지현','민재','가람','서율','다온','태린','시온','라희','하은',
+                '준호','채윤','도원','세린','나율','예진','가율','도현','민서','다해',
+                '서이','세아','윤후','재민','수현','태윤','라온','시우','다윤','서담',
+                '지온','나리','하린','태이','주하','예린','시현','민호','서강','라온비',
+                '하예린','서도윤','민서율','채아린','지호윤','다온슬','서리아','윤솔아','하로윤','민아설'
+            ]::text[]) WITH ORDINALITY AS g(given, given_ord)
+        ) np
+        WHERE seq <= (SELECT total_slots FROM max_seq)
+    ),
+    named_slots AS (
+        SELECT
+            bs.room_id,
+            bs.floor_no,
+            bs.room_number,
+            bs.personal_no,
+            bs.login_id,
+            bs.email,
+            np.full_name
+        FROM base_slots bs
+        JOIN name_pool np ON np.seq = bs.global_seq
     ),
     upsert_users AS (
         INSERT INTO dorm_user (
@@ -241,16 +371,17 @@ BEGIN
         )
         SELECT
             gen_random_uuid(),
-            ts.login_id,
-            crypt('Dormmate@2024', gen_salt('bf', 10)),
-            ts.full_name,
-            ts.email,
+            ns.login_id,
+            crypt(ns.login_id || 'user', gen_salt('bf', 10)),
+            ns.full_name,
+            ns.email,
             'ACTIVE',
             CURRENT_TIMESTAMP,
             CURRENT_TIMESTAMP
-        FROM target_slots ts
+        FROM named_slots ns
         ON CONFLICT (login_id) DO UPDATE
-        SET full_name   = EXCLUDED.full_name,
+        SET password_hash = EXCLUDED.password_hash,
+            full_name   = EXCLUDED.full_name,
             email       = EXCLUDED.email,
             status      = EXCLUDED.status,
             updated_at  = CURRENT_TIMESTAMP
@@ -258,12 +389,12 @@ BEGIN
     ),
     resolved_users AS (
         SELECT
-            ts.room_id,
-            ts.personal_no,
-            ts.login_id,
+            ns.room_id,
+            ns.personal_no,
+            ns.login_id,
             du.id AS dorm_user_id
-        FROM target_slots ts
-        JOIN dorm_user du ON du.login_id = ts.login_id
+        FROM named_slots ns
+        JOIN dorm_user du ON du.login_id = ns.login_id
     )
     INSERT INTO user_role (
         id,
@@ -287,11 +418,16 @@ BEGIN
           AND ur.revoked_at IS NULL
     WHERE ur.id IS NULL;
 
-    WITH target_slots AS (
+    WITH base_slots AS (
         SELECT
-            r.id                                         AS room_id,
-            slot.personal_no                             AS personal_no,
-            concat(r.floor::text, r.room_number, '-', slot.personal_no::text) AS login_id
+            r.id AS room_id,
+            r.floor AS floor_no,
+            r.room_number AS room_number,
+            slot.personal_no AS personal_no,
+            concat(r.floor::text, r.room_number, '-', slot.personal_no::text) AS login_id,
+            ROW_NUMBER() OVER (
+                ORDER BY r.floor, r.room_number::INTEGER, slot.personal_no
+            ) AS global_seq
         FROM room r
         CROSS JOIN LATERAL generate_series(1, r.capacity) AS slot(personal_no)
         LEFT JOIN room_assignment ra
@@ -301,14 +437,49 @@ BEGIN
         WHERE r.floor BETWEEN 2 AND 5
           AND ra.id IS NULL
     ),
+    max_seq AS (
+        SELECT COALESCE(MAX(global_seq), 0) AS total_slots FROM base_slots
+    ),
+    name_pool AS (
+        SELECT seq, full_name
+        FROM (
+            SELECT
+                ROW_NUMBER() OVER (
+                    ORDER BY (given_ord * 53 + family_ord * 17),
+                             family_ord,
+                             given_ord
+                ) AS seq,
+                fam || given AS full_name
+            FROM unnest(ARRAY[
+                '강','고','곽','구','권','김','노','류','문','박','배','서','손','송','신',
+                '안','양','오','유','윤','이','임','장','전','정','조','차','최','한','허','홍'
+            ]::text[]) WITH ORDINALITY AS f(fam, family_ord)
+            CROSS JOIN unnest(ARRAY[
+                '다연','지현','민재','가람','서율','다온','태린','시온','라희','하은',
+                '준호','채윤','도원','세린','나율','예진','가율','도현','민서','다해',
+                '서이','세아','윤후','재민','수현','태윤','라온','시우','다윤','서담',
+                '지온','나리','하린','태이','주하','예린','시현','민호','서강','라온비',
+                '하예린','서도윤','민서율','채아린','지호윤','다온슬','서리아','윤솔아','하로윤','민아설'
+            ]::text[]) WITH ORDINALITY AS g(given, given_ord)
+        ) np
+        WHERE seq <= (SELECT total_slots FROM max_seq)
+    ),
+    named_slots AS (
+        SELECT
+            bs.room_id,
+            bs.personal_no,
+            bs.login_id
+        FROM base_slots bs
+        JOIN name_pool np ON np.seq = bs.global_seq
+    ),
     resolved_users AS (
         SELECT
-            ts.room_id,
-            ts.personal_no,
-            ts.login_id,
+            ns.room_id,
+            ns.personal_no,
+            ns.login_id,
             du.id AS dorm_user_id
-        FROM target_slots ts
-        JOIN dorm_user du ON du.login_id = ts.login_id
+        FROM named_slots ns
+        JOIN dorm_user du ON du.login_id = ns.login_id
     )
     INSERT INTO room_assignment (
         id,
@@ -330,6 +501,8 @@ BEGIN
         CURRENT_TIMESTAMP,
         CURRENT_TIMESTAMP
     FROM resolved_users ru;
+
+    PERFORM public.fn_rebuild_compartment_access();
 END;
 $$;
 

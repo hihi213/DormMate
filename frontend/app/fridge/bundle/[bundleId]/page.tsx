@@ -159,7 +159,7 @@ function BundleInner() {
                             if (result.success) {
                               toast({
                                 title: "삭제됨",
-                                description: `${getDetailName(it.name, bundleName)} 항목이 삭제되었습니다.`,
+                                description: `${detailName} 항목이 삭제되었습니다.`,
                               })
                             } else {
                               toast({

@@ -44,6 +44,7 @@ export type PaginatedTableProps<TData> = {
   getRowId?: (row: TData, index: number) => React.Key
   onRowClick?: (row: TData, index: number) => void
   className?: string
+  getRowClassName?: (row: TData, index: number) => string | undefined
 }
 
 /**
@@ -58,6 +59,7 @@ export function PaginatedTable<TData>({
   getRowId,
   onRowClick,
   className,
+  getRowClassName,
 }: PaginatedTableProps<TData>) {
   const totalPages = React.useMemo(() => {
     if (!pagination) return 1
@@ -152,7 +154,10 @@ export function PaginatedTable<TData>({
                 <TableRow
                   key={getRowId ? getRowId(row, index) : index}
                   data-row-index={index}
-                  className={cn(clickable && "cursor-pointer transition hover:bg-muted/40")}
+                  className={cn(
+                    clickable && "cursor-pointer transition hover:bg-muted/40",
+                    getRowClassName?.(row, index),
+                  )}
                   onClick={() => onRowClick?.(row, index)}
                   onKeyDown={(event) => {
                     if (!onRowClick) return
@@ -164,21 +169,22 @@ export function PaginatedTable<TData>({
                   tabIndex={clickable ? 0 : undefined}
                   role={clickable ? "button" : undefined}
                 >
-                {columns.map((column) => (
-                  <TableCell
-                    key={String(column.key)}
-                    className={cn({
-                      "text-right": column.align === "right",
-                      "text-center": column.align === "center",
-                    })}
-                  >
-                    {column.render
-                      ? column.render(row, index)
-                      : (row as Record<string, unknown>)[
-                          column.key as string
-                        ] ?? "—"}
-                  </TableCell>
-                ))}
+                {columns.map((column) => {
+                  const cellValue = column.render
+                    ? column.render(row, index)
+                    : ((row as Record<string, unknown>)[column.key as string] ?? "—")
+                  return (
+                    <TableCell
+                      key={String(column.key)}
+                      className={cn({
+                        "text-right": column.align === "right",
+                        "text-center": column.align === "center",
+                      })}
+                    >
+                      {cellValue as React.ReactNode}
+                    </TableCell>
+                  )
+                })}
                 </TableRow>
               )
             })

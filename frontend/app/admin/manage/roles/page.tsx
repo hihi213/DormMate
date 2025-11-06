@@ -32,10 +32,11 @@ export default function AdminRolesPage() {
   const filtered = useMemo(() => {
     const keyword = filters.search.trim().toLowerCase()
     return userItems.filter((user) => {
+      const roomLower = user.room?.toLowerCase() ?? ""
       const matchesSearch =
         keyword.length === 0 ||
         user.name.toLowerCase().includes(keyword) ||
-        user.room.toLowerCase().includes(keyword)
+        roomLower.includes(keyword)
       const matchesRole = filters.role === "all" ? true : user.role === (filters.role as Role)
       const matchesStatus =
         filters.status === "all" ? true : user.status === (filters.status as UserRow["status"])

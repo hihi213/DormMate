@@ -248,10 +248,10 @@ export async function resolveApiError(
   overrides?: Partial<ApiErrorDictionary>,
   codeOverrides?: Record<string, ApiErrorTemplate>,
 ): Promise<ApiError> {
-  const dictionary: ApiErrorDictionary = {
+  const dictionary = {
     ...defaultErrorDictionary,
-    ...overrides,
-  }
+    ...(overrides ?? {}),
+  } as ApiErrorDictionary
 
   const mergedCodeDictionary: Record<string, ApiErrorTemplate> = {
     ...defaultCodeDictionary,

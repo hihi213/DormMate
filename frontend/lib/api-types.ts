@@ -500,6 +500,8 @@ export interface paths {
                     slotId?: string;
                     /** @description me 지정 시 내 포장만 반환 */
                     owner?: "me" | "all";
+                    /** @description 관리자 전용 – 특정 사용자 포장만 필터링 */
+                    ownerUserId?: string;
                     /** @description deleted 지정 시 소프트 삭제 포함 */
                     status?: "active" | "deleted";
                     /** @description 포장명/물품명/라벨(A123) 검색 */
@@ -526,6 +528,7 @@ export interface paths {
                 };
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
+                503: components["responses"]["ServiceUnavailable"];
             };
         };
         put?: never;
@@ -601,6 +604,7 @@ export interface paths {
                 };
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
+                503: components["responses"]["ServiceUnavailable"];
             };
         };
         put?: never;
@@ -1176,6 +1180,7 @@ export interface paths {
                 };
                 401: components["responses"]["Unauthorized"];
                 403: components["responses"]["Forbidden"];
+                503: components["responses"]["ServiceUnavailable"];
             };
         };
         put?: never;
@@ -1329,6 +1334,125 @@ export interface paths {
         };
         options?: never;
         head?: never;
+        /** 제출 완료된 검사 세션 정정 */
+        patch: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody: {
+                content: {
+                    "application/json": components["schemas"]["UpdateInspectionSessionRequest"];
+                };
+            };
+            responses: {
+                /** @description 정정된 검사 세션 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InspectionSession"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        trace?: never;
+    };
+    "/fridge/inspections/{sessionId}/notifications/resend": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 검사 결과 알림 재발송 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: never;
+            responses: {
+                /** @description 최신 검사 세션 */
+                200: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InspectionSession"];
+                    };
+                };
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/fridge/inspections/{sessionId}/reinspect": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** 재검 요청 및 일정 생성 */
+        post: {
+            parameters: {
+                query?: never;
+                header?: never;
+                path: {
+                    sessionId: string;
+                };
+                cookie?: never;
+            };
+            requestBody?: {
+                content: {
+                    "application/json": components["schemas"]["ReinspectRequest"];
+                };
+            };
+            responses: {
+                /** @description 재검 일정 생성됨 */
+                201: {
+                    headers: {
+                        [name: string]: unknown;
+                    };
+                    content: {
+                        "application/json": components["schemas"]["InspectionSchedule"];
+                    };
+                };
+                400: components["responses"]["BadRequest"];
+                401: components["responses"]["Unauthorized"];
+                403: components["responses"]["Forbidden"];
+                404: components["responses"]["NotFound"];
+                409: components["responses"]["Conflict"];
+            };
+        };
+        delete?: never;
+        options?: never;
+        head?: never;
         patch?: never;
         trace?: never;
     };
@@ -1347,7 +1471,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    sessionId: number;
+                    sessionId: string;
                 };
                 cookie?: never;
             };
@@ -1395,7 +1519,7 @@ export interface paths {
                 query?: never;
                 header?: never;
                 path: {
-                    sessionId: number;
+                    sessionId: string;
                 };
                 cookie?: never;
             };
@@ -1600,12 +1724,30 @@ export interface components {
             updatedAt: string;
             /** Format: date-time */
             removedAt?: string | null;
+            /**
+             * Format: uuid
+             * @description 마지막으로 제출된 검사 세션 ID
+             */
+            lastInspectionId?: string | null;
+            /**
+             * Format: date-time
+             * @description 마지막 검사 제출 시각
+             */
+            lastInspectionAt?: string | null;
+            /** @description 마지막 검사에서 경고 조치 건수 */
+            warningCount?: number | null;
+            /** @description 마지막 검사에서 폐기 조치 건수 */
+            disposalCount?: number | null;
+            /** @description 검사 요약 상태(ok, warn, critical 등) */
+            alertState?: string | null;
         };
         /** @enum {string} */
         BundleStatus: "ACTIVE" | "DELETED";
         FridgeBundleSummary: {
             /** Format: uuid */
             bundleId: string;
+            /** Format: uuid */
+            canonicalId: string;
             /** Format: uuid */
             slotId: string;
             slotIndex: number;
@@ -1628,6 +1770,11 @@ export interface components {
             updatedAt: string;
             /** Format: date-time */
             removedAt?: string | null;
+            /**
+             * Format: int64
+             * @description 버전 추적용 타임스탬프(밀리초)
+             */
+            version?: number | null;
         };
         FridgeBundle: components["schemas"]["FridgeBundleSummary"] & {
             items: components["schemas"]["FridgeItem"][];
@@ -1824,8 +1971,39 @@ export interface components {
             /** Format: uuid */
             recordedBy?: string | null;
             note?: string | null;
+            /** Format: uuid */
+            correlationId?: string | null;
             items?: components["schemas"]["InspectionActionItem"][];
             penalties?: components["schemas"]["PenaltyHistory"][];
+            roomNumber?: string | null;
+            personalNo?: number | null;
+            /** @description 검사 결과 알림 발송 상태(UNREAD/READ/EXPIRED 등) */
+            notificationStatus?: string | null;
+            penaltyPoints?: number | null;
+        };
+        InspectionSchedule: {
+            /** Format: uuid */
+            scheduleId: string;
+            /** Format: date-time */
+            scheduledAt: string;
+            title?: string | null;
+            notes?: string | null;
+            /** @enum {string} */
+            status: "SCHEDULED" | "COMPLETED" | "CANCELLED";
+            /** Format: date-time */
+            completedAt?: string | null;
+            /** Format: uuid */
+            inspectionSessionId?: string | null;
+            /** Format: uuid */
+            fridgeCompartmentId?: string | null;
+            slotIndex?: number | null;
+            slotLetter?: string | null;
+            floorNo?: number | null;
+            floorCode?: string | null;
+            /** Format: date-time */
+            createdAt: string;
+            /** Format: date-time */
+            updatedAt: string;
         };
         InspectionSession: {
             /** Format: uuid */
@@ -1839,6 +2017,8 @@ export interface components {
             status: components["schemas"]["InspectionStatus"];
             /** Format: uuid */
             startedBy: string;
+            startedByLogin?: string | null;
+            startedByName?: string | null;
             /** Format: date-time */
             startedAt: string;
             /** Format: date-time */
@@ -1858,6 +2038,27 @@ export interface components {
         };
         InspectionActionRequest: {
             actions: components["schemas"]["InspectionActionEntry"][];
+        };
+        InspectionActionMutation: {
+            /** Format: int64 */
+            actionId?: number | null;
+            /** Format: uuid */
+            bundleId?: string | null;
+            /** Format: uuid */
+            itemId?: string | null;
+            action: components["schemas"]["InspectionAction"];
+            note?: string | null;
+        };
+        UpdateInspectionSessionRequest: {
+            notes?: string | null;
+            mutations?: components["schemas"]["InspectionActionMutation"][];
+            deleteActionIds?: number[];
+        };
+        ReinspectRequest: {
+            /** Format: date-time */
+            scheduledAt?: string;
+            title?: string | null;
+            notes?: string | null;
         };
         SubmitInspectionRequest: {
             notes?: string | null;
@@ -1903,6 +2104,17 @@ export interface components {
         /** @description 처리 충돌 */
         Conflict: {
             headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description 일시적인 장애로 요청을 처리할 수 없음 */
+        ServiceUnavailable: {
+            headers: {
+                /** @description 재시도까지 대기할 시간(초) */
+                "Retry-After"?: number;
                 [name: string]: unknown;
             };
             content: {

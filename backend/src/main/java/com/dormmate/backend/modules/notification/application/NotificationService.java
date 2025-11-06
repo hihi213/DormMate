@@ -282,6 +282,30 @@ public class NotificationService {
         });
     }
 
+    public void resendInspectionResultNotifications(InspectionSession session) {
+        if (CollectionUtils.isEmpty(session.getActions())) {
+            return;
+        }
+
+        session.getActions().stream()
+                .map(InspectionAction::getTargetUser)
+                .filter(Objects::nonNull)
+                .map(DormUser::getId)
+                .distinct()
+                .forEach(userId -> {
+                    String dedupeKey = DEDUPE_PREFIX + session.getId() + ":" + userId;
+                    notificationRepository.findByUserIdAndDedupeKey(userId, dedupeKey)
+                            .ifPresent(notificationRepository::delete);
+                });
+
+        sendInspectionResultNotifications(session);
+    }
+
+    public Optional<Notification> findInspectionResultNotification(UUID sessionId, UUID userId) {
+        String dedupeKey = DEDUPE_PREFIX + sessionId + ":" + userId;
+        return notificationRepository.findByUserIdAndDedupeKey(userId, dedupeKey);
+    }
+
     private boolean isEnabled(UUID userId, String kindCode) {
         NotificationPreferenceId id = new NotificationPreferenceId(userId, kindCode);
         Optional<NotificationPreference> preference = notificationPreferenceRepository.findById(id);
