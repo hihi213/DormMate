@@ -2,6 +2,8 @@ package com.dormmate.backend.modules.admin.application;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.Statement;
 
 import javax.sql.DataSource;
 
@@ -21,6 +23,7 @@ public class DemoSeedService {
     private static final Logger log = LoggerFactory.getLogger(DemoSeedService.class);
 
     private static final String FRIDGE_DEMO_SEED_SCRIPT = "db/demo/fridge_exhibition_items.sql";
+    private static final String DEMO_RESET_FUNCTION = "SELECT public.fn_reset_demo_dataset();";
 
     private final DataSource dataSource;
 
@@ -42,6 +45,19 @@ public class DemoSeedService {
             log.error("Failed to execute demo seed script root cause: {}", root.getMessage());
             log.error("Failed to execute demo seed script", ex);
             throw new IllegalStateException("Failed to execute fridge demo seed script: " + root.getMessage(), ex);
+        } finally {
+            DataSourceUtils.releaseConnection(connection, dataSource);
+        }
+    }
+
+    public void resetDemoDataset() {
+        Connection connection = DataSourceUtils.getConnection(dataSource);
+        try (Statement statement = connection.createStatement()) {
+            statement.execute(DEMO_RESET_FUNCTION);
+            log.info("Demo dataset reset function executed successfully");
+        } catch (SQLException ex) {
+            log.error("Failed to execute demo dataset reset function", ex);
+            throw new IllegalStateException("Failed to execute demo dataset reset function: " + ex.getMessage(), ex);
         } finally {
             DataSourceUtils.releaseConnection(connection, dataSource);
         }

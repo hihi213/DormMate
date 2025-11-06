@@ -12,6 +12,7 @@ import type {
   NotificationList,
   NotificationPreference,
   NotificationPreferenceUpdateInput,
+  NotificationState,
   NotificationStateFilter,
 } from "@/features/notifications/types"
 
@@ -39,17 +40,17 @@ export type NotificationStoreState = {
 }
 
 export type NotificationStoreActions = {
-  load: (params?: Partial<{ state: NotificationStateFilter; page: number; size: number }>) => Promise<NotificationActionResult>
-  ensureLoaded: (params?: Partial<{ state: NotificationStateFilter; page: number; size: number }>) => Promise<NotificationActionResult>
-  refresh: () => Promise<NotificationActionResult>
-  setFilter: (next: NotificationStateFilter) => Promise<NotificationActionResult>
+  load: (params?: Partial<{ state: NotificationStateFilter; page: number; size: number }>) => Promise<NotificationActionResult<NotificationList>>
+  ensureLoaded: (params?: Partial<{ state: NotificationStateFilter; page: number; size: number }>) => Promise<NotificationActionResult<NotificationList>>
+  refresh: () => Promise<NotificationActionResult<NotificationList>>
+  setFilter: (next: NotificationStateFilter) => Promise<NotificationActionResult<NotificationList>>
   markAsRead: (notificationId: string) => Promise<NotificationActionResult<{ notification: Notification | null }>>
   markAllAsRead: () => Promise<NotificationActionResult>
-  loadPreferences: () => Promise<NotificationActionResult<{ preferences: NotificationPreference[] }>>
+  loadPreferences: () => Promise<NotificationActionResult<NotificationPreference[]>>
   savePreference: (
     kindCode: string,
     payload: NotificationPreferenceUpdateInput,
-  ) => Promise<NotificationActionResult<{ preference: NotificationPreference }>>
+  ) => Promise<NotificationActionResult<NotificationPreference>>
   resetError: () => void
   resetPreferenceError: () => void
 }
@@ -129,14 +130,16 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         return result
       }
 
-      set((state) => applyNotificationList(state, result.data!))
+      const list = result.data
+
+      set((state) => applyNotificationList(state, list))
 
       set((state) => ({
         ...state,
         initialized: true,
       }))
 
-      return { success: true }
+      return { success: true, data: list }
     },
     async ensureLoaded(params) {
       const state = get()
@@ -177,9 +180,13 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
       return actions.load({ state: normalized, page: 0, size: query.size })
     },
     async markAsRead(notificationId) {
-      const result = await markNotificationAsRead(notificationId)
-      if (!result.success) {
-        return result
+      const apiResult = await markNotificationAsRead(notificationId)
+      if (!apiResult.success) {
+        return {
+          success: false,
+          error: apiResult.error,
+          code: apiResult.code,
+        }
       }
 
       set((state) => {
@@ -190,7 +197,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
           updated = true
           return {
             ...item,
-            state: "READ",
+            state: "READ" as NotificationState,
             readAt: nowIso,
           }
         })
@@ -216,7 +223,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         ...state,
         items: state.items.map((item) => ({
           ...item,
-          state: "READ",
+          state: "READ" as NotificationState,
           readAt: item.readAt ?? nowIso,
         })),
         unreadCount: 0,
@@ -242,14 +249,16 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         return result
       }
 
+      const preferences = result.data
+
       set((state) => ({
         ...state,
         preferencesLoading: false,
         preferenceError: undefined,
-        preferences: result.data ?? [],
+        preferences: preferences,
       }))
 
-      return { success: true, data: { preferences: result.data ?? [] } }
+      return { success: true, data: preferences }
     },
     async savePreference(kindCode, payload) {
       const result = await updateNotificationPreference(kindCode, payload)
@@ -261,10 +270,12 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         return result
       }
 
+      const updatedPreference = result.data
+
       set((state) => {
-        const updatedList = state.preferences.some((item) => item.kindCode === result.data?.kindCode)
-          ? state.preferences.map((item) => (item.kindCode === result.data!.kindCode ? result.data! : item))
-          : [...state.preferences, result.data!]
+        const updatedList = state.preferences.some((item) => item.kindCode === updatedPreference.kindCode)
+          ? state.preferences.map((item) => (item.kindCode === updatedPreference.kindCode ? updatedPreference : item))
+          : [...state.preferences, updatedPreference]
 
         return {
           ...state,
@@ -273,7 +284,7 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         }
       })
 
-      return { success: true, data: { preference: result.data } }
+      return { success: true, data: updatedPreference }
     },
     resetError() {
       set((state) => ({

@@ -150,8 +150,8 @@ public class FridgeBundleRepositoryImpl implements FridgeBundleRepositoryCustom 
         List<String> parts = new ArrayList<>();
         parts.add("lower(fb.bundle_name) like :keyword");
         parts.add("lower(to_char(fb.label_number, 'FM000')) like :keyword");
-        parts.add("lower(concat(chr(65 + fc.slot_index), to_char(fb.label_number, 'FM000'))) like :keyword");
-        parts.add("lower(concat(chr(65 + fc.slot_index), '-', to_char(fb.label_number, 'FM000'))) like :keyword");
+        parts.add("lower(public.fn_slot_letter(fc.slot_index) || to_char(fb.label_number, 'FM000')) like :keyword");
+        parts.add("lower(public.fn_slot_letter(fc.slot_index) || '-' || to_char(fb.label_number, 'FM000')) like :keyword");
         if (!CollectionUtils.isEmpty(condition.slotLetterIndices())) {
             int index = 0;
             for (Integer slotIndex : condition.slotLetterIndices()) {

@@ -1,14 +1,15 @@
 package com.dormmate.backend.global.config;
 
-import java.security.Principal;
-import java.util.Optional;
-import java.util.UUID;
+import org.springframework.data.domain.AuditorAware;
+import org.springframework.lang.NonNull;
+import org.springframework.security.core.Authentication;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import com.dormmate.backend.global.security.JwtAuthenticationPrincipal;
 
-import org.springframework.data.domain.AuditorAware;
-import org.springframework.security.core.Authentication;
-import org.springframework.security.core.context.SecurityContextHolder;
+import java.security.Principal;
+import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Resolves the current auditor (DormMate user id) for JPA auditing.
@@ -17,10 +18,10 @@ import org.springframework.security.core.context.SecurityContextHolder;
 public class DormmateAuditorAware implements AuditorAware<UUID> {
 
     @Override
-    public Optional<UUID> getCurrentAuditor() {
+    public @NonNull Optional<UUID> getCurrentAuditor() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {
-            return Optional.empty();
+            return Optional.<UUID>empty();
         }
 
         Object principal = authentication.getPrincipal();
@@ -36,6 +37,6 @@ public class DormmateAuditorAware implements AuditorAware<UUID> {
             }
         }
 
-        return Optional.empty();
+        return Optional.<UUID>empty();
     }
 }

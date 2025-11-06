@@ -9,7 +9,7 @@ import type {
   AdminBundleSummaryDto,
   AdminFridgeSlotDto,
   AdminInspectionSessionDto,
-} from "@/features/admin/api/fridge"
+} from "@/features/admin/api"
 
 export type AdminFridgeSlot = Slot & {
   utilization?: number | null
@@ -17,6 +17,7 @@ export type AdminFridgeSlot = Slot & {
 
 export type AdminBundleSummary = {
   bundleId: string
+  canonicalId?: string | null
   slotId: string
   slotIndex: number
   labelDisplay: string
@@ -24,17 +25,57 @@ export type AdminBundleSummary = {
   itemCount: number
   status: "ACTIVE" | "DELETED"
   freshness?: string | null
+  ownerUserId?: string | null
   ownerDisplayName?: string | null
   ownerRoomNumber?: string | null
   memo?: string | null
   updatedAt: string
   removedAt?: string | null
   deletedAt?: string | null
+  version?: number | null
+  lastInspectionId?: string | null
+  lastInspectionAt?: string | null
+  warningCount?: number | null
+  disposalCount?: number | null
+  alertState?: string | null
 }
 
 export type AdminInspectionAggregate = {
   action: string
   count: number
+}
+
+export type AdminInspectionActionItem = {
+  id?: number | null
+  fridgeItemId?: string | null
+  snapshotName?: string | null
+  snapshotExpiresOn?: string | null
+  quantityAtAction?: number | null
+}
+
+export type AdminPenaltyHistory = {
+  id?: string
+  points?: number
+  reason?: string | null
+  issuedAt?: string
+  expiresAt?: string | null
+}
+
+export type AdminInspectionActionDetail = {
+  actionId?: number | null
+  actionType?: string | null
+  bundleId?: string | null
+  targetUserId?: string | null
+  recordedAt?: string
+  recordedBy?: string | null
+  note?: string | null
+  correlationId?: string | null
+  roomNumber?: string | null
+  personalNo?: number | null
+  notificationStatus?: string | null
+  penaltyPoints?: number | null
+  items: AdminInspectionActionItem[]
+  penalties: AdminPenaltyHistory[]
 }
 
 export type AdminInspectionSession = {
@@ -46,10 +87,15 @@ export type AdminInspectionSession = {
   startedAt: string
   endedAt?: string | null
   startedBy: string
+  startedByLogin?: string | null
+  startedByName?: string | null
   summary: AdminInspectionAggregate[]
   warningCount: number
   disposalCount: number
   passCount: number
+  notes?: string | null
+  hasIssue: boolean
+  actions: AdminInspectionActionDetail[]
 }
 
 const WARN_ACTIONS = new Set(["WARN_INFO_MISMATCH", "WARN_STORAGE_POOR"])
@@ -83,36 +129,80 @@ export function mapAdminSlot(dto: AdminFridgeSlotDto): AdminFridgeSlot {
   }
 }
 
+type BundleSummaryExtras = AdminBundleSummaryDto & {
+  ownerUserId?: string | null
+  ownerDisplayName?: string | null
+  ownerRoomNumber?: string | null
+  memo?: string | null
+  freshness?: string | null
+  canonicalId?: string | null
+  lastInspectionId?: string | null
+  lastInspectionAt?: string | null
+  warningCount?: number | null
+  disposalCount?: number | null
+  alertState?: string | null
+  removedAt?: string | null
+  deletedAt?: string | null
+}
+
 export function mapAdminBundleSummary(dto: AdminBundleSummaryDto): AdminBundleSummary {
-  const slotIndex = dto.slotIndex ?? 0
-  const labelNumber = dto.labelNumber ?? 0
-  const labelDisplay = dto.labelDisplay ?? formatBundleLabel(slotIndex, labelNumber)
-  const removedAt = dto.removedAt ?? null
-  const deletedAt = (dto as { deletedAt?: string | null }).deletedAt ?? null
-  const status = (dto.status?.toUpperCase() as "ACTIVE" | "DELETED") ?? "ACTIVE"
+  const extended = dto as BundleSummaryExtras
+  const slotIndex = extended.slotIndex ?? 0
+  const labelNumber = extended.labelNumber ?? 0
+  const labelDisplay = extended.labelDisplay ?? formatBundleLabel(slotIndex, labelNumber)
+  const removedAt = extended.removedAt ?? null
+  const deletedAt = extended.deletedAt ?? null
+  const status = (extended.status?.toUpperCase() as "ACTIVE" | "DELETED") ?? "ACTIVE"
 
   return {
-    bundleId: dto.bundleId,
-    slotId: dto.slotId,
+    bundleId: extended.bundleId,
+    canonicalId: extended.canonicalId ?? extended.bundleId ?? null,
+    slotId: extended.slotId,
     slotIndex,
     labelDisplay,
-    bundleName: dto.bundleName,
-    itemCount: dto.itemCount ?? 0,
+    bundleName: extended.bundleName,
+    itemCount: extended.itemCount ?? 0,
     status,
-    freshness: dto.freshness ?? null,
-    ownerDisplayName: dto.ownerDisplayName ?? null,
-    ownerRoomNumber: dto.ownerRoomNumber ?? null,
-    memo: dto.memo ?? null,
-    updatedAt: dto.updatedAt,
+    freshness: extended.freshness ?? null,
+    ownerUserId: extended.ownerUserId ?? null,
+    ownerDisplayName: extended.ownerDisplayName ?? null,
+    ownerRoomNumber: extended.ownerRoomNumber ?? null,
+    memo: extended.memo ?? null,
+    updatedAt: extended.updatedAt,
     removedAt,
     deletedAt,
+    version: extended.version ?? null,
+    lastInspectionId: extended.lastInspectionId ?? null,
+    lastInspectionAt: extended.lastInspectionAt ?? null,
+    warningCount: extended.warningCount ?? null,
+    disposalCount: extended.disposalCount ?? null,
+    alertState: extended.alertState ?? null,
   }
+}
+
+type InspectionActionDtoExtras =
+  NonNullable<NonNullable<AdminInspectionSessionDto["actions"]>[number]> & {
+    roomNumber?: string | null
+    personalNo?: number | null
+    notificationStatus?: string | null
+    penaltyPoints?: number | null
+    recordedAt?: string | null
+    recordedBy?: string | null
+  }
+
+type InspectionSessionDtoExtras = AdminInspectionSessionDto & {
+    startedByLogin?: string | null
+    startedByName?: string | null
+    slotIndex?: number | null
+    actions?: Array<InspectionActionDtoExtras | null>
 }
 
 export function mapAdminInspectionSession(
   session: AdminInspectionSessionDto,
 ): AdminInspectionSession {
-  const summary = session.summary ?? []
+  const extended = session as InspectionSessionDtoExtras
+  const summary = extended.summary ?? []
+  const actions = extended.actions ?? []
   let warningCount = 0
   let disposalCount = 0
   let passCount = 0
@@ -131,22 +221,24 @@ export function mapAdminInspectionSession(
   })
 
   const slotLabel =
-    session.slotLabel && session.slotLabel.length > 0
-      ? session.slotLabel
-      : toSlotLetter(session.slotIndex ?? 0)
+    extended.slotLabel && extended.slotLabel.length > 0
+      ? extended.slotLabel
+      : toSlotLetter(extended.slotIndex ?? 0)
 
-  const rawStatus = session.status ?? "IN_PROGRESS"
-  const normalizedStatus = rawStatus === "CANCELLED" ? "CANCELED" : rawStatus
+  const rawStatus = (extended.status ?? "IN_PROGRESS") as string
+  const normalizedStatus = (rawStatus === "CANCELLED" ? "CANCELED" : rawStatus) as AdminInspectionSession["status"]
 
   return {
-    sessionId: session.sessionId,
-    slotId: session.slotId,
+    sessionId: extended.sessionId,
+    slotId: extended.slotId,
     slotLabel,
-    floorNo: session.floorNo ?? 0,
-    status: normalizedStatus as AdminInspectionSession["status"],
-    startedAt: session.startedAt,
-    endedAt: session.endedAt ?? null,
-    startedBy: session.startedBy,
+    floorNo: extended.floorNo ?? 0,
+    status: normalizedStatus,
+    startedAt: extended.startedAt,
+    endedAt: extended.endedAt ?? null,
+    startedBy: extended.startedBy,
+    startedByLogin: extended.startedByLogin ?? null,
+    startedByName: extended.startedByName ?? null,
     summary: summary.map((entry) => ({
       action: entry.action,
       count: entry.count,
@@ -154,5 +246,47 @@ export function mapAdminInspectionSession(
     warningCount,
     disposalCount,
     passCount,
+    notes: session.notes ?? null,
+    hasIssue: warningCount > 0 || disposalCount > 0,
+    actions: actions
+      .filter((action): action is InspectionActionDtoExtras => Boolean(action))
+      .map((action) => {
+        const items = (action.items ?? [])
+          .filter((item): item is NonNullable<typeof item> => Boolean(item))
+          .map((item) => ({
+            id: item.id ?? null,
+            fridgeItemId: item.fridgeItemId ?? null,
+            snapshotName: item.snapshotName ?? null,
+            snapshotExpiresOn: item.snapshotExpiresOn ?? null,
+            quantityAtAction: item.quantityAtAction ?? null,
+          }))
+
+        const penalties = (action.penalties ?? [])
+          .filter((penalty): penalty is NonNullable<typeof penalty> => Boolean(penalty))
+          .map((penalty) => ({
+            id: penalty.id ?? "",
+            points: penalty.points ?? 0,
+            reason: penalty.reason ?? null,
+            issuedAt: penalty.issuedAt ?? undefined,
+            expiresAt: penalty.expiresAt ?? undefined,
+          }))
+
+        return {
+          actionId: action.actionId ?? null,
+          actionType: action.actionType ?? null,
+          bundleId: action.bundleId ?? null,
+          targetUserId: action.targetUserId ?? null,
+          recordedAt: action.recordedAt ?? undefined,
+          recordedBy: action.recordedBy ?? null,
+          note: action.note ?? null,
+          correlationId: action.correlationId ?? null,
+          roomNumber: action.roomNumber ?? null,
+          personalNo: action.personalNo ?? null,
+          notificationStatus: action.notificationStatus ?? null,
+          penaltyPoints: action.penaltyPoints ?? null,
+          items,
+          penalties,
+        }
+      }),
   }
 }

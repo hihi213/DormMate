@@ -12,7 +12,7 @@ export function useFilteredItems(filters: FilterOptions) {
 
     const matchesBaseFilters = (item: Item) => {
       if (filters.slotId && item.slotId !== filters.slotId) return false
-      if (typeof filters.slotIndex === "number" && item.resourceId !== filters.slotIndex) return false
+      if (typeof filters.slotIndex === "number" && item.slotIndex !== filters.slotIndex) return false
 
       switch (filters.tab) {
         case "mine":

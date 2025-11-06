@@ -1,7 +1,8 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { AlertTriangle } from "lucide-react"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -9,15 +10,18 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { Textarea } from "@/components/ui/textarea"
 import { BulkEditor, DangerZoneModal, DetailsDrawer, PaginatedTable } from "@/components/admin"
 import {
   demoteAdminFloorManager,
   deactivateAdminUser,
   promoteAdminFloorManager,
+  fetchAdminUsers,
 } from "@/features/admin/api"
 import { useAdminUsers } from "@/features/admin/hooks/use-admin-users"
 import type { AdminUser } from "@/features/admin/types"
@@ -33,6 +37,7 @@ type FilterState = {
 }
 
 type SelectionMode = "PROMOTE" | "DEACTIVATE" | null
+type RoleChangeMode = "PROMOTE" | "DEMOTE"
 
 export default function AdminUsersPage() {
   const [filters, setFilters] = useState<FilterState>({
@@ -50,6 +55,100 @@ export default function AdminUsersPage() {
   const [selectionMode, setSelectionMode] = useState<SelectionMode>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const { toast } = useToast()
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [pendingFocusId, setPendingFocusId] = useState<string | null>(null)
+  const processedFocusIdRef = useRef<string | null>(null)
+  const [focusCandidate, setFocusCandidate] = useState<AdminUser | null>(null)
+  const [focusLookupLoading, setFocusLookupLoading] = useState(false)
+  const [focusLookupAttempted, setFocusLookupAttempted] = useState(false)
+  const [focusedUserId, setFocusedUserId] = useState<string | null>(null)
+  const [roleDialogOpen, setRoleDialogOpen] = useState(false)
+  const [roleChangeMode, setRoleChangeMode] = useState<RoleChangeMode>("PROMOTE")
+  const [roleChangeReason, setRoleChangeReason] = useState("")
+  const focusParam = searchParams.get("focus")
+
+  const primaryRoleLabel = drawerUser
+    ? drawerUser.role === "ADMIN"
+      ? "관리자"
+      : "거주자"
+    : undefined
+  const extraRoleLabel =
+    drawerUser?.role === "FLOOR_MANAGER" ? "층별장" : drawerUser?.role === "ADMIN" ? "관리자" : "-"
+  const canPromoteCurrent = drawerUser != null && drawerUser.role !== "FLOOR_MANAGER"
+  const canDemoteCurrent = drawerUser?.role === "FLOOR_MANAGER"
+  const trimmedRoleChangeReason = roleChangeReason.trim()
+  const canSubmitRoleChange =
+    !!drawerUser &&
+    (roleChangeMode === "PROMOTE" ? canPromoteCurrent : canDemoteCurrent) &&
+    trimmedRoleChangeReason.length >= 2 &&
+    !actionLoading
+
+  useEffect(() => {
+    if (focusParam) {
+      if (processedFocusIdRef.current !== focusParam) {
+        setPendingFocusId(focusParam)
+        setFocusCandidate(null)
+        setFocusLookupAttempted(false)
+        setFocusLookupLoading(false)
+      }
+    } else {
+      processedFocusIdRef.current = null
+      setPendingFocusId(null)
+      setFocusCandidate(null)
+      setFocusLookupAttempted(false)
+      setFocusLookupLoading(false)
+    }
+  }, [focusParam])
+
+  useEffect(() => {
+    if (!pendingFocusId) return
+    const current = userItems.find((user) => user.id === pendingFocusId)
+    if (current) {
+      setFocusCandidate(current)
+      return
+    }
+    if (focusLookupAttempted || focusLookupLoading) return
+    let cancelled = false
+    const lookup = async () => {
+      try {
+        setFocusLookupLoading(true)
+        setFocusLookupAttempted(true)
+        const response = await fetchAdminUsers("ALL")
+        if (cancelled) return
+        const found = response.items.find((user) => user.id === pendingFocusId)
+        if (found) {
+          setFocusCandidate(found)
+        } else {
+          toast({
+            title: "사용자를 찾을 수 없습니다.",
+            description: "링크가 만료되었거나 삭제된 사용자입니다.",
+            variant: "destructive",
+          })
+          processedFocusIdRef.current = pendingFocusId
+          setPendingFocusId(null)
+        }
+      } catch (err) {
+        if (cancelled) return
+        toast({
+          title: "사용자 정보를 불러오지 못했습니다.",
+          description: err instanceof Error ? err.message : "잠시 후 다시 시도해주세요.",
+          variant: "destructive",
+        })
+        processedFocusIdRef.current = pendingFocusId
+        setPendingFocusId(null)
+      } finally {
+        if (!cancelled) {
+          setFocusLookupLoading(false)
+        }
+      }
+    }
+    void lookup()
+    return () => {
+      cancelled = true
+    }
+  }, [pendingFocusId, userItems, focusLookupAttempted, focusLookupLoading, toast])
 
   useEffect(() => {
     setSearchInput(filters.search)
@@ -59,6 +158,15 @@ export default function AdminUsersPage() {
     setSelectedIds([])
     setDrawerUser(null)
   }, [filters.status])
+
+  useEffect(() => {
+    if (!drawerUser) {
+      setRoleDialogOpen(false)
+      setRoleChangeReason("")
+      return
+    }
+    setRoleChangeMode(drawerUser.role === "FLOOR_MANAGER" ? "DEMOTE" : "PROMOTE")
+  }, [drawerUser])
 
   const floors = useMemo(() => {
     const set = new Set<number>()
@@ -98,6 +206,59 @@ export default function AdminUsersPage() {
   const totalItems = filteredUsers.length
   const paginated = filteredUsers.slice((page - 1) * pageSize, page * pageSize)
 
+  useEffect(() => {
+    if (!pendingFocusId || !focusCandidate) return
+
+    const candidateStatus = focusCandidate.status as UserStatusFilter
+    if (filters.status !== candidateStatus) {
+      setFilters((prev) => ({ ...prev, status: candidateStatus }))
+      setPage(1)
+      return
+    }
+    if (filters.floor !== "ALL") {
+      setFilters((prev) => ({ ...prev, floor: "ALL" }))
+      return
+    }
+    if (filters.search !== "") {
+      setFilters((prev) => ({ ...prev, search: "" }))
+      setSearchInput("")
+      return
+    }
+
+    const targetIndex = filteredUsers.findIndex((user) => user.id === focusCandidate.id)
+    if (targetIndex === -1) {
+      return
+    }
+    const targetPage = Math.floor(targetIndex / pageSize) + 1
+    if (page !== targetPage) {
+      setPage(targetPage)
+      return
+    }
+
+    setDrawerUser(focusCandidate)
+    setFocusedUserId(focusCandidate.id)
+    processedFocusIdRef.current = focusCandidate.id
+    setPendingFocusId(null)
+
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete("focus")
+    const next = params.toString()
+    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false })
+  }, [
+    pendingFocusId,
+    focusCandidate,
+    filters.status,
+    filters.floor,
+    filters.search,
+    filteredUsers,
+    page,
+    pageSize,
+    setFilters,
+    pathname,
+    router,
+    searchParams,
+  ])
+
   const isSelectionEnabled = selectionMode !== null
 
   const toggleSelection = (id: string, checked: boolean) => {
@@ -106,8 +267,14 @@ export default function AdminUsersPage() {
   }
 
   const resetSelection = () => setSelectedIds([])
-  const openDrawer = (user: AdminUser) => setDrawerUser(user)
-  const closeDrawer = () => setDrawerUser(null)
+  const openDrawer = (user: AdminUser) => {
+    setDrawerUser(user)
+    setFocusedUserId(user.id)
+  }
+  const closeDrawer = () => {
+    setDrawerUser(null)
+    setFocusedUserId(null)
+  }
 
   const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -132,6 +299,7 @@ export default function AdminUsersPage() {
       return
     }
     setSelectionMode(mode)
+    setFocusedUserId(null)
     resetSelection()
   }
 
@@ -178,13 +346,13 @@ export default function AdminUsersPage() {
     }
   }
 
-  const handlePromoteUser = async (user: AdminUser) => {
+  const handlePromoteUser = async (user: AdminUser, reason?: string) => {
     setActionLoading(true)
     try {
       await promoteAdminFloorManager(user.id)
       toast({
         title: "층별장 임명 완료",
-        description: `${user.name}님이 층별장으로 임명되었습니다.`,
+        description: `${user.name}님이 층별장으로 임명되었습니다.${reason ? ` 사유: ${reason}` : ""}`,
       })
       await refetch()
       closeDrawer()
@@ -199,13 +367,13 @@ export default function AdminUsersPage() {
     }
   }
 
-  const handleDemoteUser = async (user: AdminUser) => {
+  const handleDemoteUser = async (user: AdminUser, reason?: string) => {
     setActionLoading(true)
     try {
       await demoteAdminFloorManager(user.id)
       toast({
         title: "층별장 해제 완료",
-        description: `${user.name}님의 층별장 권한을 해제했습니다.`,
+        description: `${user.name}님의 층별장 권한을 해제했습니다.${reason ? ` 사유: ${reason}` : ""}`,
       })
       await refetch()
       closeDrawer()
@@ -217,6 +385,20 @@ export default function AdminUsersPage() {
       })
     } finally {
       setActionLoading(false)
+    }
+  }
+
+  const handleRoleChangeConfirm = () => {
+    if (!drawerUser) return
+    const trimmed = roleChangeReason.trim()
+    if (roleChangeMode === "PROMOTE" && !canPromoteCurrent) return
+    if (roleChangeMode === "DEMOTE" && !canDemoteCurrent) return
+    setRoleDialogOpen(false)
+    setRoleChangeReason("")
+    if (roleChangeMode === "PROMOTE") {
+      void handlePromoteUser(drawerUser, trimmed)
+    } else {
+      void handleDemoteUser(drawerUser, trimmed)
     }
   }
 
@@ -239,6 +421,13 @@ export default function AdminUsersPage() {
     } finally {
       setActionLoading(false)
     }
+  }
+
+  const handleAdjustPenalty = async (user: AdminUser) => {
+    toast({
+      title: "벌점 조정 준비 중",
+      description: "벌점 차감/삭제 기능은 벌점 허브 확장 시 연동될 예정입니다.",
+    })
   }
 
   return (
@@ -473,6 +662,9 @@ export default function AdminUsersPage() {
                   onPageChange: setPage,
                 }}
                 getRowId={(row) => row.id}
+                getRowClassName={(row) =>
+                  row.id === focusedUserId ? "bg-emerald-50/80 ring-1 ring-inset ring-emerald-200" : undefined
+                }
               />
               {loading && paginated.length === 0 ? (
                 <p className="mt-4 text-xs text-muted-foreground">사용자 데이터를 불러오는 중입니다…</p>
@@ -511,12 +703,7 @@ export default function AdminUsersPage() {
         </section>
 
         <DetailsDrawer
-          title={drawerUser?.name ?? ""}
-          description={
-            drawerUser
-              ? `${formatRoomWithPersonal(drawerUser)} · 최근 로그인 ${drawerUser.lastLogin}`
-              : ""
-          }
+          title=""
           open={Boolean(drawerUser)}
           direction="right"
           onOpenChange={(open) => {
@@ -524,56 +711,107 @@ export default function AdminUsersPage() {
           }}
         >
           {drawerUser ? (
-            <div className="space-y-4 text-sm">
-              <div className="grid gap-3 sm:grid-cols-2">
-                <div>
-                  <Label className="text-xs text-muted-foreground">기본 역할</Label>
-                  <p className="font-medium text-slate-900">{drawerUser.role === "ADMIN" ? "관리자" : "거주자"}</p>
+            <div className="space-y-6 text-sm">
+              <section className="space-y-4 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <h2 className="text-lg font-semibold text-slate-900">{drawerUser.name}</h2>
+                    <p className="text-xs text-slate-500">DormMate 계정</p>
+                  </div>
+                  <Badge
+                    variant={drawerUser.status === "ACTIVE" ? "outline" : "destructive"}
+                    className="rounded-full px-3 py-1 text-xs font-semibold"
+                  >
+                    {drawerUser.status === "ACTIVE" ? "활성" : "비활성"}
+                  </Badge>
                 </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">호실·개인번호</Label>
-                  <p className="font-medium text-slate-900">{formatRoomWithPersonal(drawerUser)}</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">호실 · 개인번호</p>
+                    <p className="font-medium text-slate-900">{formatRoomWithPersonal(drawerUser)}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">마지막 로그인</p>
+                    <p className="font-medium text-slate-900">{drawerUser.lastLogin || "기록 없음"}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">기본 역할</p>
+                    <p className="font-medium text-slate-900">{primaryRoleLabel ?? "-"}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">알림 선호</p>
+                    <p className="text-xs text-slate-500">알림 선호 연동 준비 중</p>
+                  </div>
                 </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">추가 권한</Label>
-                  <p className="font-medium text-slate-900">{drawerUser.role === "FLOOR_MANAGER" ? "층별장" : "-"}</p>
-                </div>
-                <div>
-                  <Label className="text-xs text-muted-foreground">누적 벌점</Label>
-                  <p className="font-medium text-slate-900">{drawerUser.penalties ?? 0}점</p>
-                </div>
-              </div>
-
-              <Separator />
-
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">역할 변경</Label>
-                <div className="flex gap-2">
+                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
+                  <div className="space-y-0.5">
+                    <p className="text-xs text-muted-foreground">추가 권한</p>
+                    <p className="font-medium text-slate-900">{extraRoleLabel}</p>
+                  </div>
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={actionLoading || drawerUser?.role === "FLOOR_MANAGER"}
-                    onClick={() => drawerUser && void handlePromoteUser(drawerUser)}
+                    disabled={actionLoading || (!canPromoteCurrent && !canDemoteCurrent)}
+                    onClick={() => {
+                      if (!drawerUser) return
+                      setRoleChangeMode(drawerUser.role === "FLOOR_MANAGER" ? "DEMOTE" : "PROMOTE")
+                      setRoleChangeReason("")
+                      setRoleDialogOpen(true)
+                    }}
                   >
-                    층별장 임명
-                  </Button>
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    disabled={actionLoading || drawerUser?.role !== "FLOOR_MANAGER"}
-                    onClick={() => drawerUser && void handleDemoteUser(drawerUser)}
-                  >
-                    일반 거주자 전환
+                    역할 변경
                   </Button>
                 </div>
-              </div>
+                <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                  권한 변경 후 감사 로그에 사유를 남기고, 층별 공지를 통해 빠르게 공유하세요.
+                </div>
+              </section>
 
-              <Separator />
+              <section className="space-y-4 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-slate-900">벌점 현황</h3>
+                    <p className="text-xs text-slate-500">
+                      모듈별 벌점을 확인하고 필요한 경우 바로 조치하세요.
+                    </p>
+                  </div>
+                  <Badge
+                    variant={drawerUser.penalties && drawerUser.penalties > 0 ? "destructive" : "outline"}
+                    className="rounded-full px-3 py-1 text-xs font-semibold"
+                  >
+                    누적 {drawerUser.penalties ?? 0}점
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                    모듈별 벌점 데이터와 최근 벌점 타임라인 연동은 벌점 허브 확장 시 제공될 예정입니다.
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button size="sm" variant="outline" className="gap-1" onClick={() => handleAdjustPenalty(drawerUser)}>
+                      벌점 차감·삭제
+                    </Button>
+                    <Button asChild size="sm" variant="ghost" className="gap-1 text-slate-600">
+                      <Link href={`/admin/fridge?ownerId=${encodeURIComponent(drawerUser.id)}`}>
+                        관련 냉장고 검사 보기
+                      </Link>
+                    </Button>
+                    <Button asChild size="sm" variant="ghost" className="gap-1 text-slate-600">
+                      <Link href="/admin/notifications">벌점 알림 템플릿</Link>
+                    </Button>
+                  </div>
+                </div>
+              </section>
 
-              <div className="space-y-2">
-                <Label className="text-xs text-muted-foreground">위험 작업</Label>
+              <section className="space-y-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-semibold text-rose-700">위험 작업</h3>
+                    <p className="text-xs text-rose-600">
+                      계정을 비활성화하면 DormMate 전체 접근이 차단됩니다.
+                    </p>
+                  </div>
+                </div>
                 <DangerZoneModal
                   title="계정을 비활성화하시겠습니까?"
                   description="비활성화 시 DormMate 접근이 차단되며, 관련 예약/검사 세션이 모두 정리됩니다."
@@ -583,34 +821,86 @@ export default function AdminUsersPage() {
                     await handleDeactivateUser(drawerUser)
                   }}
                 />
-              </div>
+              </section>
+
+              <Dialog
+                open={roleDialogOpen}
+                onOpenChange={(open) => {
+                  if (!drawerUser) {
+                    setRoleDialogOpen(false)
+                    setRoleChangeReason("")
+                    return
+                  }
+                  setRoleDialogOpen(open)
+                  if (open) {
+                    setRoleChangeMode(drawerUser.role === "FLOOR_MANAGER" ? "DEMOTE" : "PROMOTE")
+                  } else {
+                    setRoleChangeReason("")
+                  }
+                }}
+              >
+                <DialogContent className="max-w-md">
+                  <DialogHeader>
+                    <DialogTitle>역할 변경</DialogTitle>
+                    <DialogDescription>
+                      층별장 임명 또는 해제 시 사유를 기록하고 적용하세요.
+                    </DialogDescription>
+                  </DialogHeader>
+                  <div className="space-y-4 py-1">
+                    <div className="space-y-2">
+                      <Label htmlFor="role-change-mode" className="text-xs text-muted-foreground">
+                        변경 작업
+                      </Label>
+                      <Select
+                        value={roleChangeMode}
+                        onValueChange={(value) => setRoleChangeMode(value as RoleChangeMode)}
+                        disabled={!drawerUser || (!canPromoteCurrent && !canDemoteCurrent) || actionLoading}
+                      >
+                        <SelectTrigger id="role-change-mode" className="h-9">
+                          <SelectValue placeholder="작업 선택" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="PROMOTE" disabled={!canPromoteCurrent}>
+                            층별장 임명
+                          </SelectItem>
+                          <SelectItem value="DEMOTE" disabled={!canDemoteCurrent}>
+                            일반 거주자 전환
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="role-change-reason" className="text-xs text-muted-foreground">
+                        사유
+                      </Label>
+                      <Textarea
+                        id="role-change-reason"
+                        value={roleChangeReason}
+                        onChange={(event) => setRoleChangeReason(event.target.value)}
+                        placeholder="예: 해당 층 운영 공백으로 임명"
+                        minLength={2}
+                        maxLength={200}
+                        className="min-h-[96px] resize-y"
+                        disabled={actionLoading}
+                      />
+                      <p className="text-[11px] text-slate-500">내부 감사 로그에 기록됩니다. 최소 2자 이상 입력하세요.</p>
+                    </div>
+                  </div>
+                  <DialogFooter className="gap-2 sm:gap-3">
+                    <Button type="button" variant="ghost" onClick={() => setRoleDialogOpen(false)} disabled={actionLoading}>
+                      취소
+                    </Button>
+                    <Button type="button" onClick={handleRoleChangeConfirm} disabled={!canSubmitRoleChange}>
+                      변경 적용
+                    </Button>
+                  </DialogFooter>
+                </DialogContent>
+              </Dialog>
             </div>
           ) : null}
         </DetailsDrawer>
 
-        <section id="penalty-summary" className="space-y-4">
-          <Card className="rounded-3xl border border-slate-200 bg-white/90 shadow-sm">
-            <CardHeader className="flex flex-row items-center gap-3 border-b border-slate-200 pb-4">
-              <span className="rounded-full bg-rose-100 p-2">
-                <AlertTriangle className="size-4 text-rose-700" aria-hidden />
-              </span>
-              <div>
-                <CardTitle className="text-base font-semibold">벌점 현황 &amp; 임계치 모니터링</CardTitle>
-                <CardDescription className="text-xs text-slate-500">
-                  폐기 조치 및 타 모듈 벌점을 집계해 임계치(10점)를 초과한 사용자를 확인합니다. 상세 기능은 Post-MVP에서 확장됩니다.
-                </CardDescription>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-3 text-sm text-slate-600">
-              <p>현재 벌점 데이터 API 연동 준비 중입니다. Post-MVP에서 도입될 예정이며, 임시로 관리자 대시보드 요약만 제공합니다.</p>
-              <p>
-                누적 벌점이 임계치를 초과하면 알림 정책에서 정의한 템플릿으로 자동 발송되며, 제재 해제/이의신청은 감사 로그와 연결됩니다.
-              </p>
-              <Separator />
-              <p className="text-xs text-slate-500">향후 확장: 벌점 타임라인, 제재 이력, 이의신청 워크플로우.</p>
-            </CardContent>
-          </Card>
-        </section>
+        {/* 사용자 벌점 전체 요약 카드는 사용자 패널로 이전되었습니다. */}
       </div>
 
       <div data-admin-slot="rail" className="space-y-4 text-sm">
@@ -619,7 +909,6 @@ export default function AdminUsersPage() {
           <div className="space-y-2">
             <QuickLink href="/admin/audit?module=roles" label="권한 변경 감사 로그" />
             <QuickLink href="/admin/notifications" label="층별장 임명 알림 템플릿" />
-            <QuickLink href="#penalty-summary" label="벌점 현황" />
           </div>
         </section>
         <Separator />

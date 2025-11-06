@@ -14,7 +14,7 @@ import com.dormmate.backend.modules.auth.presentation.dto.TokenPairResponse;
 import io.jsonwebtoken.Claims;
 import io.jsonwebtoken.JwtException;
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.SignatureAlgorithm;
+import io.jsonwebtoken.Jwts.SIG;
 import javax.crypto.SecretKey;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -43,17 +43,16 @@ public class JwtTokenService {
         Instant now = clock.instant();
         OffsetDateTime issuedAt = OffsetDateTime.ofInstant(now, clock.getZone());
         Instant accessExpiry = now.plusMillis(accessTokenTtlMillis);
-        Instant refreshExpiry = now.plusMillis(refreshTokenTtlMillis);
 
         SecretKey key = tokenProvider.getSecretKey();
 
         String accessToken = Jwts.builder()
-                .setSubject(userId.toString())
-                .setIssuedAt(Date.from(now))
-                .setExpiration(Date.from(accessExpiry))
+                .subject(userId.toString())
+                .issuedAt(Date.from(now))
+                .expiration(Date.from(accessExpiry))
                 .claim("loginId", loginId)
                 .claim("roles", roles)
-                .signWith(key, SignatureAlgorithm.HS256)
+                .signWith(key, SIG.HS256)
                 .compact();
 
         long accessExpiresInSeconds = accessTokenTtlMillis / 1000L;

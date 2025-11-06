@@ -58,10 +58,17 @@ import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBund
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeCompartmentRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeUnitRepository;
+import com.dormmate.backend.modules.inspection.domain.InspectionAction;
+import com.dormmate.backend.modules.inspection.domain.InspectionActionType;
+import com.dormmate.backend.modules.inspection.domain.InspectionSession;
+import com.dormmate.backend.modules.inspection.domain.InspectionStatus;
+import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionActionRepository;
 import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionSessionRepository;
+import com.dormmate.backend.global.error.RetryableProblemException;
 import com.dormmate.backend.global.security.SecurityUtils;
 
 import org.springframework.core.NestedExceptionUtils;
+import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -85,6 +92,7 @@ public class FridgeService {
     private final RoomAssignmentRepository roomAssignmentRepository;
     private final DormUserRepository dormUserRepository;
     private final InspectionSessionRepository inspectionSessionRepository;
+    private final InspectionActionRepository inspectionActionRepository;
     private final Clock clock;
 
     public FridgeService(
@@ -97,6 +105,7 @@ public class FridgeService {
             RoomAssignmentRepository roomAssignmentRepository,
             DormUserRepository dormUserRepository,
             InspectionSessionRepository inspectionSessionRepository,
+            InspectionActionRepository inspectionActionRepository,
             Clock clock
     ) {
         this.fridgeUnitRepository = fridgeUnitRepository;
@@ -108,6 +117,7 @@ public class FridgeService {
         this.roomAssignmentRepository = roomAssignmentRepository;
         this.dormUserRepository = dormUserRepository;
         this.inspectionSessionRepository = inspectionSessionRepository;
+        this.inspectionActionRepository = inspectionActionRepository;
         this.clock = clock;
     }
 
@@ -173,6 +183,7 @@ public class FridgeService {
     public BundleListResponse getBundles(
             UUID slotId,
             String ownerSelector,
+            UUID ownerUserId,
             String statusSelector,
             String search,
             int page,
@@ -189,7 +200,12 @@ public class FridgeService {
         boolean requestAllStatuses = "all".equalsIgnoreCase(statusSelector);
 
         UUID ownerFilter = null;
-        if ("all".equalsIgnoreCase(ownerSelector)) {
+        if (ownerUserId != null) {
+            if (!isAdmin) {
+                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FORBIDDEN");
+            }
+            ownerFilter = ownerUserId;
+        } else if ("all".equalsIgnoreCase(ownerSelector)) {
             if (!isAdmin) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FORBIDDEN");
             }
@@ -255,11 +271,14 @@ public class FridgeService {
 
         Map<UUID, RoomAssignment> ownerAssignments = loadAssignmentsForBundles(paged);
 
+        Map<UUID, FridgeDtoMapper.BundleInspectionSummary> inspectionSummaries = loadInspectionSummaries(paged);
+
         List<FridgeBundleSummaryResponse> summaries = paged.stream()
                 .map(bundle -> FridgeDtoMapper.toSummary(
                         bundle,
                         ownerAssignments.get(bundle.getOwner().getId()),
-                        bundle.getOwner().getId().equals(currentUserId)
+                        bundle.getOwner().getId().equals(currentUserId),
+                        inspectionSummaries.get(bundle.getId())
                 ))
                 .toList();
 
@@ -287,19 +306,32 @@ public class FridgeService {
                 FridgeBundleSearchOrder.DELETED_AT_DESC
         );
 
-        Page<FridgeBundle> resultPage = fridgeBundleRepository.searchBundles(
-                condition,
-                PageRequest.of(safePage, safeSize)
-        );
+        final Page<FridgeBundle> resultPage;
+        try {
+            resultPage = fridgeBundleRepository.searchBundles(
+                    condition,
+                    PageRequest.of(safePage, safeSize)
+            );
+        } catch (DataAccessException ex) {
+            throw new RetryableProblemException(
+                    HttpStatus.SERVICE_UNAVAILABLE,
+                    "BUNDLE_HISTORY_UNAVAILABLE",
+                    "삭제된 포장 이력을 불러오는 중 문제가 발생했습니다.",
+                    30
+            );
+        }
 
-        Map<UUID, RoomAssignment> ownerAssignments = loadAssignmentsForBundles(resultPage.getContent());
+        List<FridgeBundle> bundles = resultPage.getContent();
+        Map<UUID, RoomAssignment> ownerAssignments = loadAssignmentsForBundles(bundles);
         UUID currentUserId = SecurityUtils.getCurrentUserId();
+        Map<UUID, FridgeDtoMapper.BundleInspectionSummary> inspectionSummaries = loadInspectionSummaries(bundles);
 
-        List<FridgeBundleSummaryResponse> summaries = resultPage.getContent().stream()
+        List<FridgeBundleSummaryResponse> summaries = bundles.stream()
                 .map(bundle -> FridgeDtoMapper.toSummary(
                         bundle,
                         ownerAssignments.get(bundle.getOwner().getId()),
-                        bundle.getOwner().getId().equals(currentUserId)
+                        bundle.getOwner().getId().equals(currentUserId),
+                        inspectionSummaries.get(bundle.getId())
                 ))
                 .toList();
 
@@ -558,11 +590,108 @@ public class FridgeService {
         Set<UUID> ownerIds = bundles.stream()
                 .map(bundle -> bundle.getOwner().getId())
                 .collect(Collectors.toSet());
+        return loadActiveAssignments(ownerIds);
+    }
+
+    private Map<UUID, RoomAssignment> loadActiveAssignments(Set<UUID> userIds) {
         Map<UUID, RoomAssignment> result = new HashMap<>();
-        for (UUID ownerId : ownerIds) {
-            roomAssignmentRepository.findActiveAssignment(ownerId).ifPresent(assignment -> result.put(ownerId, assignment));
+        for (UUID ownerId : userIds) {
+            roomAssignmentRepository.findActiveAssignment(ownerId)
+                    .ifPresent(assignment -> result.put(ownerId, assignment));
         }
         return result;
+    }
+
+    private Map<UUID, FridgeDtoMapper.BundleInspectionSummary> loadInspectionSummaries(List<FridgeBundle> bundles) {
+        if (bundles.isEmpty()) {
+            return Map.of();
+        }
+        Set<UUID> compartmentIds = bundles.stream()
+                .map(bundle -> bundle.getFridgeCompartment().getId())
+                .collect(Collectors.toSet());
+        if (compartmentIds.isEmpty()) {
+            return Map.of();
+        }
+        List<InspectionSession> sessions = inspectionSessionRepository.findLatestSessionsByCompartmentIds(
+                compartmentIds,
+                InspectionStatus.SUBMITTED
+        );
+        if (sessions.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, InspectionSession> sessionByCompartment = new HashMap<>();
+        for (InspectionSession session : sessions) {
+            sessionByCompartment.put(session.getFridgeCompartment().getId(), session);
+        }
+        List<InspectionAction> actions = inspectionActionRepository.findByInspectionSessionIn(sessions);
+        Map<UUID, List<InspectionAction>> actionsBySession = actions.stream()
+                .collect(Collectors.groupingBy(action -> action.getInspectionSession().getId()));
+
+        Map<UUID, FridgeDtoMapper.BundleInspectionSummary> result = new HashMap<>();
+        for (FridgeBundle bundle : bundles) {
+            InspectionSession session = sessionByCompartment.get(bundle.getFridgeCompartment().getId());
+            if (session == null) {
+                continue;
+            }
+            List<InspectionAction> sessionActions = actionsBySession.getOrDefault(session.getId(), List.of());
+            FridgeDtoMapper.BundleInspectionSummary summary = buildBundleInspectionSummary(bundle, session, sessionActions);
+            if (summary != null) {
+                result.put(bundle.getId(), summary);
+            }
+        }
+        return result;
+    }
+
+    private FridgeDtoMapper.BundleInspectionSummary buildBundleInspectionSummary(
+            FridgeBundle bundle,
+            InspectionSession session,
+            List<InspectionAction> actions
+    ) {
+        if (actions == null) {
+            actions = List.of();
+        }
+        UUID bundleId = bundle.getId();
+        int warningCount = 0;
+        int disposalCount = 0;
+        for (InspectionAction action : actions) {
+            if (action.getFridgeBundle() == null || action.getFridgeBundle().getId() == null) {
+                continue;
+            }
+            if (!bundleId.equals(action.getFridgeBundle().getId())) {
+                continue;
+            }
+            InspectionActionType type = action.getActionType();
+            if (type == InspectionActionType.DISPOSE_EXPIRED || type == InspectionActionType.UNREGISTERED_DISPOSE) {
+                disposalCount++;
+            } else if (type == InspectionActionType.WARN_INFO_MISMATCH || type == InspectionActionType.WARN_STORAGE_POOR) {
+                warningCount++;
+            }
+        }
+        OffsetDateTime inspectionAt = session.getEndedAt();
+        if (inspectionAt == null) {
+            inspectionAt = session.getSubmittedAt();
+        }
+        if (inspectionAt == null) {
+            inspectionAt = session.getStartedAt();
+        }
+        if (inspectionAt == null) {
+            inspectionAt = session.getCreatedAt();
+        }
+        String alertState;
+        if (disposalCount > 0) {
+            alertState = "critical";
+        } else if (warningCount > 0) {
+            alertState = "warn";
+        } else {
+            alertState = "ok";
+        }
+        return new FridgeDtoMapper.BundleInspectionSummary(
+                session.getId(),
+                inspectionAt,
+                warningCount,
+                disposalCount,
+                alertState
+        );
     }
 
     private void verifyBundleReadAccess(

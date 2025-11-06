@@ -1,7 +1,9 @@
 "use client"
-import { forwardRef } from "react"
-import { Button, type ButtonProps } from "@/components/ui/button"
+import { forwardRef, type ComponentProps } from "react"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
+
+type ButtonProps = ComponentProps<typeof Button>
 
 export const PrimaryButton = forwardRef<HTMLButtonElement, ButtonProps>(function PrimaryButton(
   { className, ...props },

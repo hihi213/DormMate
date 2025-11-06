@@ -4,9 +4,12 @@ import java.util.List;
 import java.util.UUID;
 
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionRequest;
+import com.dormmate.backend.modules.inspection.presentation.dto.InspectionScheduleResponse;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionSessionResponse;
+import com.dormmate.backend.modules.inspection.presentation.dto.ReinspectRequest;
 import com.dormmate.backend.modules.inspection.presentation.dto.StartInspectionRequest;
 import com.dormmate.backend.modules.inspection.presentation.dto.SubmitInspectionRequest;
+import com.dormmate.backend.modules.inspection.presentation.dto.UpdateInspectionSessionRequest;
 import com.dormmate.backend.modules.inspection.application.InspectionService;
 
 import jakarta.validation.Valid;
@@ -16,6 +19,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -43,6 +47,14 @@ public class InspectionController {
     @PostMapping
     public ResponseEntity<InspectionSessionResponse> startSession(@Valid @RequestBody StartInspectionRequest request) {
         return ResponseEntity.status(201).body(inspectionService.startSession(request));
+    }
+
+    @PatchMapping("/{sessionId}")
+    public ResponseEntity<InspectionSessionResponse> updateSession(
+            @PathVariable("sessionId") UUID sessionId,
+            @Valid @RequestBody UpdateInspectionSessionRequest request
+    ) {
+        return ResponseEntity.ok(inspectionService.patchSession(sessionId, request));
     }
 
     @GetMapping("/active")
@@ -79,5 +91,18 @@ public class InspectionController {
             @RequestBody(required = false) SubmitInspectionRequest request
     ) {
         return ResponseEntity.ok(inspectionService.submitSession(sessionId, request));
+    }
+
+    @PostMapping("/{sessionId}/notifications/resend")
+    public ResponseEntity<InspectionSessionResponse> resendNotifications(@PathVariable("sessionId") UUID sessionId) {
+        return ResponseEntity.ok(inspectionService.resendInspectionNotifications(sessionId));
+    }
+
+    @PostMapping("/{sessionId}/reinspect")
+    public ResponseEntity<InspectionScheduleResponse> requestReinspection(
+            @PathVariable("sessionId") UUID sessionId,
+            @RequestBody(required = false) ReinspectRequest request
+    ) {
+        return ResponseEntity.status(201).body(inspectionService.requestReinspection(sessionId, request));
     }
 }

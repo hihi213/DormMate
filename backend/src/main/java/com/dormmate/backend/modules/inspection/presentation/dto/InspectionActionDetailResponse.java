@@ -17,6 +17,10 @@ public record InspectionActionDetailResponse(
         String note,
         UUID correlationId,
         List<InspectionActionItemResponse> items,
-        List<PenaltyHistoryResponse> penalties
+        List<PenaltyHistoryResponse> penalties,
+        String roomNumber,
+        Short personalNo,
+        String notificationStatus,
+        Integer penaltyPoints
 ) {
 }

@@ -103,7 +103,7 @@ export function withPerformanceMonitor<T extends object>(
       return () => cancelAnimationFrame(timer)
     })
 
-    return <WrappedComponent {...props} ref={ref} />
+    return React.createElement(WrappedComponent, { ...(props as T), ref })
   })
 
   OptimizedComponent.displayName = `withPerformanceMonitor(${displayName})`
@@ -116,7 +116,9 @@ export function useBundleAnalyzer() {
   const analyzeBundle = useCallback(() => {
     if (typeof window !== 'undefined' && 'performance' in window) {
       const navigation = performance.getEntriesByType('navigation')[0] as PerformanceNavigationTiming
-      const resources = performance.getEntriesByType('resource')
+      const resources = performance
+        .getEntriesByType('resource')
+        .filter((entry): entry is PerformanceResourceTiming => typeof (entry as PerformanceResourceTiming).transferSize === "number")
       
       const bundleSize = resources
         .filter(resource => 
@@ -124,7 +126,7 @@ export function useBundleAnalyzer() {
           resource.name.includes('.css') ||
           resource.name.includes('chunk')
         )
-        .reduce((total, resource) => total + (resource.transferSize || 0), 0)
+        .reduce((total, resource) => total + resource.transferSize, 0)
       
       console.log('📦 번들 크기 분석:', {
         총_JS_CSS_크기: `${(bundleSize / 1024 / 1024).toFixed(2)}MB`,

@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { Fragment, useCallback, useEffect, useMemo, useState } from "react"
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import {
   AlertCircle,
   AlertTriangle,
@@ -30,6 +31,8 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Separator } from "@/components/ui/separator"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { getDefaultErrorMessage } from "@/lib/api-errors"
 import { useToast } from "@/hooks/use-toast"
@@ -41,9 +44,14 @@ import {
   fetchAdminCompartments,
   fetchAdminDeletedBundles,
   fetchAdminInspectionSessions,
+  updateAdminInspectionSession,
+  resendInspectionNotification,
+  requestInspectionReinspection,
   previewReallocation,
   type AdminBundleListResponseDto,
+  type AdminInspectionSessionDto,
   type AdminReallocationPreviewDto,
+  type AdminUpdateInspectionSessionRequestDto,
 } from "@/features/admin/api/fridge"
 import {
   mapAdminBundleSummary,
@@ -51,6 +59,7 @@ import {
   mapAdminSlot,
   type AdminBundleSummary,
   type AdminFridgeSlot,
+  type AdminInspectionActionDetail,
   type AdminInspectionSession,
 } from "@/features/admin/utils/fridge-adapter"
 import { updateFridgeCompartment } from "@/features/fridge/api"
@@ -80,6 +89,16 @@ const INSPECTION_STATUS_LABEL: Record<AdminInspectionSession["status"], string> 
   CANCELED: "취소됨",
 }
 
+const formatInspectorDisplay = (session: AdminInspectionSession) => {
+  const name = session.startedByName?.trim()
+  if (name) return name
+
+  const login = session.startedByLogin?.trim()
+  if (login) return login
+
+  return session.startedBy ? session.startedBy.slice(0, 8) : "-"
+}
+
 const RESOURCE_STATUS_OPTIONS: ResourceStatus[] = ["ACTIVE", "SUSPENDED", "REPORTED", "RETIRED"]
 
 type ApiErrorLike = Error & { code?: string; status?: number }
@@ -90,12 +109,47 @@ const REALLOCATION_WARNING_LABELS: Record<string, string> = {
   INSPECTION_IN_PROGRESS: "검사 진행 중",
 }
 
-const INSPECTION_ACTION_LABELS: Record<string, string> = {
+const INSPECTION_ACTION_LABELS = {
   WARN_INFO_MISMATCH: "정보 불일치 경고",
   WARN_STORAGE_POOR: "보관 상태 경고",
-  DISPOSE_EXPIRED: "유통기한 폐기",
+  DISPOSE_EXPIRED: "유통기한 폐기", // 벌점 부여
   UNREGISTERED_DISPOSE: "미등록 물품 폐기",
   PASS: "정상",
+} as const
+
+const INSPECTION_NOTIFICATION_LABELS: Record<string, string> = {
+  PENDING: "발송 대기",
+  SENT: "발송 완료",
+  FAILED: "발송 실패",
+  UNREAD: "미확인",
+  READ: "확인 완료",
+  EXPIRED: "만료",
+}
+
+type InspectionActionType = keyof typeof INSPECTION_ACTION_LABELS
+const INSPECTION_ACTION_TYPES = Object.keys(INSPECTION_ACTION_LABELS) as InspectionActionType[]
+const DEFAULT_INSPECTION_ACTION: InspectionActionType = INSPECTION_ACTION_TYPES[0] ?? "PASS"
+
+const isInspectionActionType = (value: string | null | undefined): value is InspectionActionType =>
+  typeof value === "string" && value in INSPECTION_ACTION_LABELS
+
+const BUNDLE_ALERT_LABELS: Record<string, { label: string; className: string }> = {
+  ACTION_REQUIRED: { label: "조치 필요", className: "bg-rose-100 text-rose-700" },
+  PENDING_REVIEW: { label: "검토 대기", className: "bg-amber-100 text-amber-700" },
+  CLEARED: { label: "정상화", className: "bg-emerald-100 text-emerald-700" },
+}
+
+type InspectionActionDraft = {
+  localId: string
+  actionId?: number | null
+  actionType: InspectionActionType
+  note: string
+  bundleId?: string | null
+  targetUserId?: string | null
+  roomNumber?: string | null
+  personalNo?: number | null
+  remove?: boolean
+  isNew?: boolean
 }
 
 function getErrorCode(error: unknown): string | undefined {
@@ -126,7 +180,7 @@ function resolveDeletedBundlesError(error: unknown): string {
   return getDefaultErrorMessage(code) ?? `${fallback} (${code})`
 }
 
-function formatInspectionActionLabel(action: string): string {
+function formatInspectionActionLabel(action: InspectionActionType): string {
   return INSPECTION_ACTION_LABELS[action] ?? action
 }
 
@@ -183,22 +237,26 @@ type DeletedState = {
   response: AdminBundleListResponseDto | null
 }
 
-type BundleState = {
+type BundleDataState = {
   loading: boolean
   error: string | null
   items: AdminBundleSummary[]
   totalCount: number
-  page: number
-  search: string
 }
 
-const INITIAL_BUNDLE_STATE: BundleState = {
+type ActionShortcut = {
+  id: string
+  label: string
+  description: string
+  href?: string
+  onClick?: () => void
+}
+
+const INITIAL_BUNDLE_DATA: BundleDataState = {
   loading: false,
   error: null,
   items: [],
   totalCount: 0,
-  page: 0,
-  search: "",
 }
 
 type InspectionState = {
@@ -234,39 +292,157 @@ export default function AdminFridgePage() {
     saving: false,
   })
 
-  const [bundleState, setBundleState] = useState<BundleState>(INITIAL_BUNDLE_STATE)
+  const router = useRouter()
+  const pathname = usePathname()
+  const [bundleData, setBundleData] = useState<BundleDataState>(INITIAL_BUNDLE_DATA)
+  const [bundlePage, setBundlePage] = useState(0)
+  const [bundleSearch, setBundleSearch] = useState("")
+  const [bundleContextKey, setBundleContextKey] = useState("")
   const [bundleSearchInput, setBundleSearchInput] = useState("")
   const [labelReuseLookup, setLabelReuseLookup] = useState<Record<string, string>>({})
+  const [slotAlerts, setSlotAlerts] = useState<Record<string, boolean>>({})
+  const searchParams = useSearchParams()
+  const initialSlotIdRef = useRef<string | null>(searchParams.get("slot") ?? searchParams.get("slotId"))
+  const initialOwnerIdRef = useRef<string | null>(searchParams.get("ownerId"))
+  const initialBundleIdRef = useRef<string | null>(searchParams.get("bundle") ?? searchParams.get("bundleId"))
+  const initialInspectionIdRef = useRef<string | null>(
+    searchParams.get("inspectionId") ?? searchParams.get("inspection"),
+  )
+  const [pendingSlotId, setPendingSlotId] = useState<string | null>(initialSlotIdRef.current)
+  const [ownerFilterId, setOwnerFilterId] = useState<string | null>(initialOwnerIdRef.current)
+  const [pendingBundleFocusId, setPendingBundleFocusId] = useState<string | null>(initialBundleIdRef.current)
+  const [highlightedBundleId, setHighlightedBundleId] = useState<string | null>(initialBundleIdRef.current)
+  const [pendingInspectionFocusId, setPendingInspectionFocusId] = useState<string | null>(
+    initialInspectionIdRef.current,
+  )
+  const [highlightedInspectionId, setHighlightedInspectionId] = useState<string | null>(
+    initialInspectionIdRef.current,
+  )
+  const [syncQueryEnabled, setSyncQueryEnabled] = useState(false)
+  const [inspectionEditOpen, setInspectionEditOpen] = useState(false)
+  const [inspectionDraftActions, setInspectionDraftActions] = useState<InspectionActionDraft[]>([])
+  const [inspectionDraftNotes, setInspectionDraftNotes] = useState("")
+  const [inspectionEditSubmitting, setInspectionEditSubmitting] = useState(false)
+  const [inspectionActionLoading, setInspectionActionLoading] = useState(false)
+  const [inspectionReloadToken, setInspectionReloadToken] = useState(0)
+  const inspectionOriginalActionsRef = useRef<AdminInspectionActionDetail[]>([])
+
+  useEffect(() => {
+    setSyncQueryEnabled(true)
+  }, [])
+
+  const updateQueryParams = useCallback(
+    (mutator: (params: URLSearchParams) => boolean) => {
+      if (!router || !pathname) return
+      const params = new URLSearchParams(searchParams.toString())
+      const changed = mutator(params)
+      if (!changed) return
+      const next = params.toString()
+      router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false })
+    },
+    [router, pathname, searchParams],
+  )
+
+  useEffect(() => {
+    if (!syncQueryEnabled || pendingSlotId !== null) return
+    updateQueryParams((params) => {
+      if (selectedSlotId) {
+        const current = params.get("slot") ?? params.get("slotId")
+        if (current === selectedSlotId) return false
+        params.set("slot", selectedSlotId)
+        params.delete("slotId")
+        return true
+      }
+      let changed = false
+      if (params.has("slot")) {
+        params.delete("slot")
+        changed = true
+      }
+      if (params.has("slotId")) {
+        params.delete("slotId")
+        changed = true
+      }
+      return changed
+    })
+  }, [selectedSlotId, syncQueryEnabled, pendingSlotId, updateQueryParams])
+
+  useEffect(() => {
+    if (!syncQueryEnabled) return
+    updateQueryParams((params) => {
+      const currentOwner = params.get("ownerId")
+      if (ownerFilterId) {
+        if (currentOwner === ownerFilterId) return false
+        params.set("ownerId", ownerFilterId)
+        return true
+      }
+      if (!currentOwner) return false
+      params.delete("ownerId")
+      return true
+    })
+  }, [ownerFilterId, syncQueryEnabled, updateQueryParams])
+
+  const clearQueryKeys = useCallback(
+    (keys: string[]) =>
+      updateQueryParams((params) => {
+        let changed = false
+        keys.forEach((key) => {
+          if (params.has(key)) {
+            params.delete(key)
+            changed = true
+          }
+        })
+        return changed
+      }),
+    [updateQueryParams],
+  )
+
+  useEffect(() => {
+    const slotParam = searchParams.get("slot") ?? searchParams.get("slotId")
+    if (slotParam && slotParam !== selectedSlotId && slotParam !== pendingSlotId) {
+      setPendingSlotId(slotParam)
+    }
+
+    const ownerParam = searchParams.get("ownerId")
+    if (ownerParam !== ownerFilterId) {
+      setOwnerFilterId(ownerParam)
+    }
+
+    const bundleParam = searchParams.get("bundle") ?? searchParams.get("bundleId")
+    if (
+      bundleParam &&
+      bundleParam !== highlightedBundleId &&
+      bundleParam !== pendingBundleFocusId
+    ) {
+      setPendingBundleFocusId(bundleParam)
+      setHighlightedBundleId(bundleParam)
+    }
+
+    const inspectionParam = searchParams.get("inspectionId") ?? searchParams.get("inspection")
+    if (
+      inspectionParam &&
+      inspectionParam !== highlightedInspectionId &&
+      inspectionParam !== pendingInspectionFocusId
+    ) {
+      setPendingInspectionFocusId(inspectionParam)
+      setHighlightedInspectionId(inspectionParam)
+    }
+  }, [
+    searchParams,
+    selectedSlotId,
+    pendingSlotId,
+    ownerFilterId,
+    highlightedBundleId,
+    pendingBundleFocusId,
+    highlightedInspectionId,
+    pendingInspectionFocusId,
+  ])
 
   const resetBundleFilters = useCallback(() => {
     setBundleSearchInput("")
-    setBundleState((prev) => ({
-      ...prev,
-      loading: false,
-      error: null,
-      items: [],
-      totalCount: 0,
-      page: 0,
-      search: "",
-    }))
+    setBundleSearch("")
+    setBundlePage(0)
+    setBundleData(INITIAL_BUNDLE_DATA)
   }, [])
-
-  const handleSlotSelect = useCallback(
-    (slotId: string) => {
-      if (slotId === selectedSlotId) {
-        if (isMobile) {
-          setMobileDetailOpen(true)
-        }
-        return
-      }
-      resetBundleFilters()
-      setSelectedSlotId(slotId)
-      if (isMobile) {
-        setMobileDetailOpen(true)
-      }
-    },
-    [selectedSlotId, resetBundleFilters, isMobile],
-  )
 
   const handleFloorChange = useCallback(
     (floor: number) => {
@@ -284,6 +460,8 @@ export default function AdminFridgePage() {
     items: [],
     status: "SUBMITTED",
   })
+  const [selectedInspection, setSelectedInspection] = useState<AdminInspectionSession | null>(null)
+  const [inspectionDialogOpen, setInspectionDialogOpen] = useState(false)
 
   const [deletedState, setDeletedState] = useState<DeletedState>({
     open: false,
@@ -293,12 +471,12 @@ export default function AdminFridgePage() {
     sinceMonths: 3,
     response: null,
   })
-  const [detailTab, setDetailTab] = useState<DetailTabValue>("bundles")
+  const [detailTab, setDetailTab] = useState<DetailTabValue>("inspections")
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
 
   const [reallocationOpen, setReallocationOpen] = useState(false)
   const [reallocationLoading, setReallocationLoading] = useState(false)
-  const [reallocationPreview, setReallocationPreview] = useState<AdminReallocationPreviewDto | null>(null)
+  const [reallocationPlan, setReallocationPlan] = useState<AdminReallocationPreviewDto | null>(null)
   const [reallocationSelections, setReallocationSelections] = useState<Record<string, string[]>>({})
   const [reallocationError, setReallocationError] = useState<string | null>(null)
   const [reallocationApplying, setReallocationApplying] = useState(false)
@@ -308,9 +486,22 @@ export default function AdminFridgePage() {
     [slots, selectedSlotId],
   )
 
+  const computedBundleContextKey = useMemo(
+    () => `${selectedSlotId ?? ""}|${ownerFilterId ?? ""}`,
+    [selectedSlotId, ownerFilterId],
+  )
+
+  const previousOwnerFilterRef = useRef<string | null>(ownerFilterId)
+
   useEffect(() => {
-    setDetailTab("bundles")
-  }, [selectedSlotId])
+    const previous = previousOwnerFilterRef.current
+    if (ownerFilterId && ownerFilterId !== previous) {
+      setDetailTab("bundles")
+    } else if (!ownerFilterId && previous) {
+      setDetailTab("inspections")
+    }
+    previousOwnerFilterRef.current = ownerFilterId
+  }, [ownerFilterId])
 
   useEffect(() => {
     if (!isMobile) {
@@ -324,12 +515,85 @@ export default function AdminFridgePage() {
     }
   }, [selectedSlotId])
 
-  const actionShortcuts = useMemo(
+  const handleSlotSelect = useCallback(
+    (slotId: string) => {
+      if (slotId === selectedSlotId) {
+        if (isMobile) {
+          setMobileDetailOpen((prev) => !prev)
+        }
+        return
+      }
+      resetBundleFilters()
+      setHighlightedBundleId(null)
+      setHighlightedInspectionId(null)
+      setSelectedSlotId(slotId)
+      if (isMobile) {
+        setMobileDetailOpen(false)
+      }
+    },
+    [selectedSlotId, resetBundleFilters, isMobile],
+  )
+
+  useEffect(() => {
+    if (!pendingBundleFocusId) return
+    if (bundleData.loading) return
+    const match = bundleData.items.find((bundle) => bundle.bundleId === pendingBundleFocusId)
+    if (!match) {
+      return
+    }
+    if (selectedSlotId !== match.slotId && match.slotId) {
+      handleSlotSelect(match.slotId)
+      return
+    }
+    if (detailTab !== "bundles") {
+      setDetailTab("bundles")
+    }
+    setHighlightedBundleId(match.bundleId)
+    setPendingBundleFocusId(null)
+    clearQueryKeys(["bundle", "bundleId"])
+  }, [
+    pendingBundleFocusId,
+    bundleData.loading,
+    bundleData.items,
+    selectedSlotId,
+    handleSlotSelect,
+    detailTab,
+    clearQueryKeys,
+  ])
+
+  useEffect(() => {
+    if (!pendingInspectionFocusId) return
+    if (inspectionState.loading) return
+    const match = inspectionState.items.find(
+      (inspection) => inspection.sessionId === pendingInspectionFocusId,
+    )
+    if (!match) {
+      return
+    }
+    if (detailTab !== "inspections") {
+      setDetailTab("inspections")
+    }
+    setHighlightedInspectionId(match.sessionId)
+    setPendingInspectionFocusId(null)
+    if (match.hasIssue) {
+      setSelectedInspection(match)
+      setInspectionDialogOpen(true)
+    }
+    clearQueryKeys(["inspection", "inspectionId"])
+  }, [
+    pendingInspectionFocusId,
+    inspectionState.loading,
+    inspectionState.items,
+    detailTab,
+    clearQueryKeys,
+  ])
+
+  const actionShortcuts = useMemo<ActionShortcut[]>(
     () => [
       {
-        id: "preview",
-        label: `${selectedFloor}층 재배분 프리뷰`,
-        description: "호실 분배 추천안을 생성하고 잠금/검사 중 칸을 확인합니다.",
+        id: "reallocate",
+        label: `${selectedFloor}층 호실 재배분`,
+        description: "칸-호실 배정을 재정비하고 잠금/검사 중 칸을 함께 확인합니다.",
         onClick: () => setReallocationOpen(true),
       },
       {
@@ -361,21 +625,67 @@ export default function AdminFridgePage() {
     [selectedFloor, selectedSlot, toast],
   )
 
+  const evaluateSlotAlerts = useCallback(async (slotList: AdminFridgeSlot[]) => {
+    if (slotList.length === 0) {
+      setSlotAlerts({})
+      return
+    }
+    const results = await Promise.all(
+      slotList.map(async (slot: AdminFridgeSlot) => {
+        try {
+          const sessions = await fetchAdminInspectionSessions({
+            slotId: slot.slotId,
+            status: "SUBMITTED",
+            limit: 3,
+          })
+          const mapped: AdminInspectionSession[] = sessions.map(mapAdminInspectionSession)
+          const hasIssue = mapped.some(
+            (session) => session.warningCount > 0 || session.disposalCount > 0,
+          )
+          return [slot.slotId, hasIssue] as const
+        } catch (_error) {
+          return [slot.slotId, false] as const
+        }
+      }),
+    )
+    const nextAlerts: Record<string, boolean> = {}
+    results.forEach(([slotId, hasIssue]) => {
+      nextAlerts[slotId] = hasIssue
+    })
+    setSlotAlerts(nextAlerts)
+  }, [])
+
   const loadSlots = useCallback(
     async (floor: number) => {
       setSlotsLoading(true)
       setSlotsError(null)
       try {
         const response = await fetchAdminCompartments({ floor })
-        const mapped = response.map(mapAdminSlot)
+        const mapped: AdminFridgeSlot[] = response.map(mapAdminSlot)
         setSlots(mapped)
+        void evaluateSlotAlerts(mapped)
+
+        const pending = pendingSlotId
+        const pendingExists = pending && mapped.some((slot) => slot.slotId === pending)
+        if (pendingExists) {
+          handleSlotSelect(pending)
+          setPendingSlotId(null)
+          return
+        }
+
         const hasCurrent = mapped.some((slot) => slot.slotId === selectedSlotId)
         if (!hasCurrent) {
-          const nextSlotId = mapped[0]?.slotId ?? null
-          if (nextSlotId) {
-            handleSlotSelect(nextSlotId)
+          if (pending) {
+            if (mapped.length === 0) {
+              setSelectedSlotId(null)
+            }
           } else {
-            setSelectedSlotId(null)
+            const nextSlotId = mapped[0]?.slotId ?? null
+            if (nextSlotId) {
+              handleSlotSelect(nextSlotId)
+            } else {
+              setSelectedSlotId(null)
+            }
           }
         }
       } catch (error) {
@@ -390,12 +700,45 @@ export default function AdminFridgePage() {
         setSlotsLoading(false)
       }
     },
-    [selectedSlotId, handleSlotSelect, toast],
+    [selectedSlotId, handleSlotSelect, toast, evaluateSlotAlerts, pendingSlotId],
   )
 
   useEffect(() => {
     void loadSlots(selectedFloor)
   }, [selectedFloor, loadSlots])
+
+  useEffect(() => {
+    const targetSlotId = pendingSlotId
+    if (!targetSlotId) return
+    if (slots.some((slot) => slot.slotId === targetSlotId)) {
+      return
+    }
+    let cancelled = false
+    const resolveFloor = async () => {
+      for (const floor of FLOOR_OPTIONS) {
+        if (floor === selectedFloor) continue
+        try {
+          const response = await fetchAdminCompartments({ floor })
+          if (cancelled) return
+          const mapped = response.map(mapAdminSlot)
+          const found = mapped.some((slot) => slot.slotId === targetSlotId)
+          if (found) {
+            setSelectedFloor(floor)
+            return
+          }
+        } catch (error) {
+          console.warn("해당 칸의 층 정보를 확인하지 못했습니다.", error)
+        }
+      }
+      if (!cancelled) {
+        setPendingSlotId(null)
+      }
+    }
+    void resolveFloor()
+    return () => {
+      cancelled = true
+    }
+  }, [pendingSlotId, slots, selectedFloor, setSelectedFloor, setPendingSlotId])
 
   useEffect(() => {
     const slotId = selectedSlotId
@@ -419,14 +762,17 @@ export default function AdminFridgePage() {
               delete next[key]
             }
           }
-          const entries = Array.isArray(response.items) ? response.items : []
-          entries.forEach((item) => {
+          const entries = Array.isArray(response.items)
+            ? (response.items as AdminBundleListResponseDto["items"])
+            : []
+          entries.forEach((item: (typeof entries)[number]) => {
             if (!item) return
             if (item.slotId !== slotId) return
-            const label = item.labelDisplay
+            const bundle = mapAdminBundleSummary(item)
+            const label = bundle.labelDisplay
             if (!label) return
             const deletedAt =
-              item.deletedAt ?? item.removedAt ?? item.updatedAt ?? item.createdAt ?? null
+              bundle.deletedAt ?? bundle.removedAt ?? bundle.updatedAt ?? null
             next[`${prefix}${label}`] = deletedAt ?? ""
           })
           return next
@@ -455,44 +801,65 @@ export default function AdminFridgePage() {
   }, [selectedSlotId])
 
   useEffect(() => {
-    if (!selectedSlotId) return
-    setBundleState((prev) => ({ ...prev, loading: true, error: null }))
+    if (!selectedSlotId) {
+      setBundleData(INITIAL_BUNDLE_DATA)
+      return
+    }
+
+    if (bundleContextKey !== computedBundleContextKey) {
+      setBundleContextKey(computedBundleContextKey)
+      setBundlePage(0)
+      setBundleData(INITIAL_BUNDLE_DATA)
+      return
+    }
+
+    setBundleData((prev) => ({ ...prev, loading: true, error: null }))
+    const currentOwner = ownerFilterId
+    const currentSearch = bundleSearch
+    const currentPage = bundlePage
     let active = true
     const load = async () => {
       try {
         const data = await fetchAdminBundleList({
           slotId: selectedSlotId,
-          search: bundleState.search,
-          page: bundleState.page,
+          search: currentSearch,
+          page: currentPage,
           size: BUNDLE_PAGE_SIZE,
-          owner: "all",
+          owner: currentOwner ? undefined : "all",
+          ownerUserId: currentOwner ?? undefined,
           status: "active",
         })
         if (!active) return
-        setBundleState((prev) => ({
-          ...prev,
+        setBundleData({
           loading: false,
+          error: null,
           items: data.items.map(mapAdminBundleSummary),
           totalCount: data.totalCount ?? data.items.length,
-        }))
+        })
       } catch (error) {
         if (!active) return
         const message =
           error instanceof Error ? error.message : "포장 목록을 불러오는 중 오류가 발생했습니다."
-        setBundleState((prev) => ({
-          ...prev,
+        setBundleData({
           loading: false,
           error: message,
           items: [],
           totalCount: 0,
-        }))
+        })
       }
     }
     void load()
     return () => {
       active = false
     }
-  }, [selectedSlotId, bundleState.search, bundleState.page])
+  }, [
+    selectedSlotId,
+    bundleContextKey,
+    computedBundleContextKey,
+    bundleSearch,
+    bundlePage,
+    ownerFilterId,
+  ])
 
   useEffect(() => {
     if (!selectedSlotId) return
@@ -500,8 +867,7 @@ export default function AdminFridgePage() {
     let active = true
     const load = async () => {
       try {
-        const statusParam =
-          inspectionState.status === "ALL" ? undefined : inspectionState.status
+        const statusParam = inspectionState.status === "ALL" ? undefined : inspectionState.status
         const sessions = await fetchAdminInspectionSessions({
           slotId: selectedSlotId,
           status: statusParam,
@@ -515,8 +881,16 @@ export default function AdminFridgePage() {
         }))
       } catch (error) {
         if (!active) return
+        const status =
+          error && typeof error === "object" && "status" in error
+            ? (error as { status?: number }).status
+            : undefined
         const message =
-          error instanceof Error ? error.message : "검사 기록을 불러오는 중 오류가 발생했습니다."
+          status === 503
+            ? "검사 기록을 불러오는 중입니다. 잠시 후 다시 시도해 주세요."
+            : error instanceof Error
+              ? error.message
+              : "검사 기록을 불러오는 중 오류가 발생했습니다."
         setInspectionState((prev) => ({
           ...prev,
           loading: false,
@@ -534,7 +908,7 @@ export default function AdminFridgePage() {
     return () => {
       active = false
     }
-  }, [selectedSlotId, inspectionState.status, toast])
+  }, [selectedSlotId, inspectionState.status, inspectionReloadToken, toast])
 
   const stats = useMemo(() => {
     if (slots.length === 0) {
@@ -560,17 +934,31 @@ export default function AdminFridgePage() {
   }, [slots])
 
   const totalBundlePages = useMemo(
-    () => Math.max(1, Math.ceil(bundleState.totalCount / BUNDLE_PAGE_SIZE)),
-    [bundleState.totalCount],
+    () => Math.max(1, Math.ceil(bundleData.totalCount / BUNDLE_PAGE_SIZE)),
+    [bundleData.totalCount],
   )
+
+  const visibleBundles = useMemo(() => {
+    if (!ownerFilterId) return bundleData.items
+    return bundleData.items.filter((bundle) => bundle.ownerUserId === ownerFilterId)
+  }, [bundleData.items, ownerFilterId])
+
+  const bundleOwnerLookup = useMemo(() => {
+    const map = new Map<string, string>()
+    bundleData.items.forEach((bundle) => {
+      const name = bundle.ownerDisplayName ?? bundle.ownerRoomNumber ?? "사용자"
+      map.set(bundle.bundleId, name)
+      if (bundle.canonicalId) {
+        map.set(bundle.canonicalId, name)
+      }
+    })
+    return map
+  }, [bundleData.items])
 
   const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
-    setBundleState((prev) => ({
-      ...prev,
-      page: 0,
-      search: bundleSearchInput.trim(),
-    }))
+    setBundlePage(0)
+    setBundleSearch(bundleSearchInput.trim())
   }
 
   const handleResetSearch = () => {
@@ -583,7 +971,7 @@ export default function AdminFridgePage() {
     void loadDeletedBundles(0, deletedState.sinceMonths)
   }
 
-  const loadDeletedBundles = async (page: number, months: number) => {
+  const loadDeletedBundles = useCallback(async (page: number, months: number) => {
     setDeletedState((prev) => ({
       ...prev,
       loading: true,
@@ -605,21 +993,37 @@ export default function AdminFridgePage() {
         response,
       }))
     } catch (error) {
-      const message = resolveDeletedBundlesError(error)
+      const status =
+        error && typeof error === "object" && "status" in error
+          ? (error as { status?: number }).status
+          : undefined
+      const retryMessage =
+        status === 503
+          ? "서버가 일시적으로 혼잡합니다. 잠시 후 다시 시도해 주세요."
+          : resolveDeletedBundlesError(error)
       setDeletedState((prev) => ({
         ...prev,
         loading: false,
-        error: message,
+        error: retryMessage,
         response: null,
       }))
+      toast({
+        title: "삭제 이력을 불러올 수 없습니다.",
+        description: retryMessage,
+        variant: "destructive",
+      })
     }
-  }
+  }, [toast])
 
   const handleDeletedPageChange = (direction: "prev" | "next") => {
     const nextPage =
       direction === "prev" ? Math.max(0, deletedState.page - 1) : deletedState.page + 1
     void loadDeletedBundles(nextPage, deletedState.sinceMonths)
   }
+
+  const handleDeletedRetry = useCallback(() => {
+    void loadDeletedBundles(deletedState.page, deletedState.sinceMonths)
+  }, [loadDeletedBundles, deletedState.page, deletedState.sinceMonths])
 
   const computeUtilization = (capacity?: number | null, occupied?: number | null) => {
     if (typeof capacity !== "number" || capacity <= 0 || typeof occupied !== "number") {
@@ -632,6 +1036,279 @@ export default function AdminFridgePage() {
     void loadDeletedBundles(0, value)
   }
 
+  const applyInspectionSessionUpdate = useCallback(
+    (dto: AdminInspectionSessionDto) => {
+      const mapped = mapAdminInspectionSession(dto)
+      setInspectionState((prev) => ({
+        ...prev,
+        items: prev.items.map((item) => (item.sessionId === mapped.sessionId ? mapped : item)),
+      }))
+      setSelectedInspection(mapped)
+      setSlotAlerts((prev) => ({
+        ...prev,
+        [mapped.slotId]: mapped.hasIssue,
+      }))
+      return mapped
+    },
+    [setInspectionState, setSelectedInspection, setSlotAlerts],
+  )
+
+  const createActionDraft = useCallback(
+    (action: AdminInspectionActionDetail, index: number): InspectionActionDraft => ({
+      localId: `existing-${action.actionId ?? index}`,
+      actionId: action.actionId ?? null,
+      actionType: isInspectionActionType(action.actionType)
+        ? action.actionType
+        : DEFAULT_INSPECTION_ACTION,
+      note: action.note ?? "",
+      bundleId: action.bundleId ?? null,
+      targetUserId: action.targetUserId ?? null,
+      roomNumber: action.roomNumber ?? null,
+      personalNo: action.personalNo ?? null,
+      remove: false,
+      isNew: false,
+    }),
+    [],
+  )
+
+  const handleInspectionRowClick = useCallback((inspection: AdminInspectionSession) => {
+    if (!inspection.hasIssue) return
+    setHighlightedInspectionId(inspection.sessionId)
+    setSelectedInspection(inspection)
+    setInspectionDialogOpen(true)
+  }, [])
+
+  const closeInspectionDialog = useCallback(() => {
+    setInspectionDialogOpen(false)
+    setSelectedInspection(null)
+  }, [])
+
+  const handleInspectionAdjust = useCallback(() => {
+    if (!selectedInspection) return
+    inspectionOriginalActionsRef.current = selectedInspection.actions
+    setInspectionDraftNotes(selectedInspection.notes ?? "")
+    if (selectedInspection.actions.length > 0) {
+      setInspectionDraftActions(
+        selectedInspection.actions.map((action, index) => createActionDraft(action, index)),
+      )
+    } else {
+      const localId =
+        typeof crypto !== "undefined" && "randomUUID" in crypto
+          ? crypto.randomUUID()
+          : `new-${Date.now()}`
+      setInspectionDraftActions([
+        {
+          localId,
+          actionId: null,
+          actionType: DEFAULT_INSPECTION_ACTION,
+          note: "",
+          bundleId: null,
+          targetUserId: null,
+          remove: false,
+          isNew: true,
+        },
+      ])
+    }
+    setInspectionEditOpen(true)
+  }, [createActionDraft, selectedInspection])
+
+  const handleInspectionResend = useCallback(async () => {
+    if (!selectedInspection) return
+    try {
+      setInspectionActionLoading(true)
+      const updated = await resendInspectionNotification(selectedInspection.sessionId)
+      applyInspectionSessionUpdate(updated)
+      toast({
+        title: "검사 결과 알림을 재발송했습니다.",
+        description: "사용자에게 최신 검사 결과 알림을 다시 전송했습니다.",
+      })
+    } catch (error) {
+      const message =
+        error && typeof error === "object" && "message" in error && typeof error.message === "string"
+          ? (error as { message: string }).message
+          : "알림 재발송 중 문제가 발생했습니다."
+      toast({
+        title: "알림 재발송 실패",
+        description: message,
+        variant: "destructive",
+      })
+    } finally {
+      setInspectionActionLoading(false)
+    }
+  }, [applyInspectionSessionUpdate, selectedInspection, toast])
+
+  const handleInspectionRequestReinspection = useCallback(async () => {
+    if (!selectedInspection) return
+    try {
+      setInspectionActionLoading(true)
+      const schedule = await requestInspectionReinspection(selectedInspection.sessionId)
+      toast({
+        title: "재검 일정을 생성했습니다.",
+        description: schedule.scheduledAt
+          ? `${formatDateTime(schedule.scheduledAt, "-")} 예정`
+          : "재검 일정이 생성되었습니다.",
+      })
+    } catch (error) {
+      const message =
+        error && typeof error === "object" && "message" in error && typeof error.message === "string"
+          ? (error as { message: string }).message
+          : "재검 일정을 생성하지 못했습니다."
+      toast({
+        title: "재검 요청 실패",
+        description: message,
+        variant: "destructive",
+      })
+    } finally {
+      setInspectionActionLoading(false)
+    }
+  }, [selectedInspection, toast])
+
+  const handleInspectionRetry = useCallback(() => {
+    setInspectionState((prev) => ({ ...prev, loading: true }))
+    setInspectionReloadToken((token) => token + 1)
+  }, [])
+
+  const updateDraftAction = useCallback(
+    (localId: string, updates: Partial<InspectionActionDraft>) => {
+      setInspectionDraftActions((prev) =>
+        prev.map((draft) => (draft.localId === localId ? { ...draft, ...updates } : draft)),
+      )
+    },
+    [],
+  )
+
+  const handleAddDraftAction = useCallback(() => {
+    const localId =
+      typeof crypto !== "undefined" && "randomUUID" in crypto
+        ? crypto.randomUUID()
+        : `new-${Date.now()}`
+    setInspectionDraftActions((prev) => [
+      ...prev,
+      {
+        localId,
+        actionId: null,
+        actionType: DEFAULT_INSPECTION_ACTION,
+        note: "",
+        bundleId: null,
+        targetUserId: null,
+        remove: false,
+        isNew: true,
+      },
+    ])
+  }, [])
+
+  const handleToggleRemoveDraftAction = useCallback((localId: string) => {
+    setInspectionDraftActions((prev) => {
+      const target = prev.find((draft) => draft.localId === localId)
+      if (!target) return prev
+      if (target.isNew) {
+        return prev.filter((draft) => draft.localId !== localId)
+      }
+      return prev.map((draft) =>
+        draft.localId === localId ? { ...draft, remove: !draft.remove } : draft,
+      )
+    })
+  }, [])
+
+  const resetInspectionDraft = useCallback(() => {
+    setInspectionDraftActions([])
+    setInspectionDraftNotes("")
+    inspectionOriginalActionsRef.current = []
+  }, [])
+
+  const handleInspectionAdjustSubmit = useCallback(async () => {
+    if (!selectedInspection) return
+    const originalActions = inspectionOriginalActionsRef.current
+    const originalMap = new Map<number, AdminInspectionActionDetail>()
+    originalActions.forEach((action) => {
+      if (action.actionId != null) {
+        originalMap.set(action.actionId, action)
+      }
+    })
+    const trimmedNotes = inspectionDraftNotes.trim()
+    const originalNotes = (selectedInspection.notes ?? "").trim()
+    const noteChanged = trimmedNotes !== originalNotes
+
+    const deleteActionIds = inspectionDraftActions
+      .filter((draft) => draft.remove && draft.actionId != null)
+      .map((draft) => draft.actionId as number)
+
+    const mutations = inspectionDraftActions
+      .filter((draft) => !draft.remove)
+      .filter((draft) => {
+        if (draft.actionId == null) {
+          return true
+        }
+        const original = originalMap.get(draft.actionId)
+        if (!original) return true
+        const originalAction = isInspectionActionType(original.actionType)
+          ? original.actionType
+          : DEFAULT_INSPECTION_ACTION
+        const originalNote = (original.note ?? "").trim()
+        const draftNote = draft.note.trim()
+        return originalAction !== draft.actionType || originalNote !== draftNote
+      })
+      .map((draft) => ({
+        actionId: draft.actionId ?? null,
+        action: draft.actionType,
+        bundleId: draft.bundleId ?? null,
+        itemId: null,
+        note: draft.note.trim().length > 0 ? draft.note.trim() : null,
+      }))
+
+    if (!noteChanged && mutations.length === 0 && deleteActionIds.length === 0) {
+      toast({
+        title: "반영할 변경 사항이 없습니다.",
+        description: "조치를 수정하거나 삭제 후 다시 저장해 주세요.",
+      })
+      return
+    }
+
+    const payload: AdminUpdateInspectionSessionRequestDto = {}
+    if (noteChanged) {
+      payload.notes = trimmedNotes.length > 0 ? trimmedNotes : null
+    }
+    if (mutations.length > 0) {
+      payload.mutations = mutations
+    }
+    if (deleteActionIds.length > 0) {
+      payload.deleteActionIds = deleteActionIds
+    }
+
+    try {
+      setInspectionEditSubmitting(true)
+      const updated = await updateAdminInspectionSession(selectedInspection.sessionId, payload)
+      const mapped = applyInspectionSessionUpdate(updated)
+      toast({
+        title: "검사 내용을 정정했습니다.",
+        description: mapped.notes
+          ? "정정된 내용이 저장되었으며 감사 로그에 기록되었습니다."
+          : "정정된 내용이 저장되었습니다.",
+      })
+      setInspectionEditOpen(false)
+      resetInspectionDraft()
+    } catch (error) {
+      const message =
+        error && typeof error === "object" && "message" in error && typeof error.message === "string"
+          ? (error as { message: string }).message
+          : "검사 정정 중 오류가 발생했습니다."
+      toast({
+        title: "검사 정정 실패",
+        description: message,
+        variant: "destructive",
+      })
+    } finally {
+      setInspectionEditSubmitting(false)
+    }
+  }, [
+    applyInspectionSessionUpdate,
+    inspectionDraftActions,
+    inspectionDraftNotes,
+    selectedInspection,
+    toast,
+    resetInspectionDraft,
+  ])
+
   const handleToggleRoomSelection = (compartmentId: string, roomId: string, checked: boolean) => {
     setReallocationSelections((prev) => {
       const current = prev[compartmentId] ?? []
@@ -643,8 +1320,8 @@ export default function AdminFridgePage() {
   }
 
   const handleResetRoomSelection = (compartmentId: string) => {
-    if (!reallocationPreview) return
-    const allocation = reallocationPreview.allocations.find(
+    if (!reallocationPlan) return
+    const allocation = reallocationPlan.allocations.find(
       (item) => item.compartmentId === compartmentId,
     )
     if (!allocation) return
@@ -774,6 +1451,7 @@ export default function AdminFridgePage() {
       typeof slot.utilization === "number" ? Math.round(slot.utilization * 100) : null
     const isConfigSaving =
       slotConfigDialog.saving && slotConfigDialog.slot?.slotId === slot.slotId
+    const hasAttention = slotAlerts[slot.slotId] === true
 
     return (
       <div
@@ -794,17 +1472,19 @@ export default function AdminFridgePage() {
             ? "border-emerald-400 ring-1 ring-emerald-200"
             : "border-slate-200 hover:border-emerald-200 hover:shadow-md",
         )}
-      >
+       >
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-slate-900">
               {slot.displayName ?? `${slot.floorNo}F · ${slot.slotLetter}`}
             </p>
-            <p className="text-xs text-slate-500">
-              {slot.compartmentType} · 인덱스 {slot.slotIndex}
-            </p>
           </div>
           <div className="flex items-center gap-2">
+            {hasAttention ? (
+              <Badge className="bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
+                조치 필요
+              </Badge>
+            ) : null}
             {badge ? <Badge className={badge.className}>{badge.label}</Badge> : null}
             <Badge
               variant={slot.locked ? "destructive" : "outline"}
@@ -871,7 +1551,26 @@ export default function AdminFridgePage() {
         </div>
         <div className="mt-2 flex items-center justify-between text-[11px] text-slate-500">
           <span>마지막 갱신 {formatRelative(slot.lockedUntil) || "-"}</span>
-          {isSelected ? (
+          {isMobile ? (
+            isSelected ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setMobileDetailOpen(true)
+                }}
+                onKeyDown={(event) => event.stopPropagation()}
+                aria-label="선택된 칸 상세 열기"
+              >
+                상세 열기
+                <ArrowRight className="size-3.5" aria-hidden />
+              </Button>
+            ) : (
+              <span className="font-medium text-emerald-600">탭하여 선택</span>
+            )
+          ) : isSelected ? (
             <Badge className="bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">선택됨</Badge>
           ) : (
             <span className="font-medium text-emerald-600">상세 보기</span>
@@ -944,7 +1643,7 @@ export default function AdminFridgePage() {
                     size="sm"
                     className="gap-1 text-slate-600 hover:text-emerald-600"
                     onClick={handleResetSearch}
-                    disabled={bundleState.loading}
+                    disabled={bundleData.loading}
                   >
                     <RotateCcw className="size-4" aria-hidden />
                     검색 초기화
@@ -978,16 +1677,16 @@ export default function AdminFridgePage() {
         >
           <TabsList className="sticky top-0 z-20 w-full justify-start gap-2 rounded-xl border border-slate-200 bg-white/90 p-1 shadow-sm backdrop-blur lg:top-3">
             <TabsTrigger
-              value="bundles"
-              className="flex-none rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 transition data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700"
-            >
-              포장 목록
-            </TabsTrigger>
-            <TabsTrigger
               value="inspections"
               className="flex-none rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 transition data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700"
             >
               검사 기록
+            </TabsTrigger>
+            <TabsTrigger
+              value="bundles"
+              className="flex-none rounded-lg px-4 py-2 text-sm font-semibold text-slate-600 transition data-[state=active]:bg-emerald-100 data-[state=active]:text-emerald-700"
+            >
+              포장 목록
             </TabsTrigger>
           </TabsList>
           <TabsContent value="bundles" className="space-y-4">
@@ -1009,17 +1708,42 @@ export default function AdminFridgePage() {
               </div>
             </form>
             <div className="text-xs text-slate-500 sm:text-right">
-              총 {bundleState.totalCount.toLocaleString()}건 · 페이지 {bundleState.page + 1}/{totalBundlePages}
+              {ownerFilterId ? (
+                <span>
+                  필터 결과 {visibleBundles.length.toLocaleString()}건 · 전체 {bundleData.totalCount.toLocaleString()}건
+                </span>
+              ) : (
+                <span>
+                  총 {bundleData.totalCount.toLocaleString()}건 · 페이지 {bundlePage + 1}/{totalBundlePages}
+                </span>
+              )}
             </div>
+            {ownerFilterId ? (
+              <div className="flex items-center justify-between gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-700">
+                <span>선택한 사용자의 포장만 표시 중입니다.</span>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-emerald-700"
+                  onClick={() => {
+                    setOwnerFilterId(null)
+                    setHighlightedBundleId(null)
+                  }}
+                >
+                  필터 해제
+                </Button>
+              </div>
+            ) : null}
             <div className="rounded-lg border border-slate-200">
-              {bundleState.loading ? (
+              {bundleData.loading ? (
                 <div className="flex items-center justify-center py-12 text-sm text-slate-500">
                   <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
                   포장 목록을 불러오는 중입니다…
                 </div>
-              ) : bundleState.error ? (
-                <div className="p-4 text-sm text-rose-600">{bundleState.error}</div>
-              ) : bundleState.items.length === 0 ? (
+              ) : bundleData.error ? (
+                <div className="p-4 text-sm text-rose-600">{bundleData.error}</div>
+              ) : visibleBundles.length === 0 ? (
                 <div className="p-4 text-sm text-slate-500">
                   조건에 맞는 포장이 없습니다. 검색어와 필터를 조정해 보세요.
                 </div>
@@ -1028,80 +1752,127 @@ export default function AdminFridgePage() {
                   <Table className="min-w-[640px] table-fixed">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="w-[72px] px-2 text-center text-xs font-semibold text-slate-500">
-                          라벨
+                        <TableHead className="w-[120px] px-2 text-xs font-semibold text-slate-500">
+                          라벨 · 포장명
                         </TableHead>
-                        <TableHead className="w-[220px] px-2 text-xs font-semibold text-slate-500">
-                          포장명
+                        <TableHead className="w-[140px] px-2 text-xs font-semibold text-slate-500">
+                          소유자
                         </TableHead>
-                        <TableHead className="w-[96px] px-2 text-xs font-semibold text-slate-500">
-                          보관자
+                        <TableHead className="w-[80px] px-2 text-xs font-semibold text-slate-500">
+                          물품 수
                         </TableHead>
-                        <TableHead className="w-[160px] px-2 text-xs font-semibold text-slate-500">
-                          상태
+                        <TableHead className="px-2 text-xs font-semibold text-slate-500">
+                          최근 검사 요약
                         </TableHead>
-                        <TableHead className="w-[132px] px-2 text-right text-xs font-semibold text-slate-500">
-                          최근 업데이트
+                        <TableHead className="w-[96px] px-2 text-right text-xs font-semibold text-slate-500">
+                          
                         </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
-                      {bundleState.items.map((bundle) => {
+                      {visibleBundles.map((bundle) => {
                         const freshnessBadge = formatFreshness(bundle.freshness)
-                        const reuseKey = `${bundle.slotId}::${bundle.labelDisplay}`
-                        const reuseInfo = labelReuseLookup[reuseKey]
-                        const reuseDisplayDate = reuseInfo ? formatDateTime(reuseInfo, "-") : null
                         const bundleNameDisplay = truncateText(bundle.bundleName, 11)
-                        const memoDisplay = bundle.memo ? truncateText(bundle.memo, 30) : null
-                        const ownerDisplay = truncateText(bundle.ownerDisplayName ?? "-", 4)
+                        const ownerDisplay = truncateText(bundle.ownerDisplayName ?? "-", 6)
+                        const warningCount = bundle.warningCount ?? 0
+                        const disposalCount = bundle.disposalCount ?? 0
+                        const lastInspectionText = bundle.lastInspectionAt
+                          ? formatDateTime(bundle.lastInspectionAt, "-")
+                          : "검사 기록 없음"
+                        const alertBadge = bundle.alertState
+                          ? BUNDLE_ALERT_LABELS[bundle.alertState] ?? {
+                              label: bundle.alertState,
+                              className: "bg-amber-100 text-amber-700",
+                            }
+                          : null
+                        const hasInspection = Boolean(bundle.lastInspectionId)
                         return (
-                          <TableRow key={bundle.bundleId}>
-                            <TableCell className="px-2 py-2 text-center text-sm font-semibold text-slate-900">
-                              {bundle.labelDisplay}
-                            </TableCell>
-                            <TableCell className="px-2 py-2">
-                              <div className="max-w-[200px] truncate font-medium text-slate-900" title={bundle.bundleName}>
+                          <TableRow
+                            key={bundle.bundleId}
+                            className={cn(
+                              "transition hover:bg-slate-50",
+                              bundle.bundleId === highlightedBundleId
+                                ? "bg-emerald-50/80 ring-1 ring-emerald-200"
+                                : undefined,
+                            )}
+                            onClick={() => {
+                              setHighlightedBundleId(bundle.bundleId)
+                              setDetailTab("inspections")
+                              if (bundle.lastInspectionId) {
+                                setPendingInspectionFocusId(bundle.lastInspectionId)
+                              } else {
+                                toast({
+                                  title: "검사 기록 없음",
+                                  description: "이 포장에 대한 검사 기록이 아직 없습니다.",
+                                })
+                              }
+                            }}
+                          >
+                            <TableCell className="px-2 py-2 align-top">
+                              <div className="text-sm font-semibold text-slate-900">{bundle.labelDisplay}</div>
+                              <div className="max-w-[200px] truncate text-xs text-slate-500" title={bundle.bundleName}>
                                 {bundleNameDisplay}
                               </div>
-                              {memoDisplay ? (
-                                <p className="max-w-[200px] truncate text-[11px] text-slate-500" title={bundle.memo ?? undefined}>
-                                  {memoDisplay}
-                                </p>
-                              ) : null}
                             </TableCell>
-                            <TableCell className="px-2 py-2 text-sm text-slate-700">
-                              <div className="truncate" title={bundle.ownerDisplayName ?? "-"}>{ownerDisplay}</div>
+                            <TableCell className="px-2 py-2 align-top text-sm text-slate-700">
+                              {bundle.ownerUserId ? (
+                                <Link
+                                  href={`/admin/users?focus=${bundle.ownerUserId}`}
+                                  className="text-emerald-600 hover:underline"
+                                  onClick={(event) => event.stopPropagation()}
+                                >
+                                  {ownerDisplay}
+                                </Link>
+                              ) : (
+                                <span>{ownerDisplay}</span>
+                              )}
                               <p className="text-xs text-slate-500">
                                 {bundle.ownerRoomNumber ?? "호실 정보 없음"}
                               </p>
                             </TableCell>
-                            <TableCell className="px-2 py-2">
-                              <div className="flex flex-wrap items-center gap-1">
-                                <Badge variant="outline" className="border-slate-200 px-2 py-0.5 text-xs">
-                                  {bundle.status}
-                                </Badge>
-                                {freshnessBadge ? (
-                                  <Badge className={cn("px-2 py-0.5 text-xs", freshnessBadge.className)}>
-                                    {freshnessBadge.label}
-                                  </Badge>
-                                ) : null}
-                                {reuseInfo ? (
-                                  <Badge
-                                    className="bg-sky-100 px-2 py-0.5 text-xs text-sky-700"
-                                    title={reuseDisplayDate ? `최근 삭제 시각 ${reuseDisplayDate}` : undefined}
-                                  >
-                                    라벨 재사용
-                                  </Badge>
-                                ) : null}
-                              </div>
+                            <TableCell className="px-2 py-2 align-top text-sm font-semibold text-slate-900">
+                              {bundle.itemCount.toLocaleString()}개
                             </TableCell>
-                            <TableCell className="px-2 py-2 text-right">
-                              <div className="text-xs font-medium text-slate-700">
-                                {formatDateTime(bundle.updatedAt, "-")}
+                            <TableCell className="px-2 py-2 align-top text-xs text-slate-600">
+                              {freshnessBadge ? (
+                                <Badge className={cn("mr-2 inline-flex items-center gap-1 px-2 py-0.5 text-xs", freshnessBadge.className)}>
+                                  {freshnessBadge.label}
+                                </Badge>
+                              ) : null}
+                              {alertBadge ? (
+                                <Badge className={cn("mr-2 inline-flex items-center px-2 py-0.5 text-xs", alertBadge.className)}>
+                                  {alertBadge.label}
+                                </Badge>
+                              ) : null}
+                              <div className="mt-1 flex flex-wrap items-center gap-3">
+                                <span className="inline-flex items-center gap-1 text-amber-600">
+                                  <AlertTriangle className="size-3" aria-hidden />
+                                  경고 {warningCount}
+                                </span>
+                                <span className="inline-flex items-center gap-1 text-rose-600">
+                                  <AlertCircle className="size-3" aria-hidden />
+                                  폐기 {disposalCount}
+                                </span>
                               </div>
-                              <div className="text-[11px] text-slate-400">
-                                {formatRelative(bundle.updatedAt) || "-"}
-                              </div>
+                              <div className="mt-1 text-[11px] text-slate-500">{lastInspectionText}</div>
+                            </TableCell>
+                            <TableCell className="px-2 py-2 text-right align-top">
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-7 gap-1 text-slate-600"
+                                onClick={(event) => {
+                                  event.stopPropagation()
+                                  toast({
+                                    title: hasInspection ? "포장 상세 준비 중" : "포장 상세 준비 중",
+                                    description: "물품 구성 및 라벨 히스토리는 후속 업데이트에서 제공됩니다.",
+                                  })
+                                }}
+                              >
+                                상세 열기
+                                <ArrowRight className="size-3" aria-hidden />
+                              </Button>
                             </TableCell>
                           </TableRow>
                         )
@@ -1116,37 +1887,27 @@ export default function AdminFridgePage() {
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() =>
-                    setBundleState((prev) => ({
-                      ...prev,
-                      page: Math.max(0, prev.page - 1),
-                    }))
-                  }
-                  disabled={bundleState.page === 0 || bundleState.loading}
+                  onClick={() => setBundlePage((prev) => Math.max(0, prev - 1))}
+                  disabled={bundlePage === 0 || bundleData.loading}
                 >
                   이전
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
-                  onClick={() =>
-                    setBundleState((prev) => ({
-                      ...prev,
-                      page: Math.min(totalBundlePages - 1, prev.page + 1),
-                    }))
-                  }
-                  disabled={bundleState.page >= totalBundlePages - 1 || bundleState.loading}
+                  onClick={() => setBundlePage((prev) => Math.min(totalBundlePages - 1, prev + 1))}
+                  disabled={bundlePage >= totalBundlePages - 1 || bundleData.loading}
                 >
                   다음
                 </Button>
               </div>
               <span>
-                {bundleState.page + 1} / {totalBundlePages} 페이지
+                {bundlePage + 1} / {totalBundlePages} 페이지
               </span>
             </div>
           </TabsContent>
           <TabsContent value="inspections" className="space-y-4">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex flex-wrap items-end justify-between gap-2">
               <div>
                 <Label htmlFor="inspection-status" className="text-xs text-slate-500">
                   검사 상태
@@ -1191,68 +1952,106 @@ export default function AdminFridgePage() {
                   검사 기록을 불러오는 중입니다…
                 </div>
               ) : inspectionState.error ? (
-                <div className="p-4 text-sm text-rose-600">{inspectionState.error}</div>
+                <div className="flex flex-col gap-3 p-4 text-sm text-rose-600">
+                  <p>{inspectionState.error}</p>
+                  <div>
+                    <Button variant="outline" size="sm" onClick={handleInspectionRetry}>
+                      다시 시도
+                    </Button>
+                  </div>
+                </div>
               ) : inspectionState.items.length === 0 ? (
                 <div className="p-4 text-sm text-slate-500">
                   선택한 조건에 해당하는 검사 기록이 없습니다.
                 </div>
               ) : (
-                <div className="max-h-[360px] divide-y divide-slate-200 overflow-auto">
-                  {inspectionState.items.map((inspection) => (
-                    <div key={inspection.sessionId} className="p-4">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold text-slate-900">
-                            {formatDateTime(inspection.startedAt, "-")}
-                          </p>
-                          <p className="text-xs text-slate-500">
-                            검사자 {inspection.startedBy.slice(0, 8)} · {inspection.slotLabel}
-                          </p>
-                        </div>
-                        <Badge variant="outline" className="border-slate-200 text-slate-600">
-                          {INSPECTION_STATUS_LABEL[inspection.status]}
-                        </Badge>
-                      </div>
-                      <div className="mt-3 flex flex-wrap gap-3 text-xs text-slate-600">
-                        <span className="flex items-center gap-1">
-                          <AlertTriangle className="size-3 text-amber-500" aria-hidden />
-                          경고 {inspection.warningCount}
-                        </span>
-                        <span className="flex items-center gap-1">
-                          <AlertCircle className="size-3 text-rose-500" aria-hidden />
-                          폐기 {inspection.disposalCount}
-                        </span>
-                        <span className="flex items-center gap-1">정상 {inspection.passCount}</span>
-                      </div>
-                      {inspection.summary.length > 0 ? (
-                        <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-slate-500">
-                          {inspection.summary.map((entry) => (
-                            <div
-                              key={`${inspection.sessionId}-${entry.action}`}
-                              className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2"
-                            >
-                              <p className="font-medium text-slate-700">
-                                {formatInspectionActionLabel(entry.action)}
-                              </p>
-                              <p>{entry.count}건</p>
-                            </div>
-                          ))}
-                        </div>
-                      ) : null}
-                      <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-500">
-                        <Button
-                          asChild
-                          variant="outline"
-                          size="sm"
-                          className="h-8 px-3 text-xs"
-                        >
-                          <Link href={`/admin/audit?module=fridge&sessionId=${inspection.sessionId}`}>
-                            감사 로그 이동
-                          </Link>
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
+                <div className="max-h-[360px] overflow-auto">
+                  <Table className="min-w-[720px] table-fixed">
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead className="w-[180px] px-3 text-xs font-semibold text-slate-500">
+                          검사일 · 검사자
+                        </TableHead>
+                        <TableHead className="w-[96px] px-3 text-xs font-semibold text-slate-500">
+                          상태
+                        </TableHead>
+                        <TableHead className="px-3 text-xs font-semibold text-slate-500">
+                          조치 요약
+                        </TableHead>
+                        <TableHead className="w-[160px] px-3 text-xs font-semibold text-slate-500">
+                          벌점 · 알림 결과
+                        </TableHead>
+                        <TableHead className="w-[120px] px-3 text-xs font-semibold text-slate-500">
+                          관리자 확인
+                        </TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {inspectionState.items.map((inspection) => {
+                        const penaltyText =
+                          inspection.disposalCount > 0
+                            ? `벌점 ${inspection.disposalCount}건`
+                            : "벌점 없음"
+                        const notificationText = "알림 -"
+                        const hasIssue = inspection.hasIssue
+
+                        return (
+                          <TableRow
+                            key={inspection.sessionId}
+                            onClick={() => {
+                              if (!hasIssue) return
+                              handleInspectionRowClick(inspection)
+                            }}
+                            className={cn(
+                              "cursor-default transition",
+                              hasIssue ? "cursor-pointer hover:bg-emerald-50" : "opacity-90",
+                              inspection.sessionId === highlightedInspectionId
+                                ? "bg-emerald-50/80 ring-1 ring-emerald-200"
+                                : undefined,
+                            )}
+                          >
+                            <TableCell className="px-3 py-3 align-top text-sm text-slate-900">
+                              <div className="font-semibold">{formatDateTime(inspection.startedAt, "-")}</div>
+                              <div className="text-xs text-slate-500">
+                                검사자 {formatInspectorDisplay(inspection)}
+                              </div>
+                            </TableCell>
+                            <TableCell className="px-3 py-3 align-top">
+                              <Badge variant="outline" className="border-slate-200 text-slate-600">
+                                {INSPECTION_STATUS_LABEL[inspection.status]}
+                              </Badge>
+                            </TableCell>
+                            <TableCell className="px-3 py-3 align-top text-xs text-slate-600">
+                              <div className="flex flex-wrap gap-2">
+                                <span className="inline-flex items-center gap-1">
+                                  <AlertTriangle className="size-3 text-amber-500" aria-hidden />
+                                  경고 {inspection.warningCount}
+                                </span>
+                                <span className="inline-flex items-center gap-1">
+                                  <AlertCircle className="size-3 text-rose-500" aria-hidden />
+                                  폐기 {inspection.disposalCount}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="px-3 py-3 align-top text-xs text-slate-600">
+                              <div>{penaltyText}</div>
+                              <div>{notificationText}</div>
+                            </TableCell>
+                            <TableCell className="px-3 py-3 align-top">
+                              <Badge
+                                className={cn(
+                                  "px-3 py-0.5 text-xs font-semibold",
+                                  hasIssue ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600",
+                                )}
+                              >
+                                {hasIssue ? "조치 필요" : "정상"}
+                              </Badge>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })}
+                    </TableBody>
+                  </Table>
                 </div>
               )}
             </div>
@@ -1269,7 +2068,7 @@ export default function AdminFridgePage() {
   const handleReallocationOpenChange = (open: boolean) => {
     setReallocationOpen(open)
     if (!open) {
-      setReallocationPreview(null)
+      setReallocationPlan(null)
       setReallocationError(null)
       setReallocationSelections({})
       return
@@ -1280,11 +2079,11 @@ export default function AdminFridgePage() {
     let active = true
     const load = async () => {
       try {
-        const preview = await previewReallocation(selectedFloor)
+        const plan = await previewReallocation(selectedFloor)
         if (!active) return
-        setReallocationPreview(preview)
+        setReallocationPlan(plan)
         const initialSelections: Record<string, string[]> = {}
-        preview.allocations.forEach((allocation) => {
+        plan.allocations.forEach((allocation) => {
           initialSelections[allocation.compartmentId] = [...allocation.recommendedRoomIds]
         })
         setReallocationSelections(initialSelections)
@@ -1293,7 +2092,7 @@ export default function AdminFridgePage() {
         const message = resolveReallocationErrorMessage(error)
         setReallocationError(message)
         toast({
-          title: "재배분 추천을 불러오지 못했습니다.",
+          title: "호실 재배분 정보를 불러오지 못했습니다.",
           description: message,
           variant: "destructive",
         })
@@ -1308,12 +2107,12 @@ export default function AdminFridgePage() {
   }
 
   const handleApplyReallocation = async () => {
-    if (!reallocationPreview || !selectedFloor) return
+    if (!reallocationPlan || !selectedFloor) return
     setReallocationApplying(true)
     try {
       const payload = {
         floor: selectedFloor,
-        allocations: reallocationPreview.allocations.map((allocation) => ({
+        allocations: reallocationPlan.allocations.map((allocation) => ({
           compartmentId: allocation.compartmentId,
           roomIds: reallocationSelections[allocation.compartmentId] ?? [],
         })),
@@ -1324,7 +2123,7 @@ export default function AdminFridgePage() {
         description: `적용된 칸 ${result.affectedCompartments}개, 새 배정 ${result.createdAssignments}건`,
       })
       setReallocationOpen(false)
-      setReallocationPreview(null)
+      setReallocationPlan(null)
       setReallocationSelections({})
       await loadSlots(selectedFloor)
     } catch (error) {
@@ -1340,13 +2139,13 @@ export default function AdminFridgePage() {
   }
 
   const roomsMap = useMemo(() => {
-    if (!reallocationPreview) return new Map<string, string>()
+    if (!reallocationPlan) return new Map<string, string>()
     const map = new Map<string, string>()
-    reallocationPreview.rooms.forEach((room) => {
+    reallocationPlan.rooms.forEach((room) => {
       map.set(room.roomId, room.roomNumber)
     })
     return map
-  }, [reallocationPreview])
+  }, [reallocationPlan])
 
   return (
     <Fragment>
@@ -1406,7 +2205,343 @@ export default function AdminFridgePage() {
               ) : null}
             </div>
           </div>
-          <Dialog open={reallocationOpen} onOpenChange={handleReallocationOpenChange}>
+      <Dialog
+        open={inspectionDialogOpen}
+        onOpenChange={(open) => {
+          if (!open) {
+            closeInspectionDialog()
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          {selectedInspection ? (
+            <>
+              <DialogHeader>
+                <DialogTitle>검사 상세</DialogTitle>
+                <DialogDescription>
+                  {formatDateTime(selectedInspection.startedAt, "-")} · 검사자 {formatInspectorDisplay(selectedInspection)}
+                </DialogDescription>
+              </DialogHeader>
+              <div className="space-y-4 text-sm text-slate-600">
+                <section className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="border-slate-200 text-slate-600">
+                    {INSPECTION_STATUS_LABEL[selectedInspection.status]}
+                  </Badge>
+                  <Badge className="bg-emerald-100 px-3 py-0.5 text-xs font-semibold text-emerald-700">
+                    경고 {selectedInspection.warningCount}
+                  </Badge>
+                  <Badge className="bg-rose-100 px-3 py-0.5 text-xs font-semibold text-rose-700">
+                    폐기 {selectedInspection.disposalCount}
+                  </Badge>
+                </section>
+                {selectedInspection.notes ? (
+                  <section className="space-y-2">
+                    <h3 className="text-sm font-semibold text-slate-900">검사 메모</h3>
+                    <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                      {selectedInspection.notes}
+                    </p>
+                  </section>
+                ) : null}
+                <section className="space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-semibold text-slate-900">조치 타임라인</h3>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={handleInspectionAdjust}
+                      disabled={inspectionEditSubmitting || inspectionActionLoading}
+                    >
+                      정정
+                    </Button>
+                  </div>
+                  {selectedInspection.actions.length === 0 ? (
+                    <p className="text-xs text-slate-500">기록된 조치가 없습니다.</p>
+                  ) : (
+                    <ScrollArea className="max-h-[260px] pr-2">
+                      <div className="space-y-1">
+                        {selectedInspection.actions.map((action, index) => {
+                          const key =
+                            action.actionId ??
+                            action.correlationId ??
+                            `${action.recordedAt ?? "action"}-${index}`
+                          const actionType = isInspectionActionType(action.actionType)
+                            ? action.actionType
+                            : DEFAULT_INSPECTION_ACTION
+                          const actionLabel = formatInspectionActionLabel(actionType)
+                          const recordedAt = action.recordedAt
+                            ? formatDateTime(action.recordedAt, "-")
+                            : "기록 시간 미상"
+                          const notificationLabel =
+                            action.notificationStatus && INSPECTION_NOTIFICATION_LABELS[action.notificationStatus]
+                              ? INSPECTION_NOTIFICATION_LABELS[action.notificationStatus]
+                              : action.notificationStatus ?? null
+                          const trimmedNote = action.note?.trim()
+                          const bundleCount = action.items.length
+                          const actionBadgeClass =
+                            actionType === "DISPOSE_EXPIRED" || actionType === "UNREGISTERED_DISPOSE"
+                              ? "border-rose-200 text-rose-700 bg-rose-50"
+                              : actionType.startsWith("WARN")
+                                ? "border-amber-200 text-amber-700 bg-amber-50"
+                                : "border-slate-200 text-slate-600 bg-slate-50"
+                          const roomLabel = action.roomNumber ?? undefined
+                          const personalLabel =
+                            typeof action.personalNo === "number" ? String(action.personalNo) : undefined
+                          const roomPersonal =
+                            roomLabel && personalLabel
+                              ? `${roomLabel} - ${personalLabel}`
+                              : roomLabel || personalLabel || undefined
+                          const ownerName = action.bundleId
+                            ? bundleOwnerLookup.get(action.bundleId) ?? "사용자"
+                            : "사용자"
+                          return (
+                            <div
+                              key={key}
+                              className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600"
+                            >
+                              <Badge
+                                variant="outline"
+                                className={cn(
+                                  "px-2 py-0.5 text-xs font-semibold",
+                                  actionBadgeClass,
+                                )}
+                              >
+                                {actionLabel}
+                              </Badge>
+                              {roomPersonal ? <span>{roomPersonal}</span> : null}
+                              {action.targetUserId ? (
+                                <Link
+                                  href={`/admin/users?focus=${action.targetUserId}`}
+                                  className="text-emerald-600 hover:underline"
+                                >
+                                  {ownerName}
+                                </Link>
+                              ) : null}
+                              {bundleCount > 0 ? <span>물품 {bundleCount}개</span> : null}
+                              <span className="text-slate-500">{recordedAt}</span>
+                              {notificationLabel ? (
+                                <span className="text-emerald-600">{notificationLabel}</span>
+                              ) : null}
+                              {trimmedNote ? (
+                                <span className="text-slate-500">“{trimmedNote}”</span>
+                              ) : null}
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </ScrollArea>
+                  )}
+                </section>
+              </div>
+              <Separator className="mt-4" />
+              <DialogFooter className="mt-6 flex flex-col gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-between">
+                <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1"
+                    onClick={handleInspectionResend}
+                    disabled={inspectionActionLoading}
+                  >
+                    알림 재발송
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="gap-1 text-slate-600"
+                    onClick={handleInspectionRequestReinspection}
+                    disabled={inspectionActionLoading}
+                  >
+                    재검 요청
+                  </Button>
+                  <Button asChild size="sm" variant="ghost" className="gap-1 text-slate-600">
+                    <Link href={`/admin/audit?module=fridge&sessionId=${selectedInspection.sessionId}`}>
+                      감사 로그 이동
+                    </Link>
+                  </Button>
+                </div>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={closeInspectionDialog}
+                  disabled={inspectionActionLoading}
+                >
+                  닫기
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={inspectionEditOpen}
+        onOpenChange={(open) => {
+          setInspectionEditOpen(open)
+          if (!open) {
+            resetInspectionDraft()
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>검사 정정</DialogTitle>
+            <DialogDescription>
+              조치 내용을 수정하거나 삭제해 최신 상태로 정정합니다. 저장 시 감사 로그에 기록됩니다.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <Label htmlFor="inspection-notes" className="text-xs text-muted-foreground">
+                검사 메모
+              </Label>
+              <Textarea
+                id="inspection-notes"
+                value={inspectionDraftNotes}
+                onChange={(event) => setInspectionDraftNotes(event.target.value)}
+                placeholder="검사 메모를 입력하세요."
+                disabled={inspectionEditSubmitting}
+              />
+            </div>
+            <div className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-sm font-semibold text-slate-900">조치 목록</h3>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleAddDraftAction}
+                  disabled={inspectionEditSubmitting}
+                >
+                  조치 추가
+                </Button>
+              </div>
+              {inspectionDraftActions.length === 0 ? (
+                <p className="text-xs text-slate-500">
+                  추가된 조치가 없습니다. “조치 추가” 버튼으로 새 항목을 등록하세요.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {inspectionDraftActions.map((draft, index) => (
+                    <div
+                      key={draft.localId}
+                      className={cn(
+                        "rounded-lg border px-3 py-3 text-xs shadow-sm",
+                        draft.remove ? "border-rose-200 bg-rose-50/70" : "border-slate-200 bg-slate-50",
+                      )}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div className="space-y-1">
+                          <p className="text-sm font-semibold text-slate-900">조치 {index + 1}</p>
+                          <p className="text-[11px] text-slate-500">
+                            {draft.roomNumber ? `호실 ${draft.roomNumber}` : null}
+                            {draft.roomNumber && typeof draft.personalNo === "number" ? " · " : null}
+                            {typeof draft.personalNo === "number" ? `개인번호 ${draft.personalNo}` : null}
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {draft.remove ? (
+                            <Badge variant="destructive" className="px-2 py-0.5 text-[11px]">
+                              삭제 예정
+                            </Badge>
+                          ) : null}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="text-slate-600"
+                            onClick={() => handleToggleRemoveDraftAction(draft.localId)}
+                            disabled={inspectionEditSubmitting}
+                          >
+                            {draft.remove ? "복구" : draft.isNew ? "제거" : "삭제"}
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground">조치 유형</Label>
+                          <Select
+                            value={draft.actionType}
+                            onValueChange={(value) =>
+                              updateDraftAction(draft.localId, {
+                                actionType: (value as InspectionActionType) || DEFAULT_INSPECTION_ACTION,
+                              })
+                            }
+                            disabled={inspectionEditSubmitting || draft.remove}
+                          >
+                            <SelectTrigger className="h-9 text-xs">
+                              <SelectValue placeholder="조치 선택" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {Object.entries(INSPECTION_ACTION_LABELS).map(([value, label]) => (
+                                <SelectItem key={value} value={value}>
+                                  {label}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px] text-muted-foreground">관련 사용자</Label>
+                          <p className="rounded-md border border-slate-200 bg-white/60 px-3 py-2 text-[11px] text-slate-600">
+                            {draft.targetUserId ? (
+                              <Link
+                                href={`/admin/users?focus=${draft.targetUserId}`}
+                                className="text-emerald-600 hover:underline"
+                              >
+                                사용자 상세 이동
+                              </Link>
+                            ) : (
+                              "연결된 사용자 없음"
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-2 space-y-1">
+                        <Label className="text-[11px] text-muted-foreground">메모</Label>
+                        <Textarea
+                          value={draft.note}
+                          onChange={(event) => updateDraftAction(draft.localId, { note: event.target.value })}
+                          placeholder="조치에 대한 추가 설명을 입력하세요."
+                          disabled={inspectionEditSubmitting || draft.remove}
+                          className="min-h-[80px]"
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+          <DialogFooter className="gap-2">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setInspectionEditOpen(false)
+                resetInspectionDraft()
+              }}
+              disabled={inspectionEditSubmitting}
+            >
+              취소
+            </Button>
+            <Button
+              type="button"
+              onClick={handleInspectionAdjustSubmit}
+              disabled={inspectionEditSubmitting}
+            >
+              {inspectionEditSubmitting ? (
+                <>
+                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> 저장 중…
+                </>
+              ) : (
+                "저장"
+              )}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={reallocationOpen} onOpenChange={handleReallocationOpenChange}>
             <DialogTrigger asChild>
               <Button variant="outline" className="h-11 gap-2 rounded-xl border-emerald-200 text-emerald-700 hover:border-emerald-300">
                 <Shuffle className="size-4" aria-hidden />
@@ -1417,24 +2552,24 @@ export default function AdminFridgePage() {
               <DialogHeader>
                 <DialogTitle>{selectedFloor}층 칸-호실 재배분</DialogTitle>
                 <DialogDescription>
-                  추천안을 검토하고 필요 시 조정한 뒤 적용하세요. 잠금·검사 중인 칸은 별도 해제 후 시도해야
+                  권장 배정을 확인하고 필요 시 수정한 뒤 적용하세요. 잠금·검사 중인 칸은 별도 해제 후 시도해야
                   합니다.
                 </DialogDescription>
               </DialogHeader>
               {reallocationLoading ? (
                 <div className="flex items-center justify-center py-16 text-slate-500">
                   <Loader2 className="mr-2 size-5 animate-spin" aria-hidden />
-                  재배분 추천안을 불러오는 중입니다…
+                  호실 재배분 정보를 불러오는 중입니다…
                 </div>
               ) : reallocationError ? (
                 <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-600">
                   {reallocationError}
                 </div>
-              ) : reallocationPreview ? (
+              ) : reallocationPlan ? (
                 <>
                   <ScrollArea className="max-h-[420px] w-full pr-4">
                     <div className="space-y-4">
-                      {reallocationPreview.allocations.map((allocation) => {
+                      {reallocationPlan.allocations.map((allocation) => {
                         const selectedRooms = reallocationSelections[allocation.compartmentId] ?? []
                         const recommendedRooms = allocation.recommendedRoomIds ?? []
                         const warnings = allocation.warnings ?? []
@@ -1508,7 +2643,7 @@ export default function AdminFridgePage() {
                                   <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
                                     <DropdownMenuLabel>배정 호실 선택</DropdownMenuLabel>
                                     <DropdownMenuSeparator />
-                                    {reallocationPreview.rooms.map((room) => (
+                                    {reallocationPlan.rooms.map((room) => (
                                       <DropdownMenuCheckboxItem
                                         key={room.roomId}
                                         checked={selectedRooms.includes(room.roomId)}
@@ -1530,13 +2665,13 @@ export default function AdminFridgePage() {
                                   size="sm"
                                   onClick={() => handleResetRoomSelection(allocation.compartmentId)}
                                 >
-                                  추천값
+                                  권장값
                                 </Button>
                               </div>
                             </div>
                             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-slate-500">
                               <span>
-                                추천 배정:{" "}
+                                권장 배정:{" "}
                                 <span
                                   className="font-medium text-slate-700"
                                   title={sortedRecommendedLabels.join(", ") || "없음"}
@@ -1587,7 +2722,7 @@ export default function AdminFridgePage() {
                 </>
               ) : (
                 <div className="py-10 text-center text-sm text-slate-500">
-                  추천 데이터를 불러오지 못했습니다.
+                  호실 재배분 데이터를 불러오지 못했습니다.
                 </div>
               )}
             </DialogContent>
@@ -1759,8 +2894,11 @@ export default function AdminFridgePage() {
               삭제 이력을 불러오는 중입니다…
             </div>
           ) : deletedState.error ? (
-            <div className="rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-600">
-              {deletedState.error}
+            <div className="space-y-3 rounded-md border border-rose-200 bg-rose-50 p-4 text-sm text-rose-600">
+              <p>{deletedState.error}</p>
+              <Button variant="outline" size="sm" onClick={handleDeletedRetry}>
+                다시 시도
+              </Button>
             </div>
                       ) : (
                         <div className="max-h-[360px] overflow-auto">

@@ -146,10 +146,19 @@ springBoot {
 
 flyway {
     url = System.getenv('DB_URL') ?: 'jdbc:postgresql://localhost:5432/dormitory_db'
-    user = System.getenv('DB_USERNAME') ?: 'dorm_user'
-    password = System.getenv('DB_PASSWORD') ?: 'dorm_password'
+    user = System.getenv('DB_USERNAME') ?: 'dormmate_user'
+    password = System.getenv('DB_PASSWORD') ?: 'pleasesetup'
     schemas = ['public']
     baselineOnMigrate = true
     locations = ["filesystem:${projectDir}/src/main/resources/db/migration"]
+    def escapeLiteral = { value ->
+        value?.replace("'", "''")
+    }
+    def adminLogin = System.getenv('ADMIN_USERNAME')
+    def adminPassword = System.getenv('ADMIN_PASSWORD')
+    placeholders = [
+        admin_login    : adminLogin != null ? "'${escapeLiteral(adminLogin)}'" : "''",
+        admin_password : adminPassword != null ? "'${escapeLiteral(adminPassword)}'" : "''"
+    ]
     configurations = ['flyway', 'runtimeClasspath'] as String[] // Flyway 태스크가 JDBC 드라이버 및 DB 플러그인을 인식하도록 Gradle configuration 지정
 }

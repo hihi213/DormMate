@@ -60,7 +60,8 @@ export default function NotificationBell({ size = 10, disabled = false, onRequir
     }
   }, [])
 
-  const canFetchNotifications = !disabled && permissionStatus === "granted"
+  const canFetchNotifications = !disabled
+  const pushPermissionGranted = permissionStatus === "granted"
 
   useEffect(() => {
     if (!canFetchNotifications) {
@@ -85,16 +86,12 @@ export default function NotificationBell({ size = 10, disabled = false, onRequir
 
   const handleOpenChange = useCallback(
     (nextOpen: boolean) => {
-      if (!canFetchNotifications) {
-        onRequireLogin?.()
-        return
-      }
       if (nextOpen === open) {
         return
       }
       setOpen(nextOpen)
     },
-    [canFetchNotifications, onRequireLogin, open],
+    [open],
   )
 
   const filterRef = useRef(filter)
@@ -110,18 +107,13 @@ export default function NotificationBell({ size = 10, disabled = false, onRequir
   }, [open, size, load, canFetchNotifications])
 
   const badgeLabel = useMemo(() => {
-    if (!canFetchNotifications) return null
     if (unreadCount <= 0) return null
     if (unreadCount > 99) return "99+"
     return String(unreadCount)
-  }, [canFetchNotifications, unreadCount])
+  }, [unreadCount])
 
   const handleItemClick = useCallback(
     async (id: string, href?: string) => {
-      if (!canFetchNotifications) {
-        onRequireLogin?.()
-        return
-      }
       if (id) {
         await markAsRead(id)
       }
@@ -130,24 +122,16 @@ export default function NotificationBell({ size = 10, disabled = false, onRequir
         router.push(href)
       }
     },
-    [canFetchNotifications, markAsRead, onRequireLogin, router],
+    [markAsRead, router],
   )
 
   const handleMarkAll = useCallback(async () => {
-    if (!canFetchNotifications) {
-      onRequireLogin?.()
-      return
-    }
     await markAllAsRead()
-  }, [canFetchNotifications, markAllAsRead, onRequireLogin])
+  }, [markAllAsRead])
 
   const handleRetry = useCallback(async () => {
-    if (!canFetchNotifications) {
-      onRequireLogin?.()
-      return
-    }
     await refresh()
-  }, [canFetchNotifications, onRequireLogin, refresh])
+  }, [refresh])
 
   const requestPermission = useCallback(async () => {
     if (!permissionSupported) return
@@ -164,40 +148,6 @@ export default function NotificationBell({ size = 10, disabled = false, onRequir
       // ignore
     }
   }, [permissionSupported])
-
-  if (!permissionSupported) {
-    return (
-      <button
-        type="button"
-        className="inline-flex h-10 w-10 items-center justify-center rounded-full border bg-white text-slate-400"
-        aria-label="알림 비지원"
-        disabled
-      >
-        <Bell className="h-4 w-4" aria-hidden="true" />
-      </button>
-    )
-  }
-
-  if (permissionStatus !== "granted") {
-    return (
-      <Button
-        type="button"
-        variant="default"
-        size="icon"
-        className="rounded-full bg-emerald-600 hover:bg-emerald-700"
-        aria-label="알림 활성화"
-        onClick={() => {
-          if (disabled) {
-            onRequireLogin?.()
-            return
-          }
-          void requestPermission()
-        }}
-      >
-        <Bell className="h-4 w-4" aria-hidden="true" />
-      </Button>
-    )
-  }
 
   if (disabled) {
     return (
@@ -219,6 +169,8 @@ export default function NotificationBell({ size = 10, disabled = false, onRequir
       </button>
     )
   }
+
+  const showPushPrompt = permissionSupported && !pushPermissionGranted
 
   return (
     <Popover open={open} onOpenChange={handleOpenChange}>
@@ -273,6 +225,21 @@ export default function NotificationBell({ size = 10, disabled = false, onRequir
               </button>
             </div>
           </div>
+
+          {showPushPrompt && (
+            <div className="flex items-start justify-between gap-3 border-b bg-amber-50 px-4 py-2 text-xs text-amber-700">
+              <span>브라우저 푸시 알림이 비활성화되어 있습니다.</span>
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                className="h-7 px-2 text-xs"
+                onClick={() => void requestPermission()}
+              >
+                허용하기
+              </Button>
+            </div>
+          )}
 
           <div className="border-b px-4 py-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">

@@ -16,8 +16,10 @@ import {
   mapSlotFromDto,
 } from "@/features/fridge/utils/data-shaping"
 import type { ApiError } from "@/lib/api-errors"
+import type { components } from "@/lib/api-types"
 
 type RaisedError = Error & { status?: number; code?: string }
+type FridgeSlotDto = components["schemas"]["FridgeSlot"]
 
 function raiseFridgeError(error: ApiError | undefined, fallbackMessage: string): never {
   const message = error?.message ?? fallbackMessage

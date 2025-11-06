@@ -143,12 +143,12 @@ function AdminDashboard() {
           </div>
           <Tabs defaultValue="fridge" className="w-full">
             <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-              <TabsList className="grid h-auto grid-cols-2 gap-2 bg-slate-50 p-4 sm:grid-cols-4">
+              <TabsList className="flex h-auto gap-2 overflow-x-auto bg-slate-50 p-4">
                 {moduleSnapshots.map((module) => (
                   <TabsTrigger
                     key={module.id}
                     value={module.id}
-                    className="rounded-xl border border-transparent bg-white/70 text-xs font-medium text-slate-600 shadow-sm transition hover:border-emerald-200 hover:text-emerald-700 data-[state=active]:border-emerald-200 data-[state=active]:bg-emerald-50/80 data-[state=active]:text-emerald-700 sm:text-sm"
+                    className="shrink-0 rounded-full border border-transparent bg-white/70 px-4 py-2 text-xs font-medium text-slate-600 shadow-sm transition hover:border-emerald-200 hover:text-emerald-700 data-[state=active]:border-emerald-200 data-[state=active]:bg-emerald-50/80 data-[state=active]:text-emerald-700 sm:text-sm"
                   >
                     {module.label}
                   </TabsTrigger>
@@ -169,7 +169,7 @@ function AdminDashboard() {
                         </Link>
                       </Button>
                     </div>
-                    <div className="grid gap-4 md:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
                       {module.metrics.map((metric) => (
                         <div key={metric.label} className="space-y-1 rounded-xl border border-slate-100 bg-slate-50/60 p-4">
                           <p className="text-xs font-medium text-slate-500">{metric.label}</p>
