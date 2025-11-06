@@ -62,7 +62,6 @@ public abstract class AbstractPostgresIntegrationTest {
                 .locations("classpath:db/migration")
                 .baselineOnMigrate(true)
                 .target("1")
-                .repeatableSqlMigrationPrefix("IGNORE__")
                 .load();
         schemaOnly.migrate();
 

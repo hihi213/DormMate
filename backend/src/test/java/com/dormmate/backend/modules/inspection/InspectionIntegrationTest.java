@@ -76,7 +76,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         bundlesToCleanup = new ArrayList<>();
         managerToken = login("bob", "bob123!");
         residentToken = login("alice", "alice123!");
-        adminToken = login("dormate", "admin123!");
+        adminToken = login("dormmate", "admin1!");
         slot2FAId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
         residentId = fetchUserId("alice");
         residentRoomId = ensureResidentAssignment(residentId);

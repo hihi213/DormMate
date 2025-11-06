@@ -49,7 +49,7 @@ class AdminManageIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        adminToken = loginAndGetAccessToken("dormate", "admin123!");
+        adminToken = loginAndGetAccessToken("dormmate", "admin1!");
     }
 
     @Test

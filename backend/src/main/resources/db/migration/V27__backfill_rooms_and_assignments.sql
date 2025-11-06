@@ -1,20 +1,16 @@
--- 최신 규칙에 맞춰 호실 메타데이터/거주자 계정/칸 접근 권한을 재구성한다.
--- - 2~5층 모든 호실은 1인실(SINGLE) 또는 3인실(TRIPLE) 규칙을 따른다.
--- - 기본 거주자 계정은 login_id = floorRoom-personal_no, 비밀번호 = "user2025!".
--- - 관리자는 거주 호실이 없다.
+-- 재배포 환경 백필: 기본 호실 메타데이터 및 거주자/데모 계정 배정 보정
+-- - 2~5층 호실 정보를 최신 규칙으로 갱신한다.
+-- - 데모 계정(alice/bob/...)의 배정과 권한을 복구한다.
+-- - 비어 있는 슬롯에는 새로운 거주자 계정을 생성해 배정한다.
 
 SET TIME ZONE 'UTC';
 
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
--- 더 이상 사용하지 않는 데모용 함수 제거
+-- 더 이상 사용하지 않는 구버전 함수 제거
 DROP FUNCTION IF EXISTS public.fn_seed_demo_and_resident() CASCADE;
 DROP FUNCTION IF EXISTS public.fn_rebuild_compartment_access() CASCADE;
-DROP FUNCTION IF EXISTS public.fn_seed_fridge_presets() CASCADE;
 
-DROP TABLE IF EXISTS tmp_named_slots;
-
-CREATE TEMP TABLE tmp_named_slots ON COMMIT DROP AS
 WITH room_specs AS (
     SELECT
         floor,
@@ -57,28 +53,133 @@ room_upsert AS (
             ELSE room.updated_at
         END
     RETURNING id, floor, room_number, capacity
+)
+SELECT 1;
+
+-- 데모 사용자 권한 및 배정 복구
+WITH demo_seed AS (
+    SELECT *
+    FROM (VALUES
+        ('alice', false),
+        ('bob',   true ),
+        ('carol', false),
+        ('dylan', false),
+        ('diana', false),
+        ('eric',  true ),
+        ('fiona', false)
+    ) AS v(login_id, is_floor_manager)
 ),
-slot_plan AS (
+resolved_demo AS (
+    SELECT du.id AS dorm_user_id, ds.login_id, ds.is_floor_manager
+    FROM demo_seed ds
+    JOIN dorm_user du ON du.login_id = ds.login_id
+)
+INSERT INTO user_role (id, dorm_user_id, role_code, granted_at, created_at, updated_at)
+SELECT
+    gen_random_uuid(),
+    resolved_demo.dorm_user_id,
+    CASE WHEN resolved_demo.is_floor_manager THEN 'FLOOR_MANAGER' ELSE 'RESIDENT' END,
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+FROM resolved_demo
+ON CONFLICT (dorm_user_id, role_code) WHERE revoked_at IS NULL DO NOTHING;
+
+WITH demo_targets AS (
+    SELECT
+        du.id AS dorm_user_id,
+        ds.floor_no,
+        ds.room_number,
+        ds.personal_no,
+        r.id AS room_id
+    FROM (
+        SELECT *
+        FROM (VALUES
+            ('alice', 2, '05', 1),
+            ('bob',   2, '05', 2),
+            ('carol', 2, '06', 1),
+            ('dylan', 2, '17', 2),
+            ('diana', 3, '05', 1),
+            ('eric',  3, '13', 1),
+            ('fiona', 3, '24', 1)
+        ) AS v(login_id, floor_no, room_number, personal_no)
+    ) ds
+    JOIN dorm_user du ON du.login_id = ds.login_id
+    JOIN room r ON r.floor = ds.floor_no AND r.room_number = ds.room_number
+)
+UPDATE room_assignment ra
+SET released_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+FROM demo_targets tgt
+WHERE ra.dorm_user_id = tgt.dorm_user_id
+  AND ra.released_at IS NULL
+  AND ra.room_id <> tgt.room_id;
+
+UPDATE room_assignment ra
+SET released_at = CURRENT_TIMESTAMP,
+    updated_at = CURRENT_TIMESTAMP
+FROM demo_targets tgt
+WHERE ra.room_id = tgt.room_id
+  AND ra.personal_no = tgt.personal_no
+  AND ra.released_at IS NULL
+  AND ra.dorm_user_id <> tgt.dorm_user_id;
+
+INSERT INTO room_assignment (
+    id,
+    room_id,
+    dorm_user_id,
+    personal_no,
+    assigned_at,
+    released_at,
+    created_at,
+    updated_at
+)
+SELECT
+    gen_random_uuid(),
+    tgt.room_id,
+    tgt.dorm_user_id,
+    tgt.personal_no,
+    CURRENT_TIMESTAMP,
+    NULL,
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+FROM demo_targets tgt
+ON CONFLICT (room_id, personal_no) WHERE released_at IS NULL DO UPDATE
+SET dorm_user_id = EXCLUDED.dorm_user_id,
+    assigned_at = EXCLUDED.assigned_at,
+    released_at = NULL,
+    updated_at = CURRENT_TIMESTAMP;
+
+-- 비어 있는 슬롯에 신규 거주자 계정 생성
+DROP TABLE IF EXISTS tmp_named_slots;
+CREATE TEMP TABLE tmp_named_slots ON COMMIT DROP AS
+WITH available_slots AS (
     SELECT
         r.id AS room_id,
         r.floor,
         r.room_number,
-        gs.personal_no,
-        concat(r.floor::text, r.room_number, '-', gs.personal_no::text) AS login_id,
-        format('resident%s%s-%s@dormmate.dev', r.floor, r.room_number, gs.personal_no) AS email,
+        slot.personal_no,
+        concat(r.floor::text, r.room_number, '-', slot.personal_no::text) AS login_id,
+        format('resident%s%s-%s@dormmate.dev', r.floor, r.room_number, slot.personal_no) AS email,
         ROW_NUMBER() OVER (
             PARTITION BY r.floor
-            ORDER BY r.room_number::INTEGER, gs.personal_no
+            ORDER BY r.room_number::INTEGER, slot.personal_no
         ) AS floor_sequence
     FROM room_upsert r
-    CROSS JOIN LATERAL generate_series(1, r.capacity) AS gs(personal_no)
+    CROSS JOIN LATERAL generate_series(1, r.capacity) AS slot(personal_no)
+    LEFT JOIN room_assignment ra
+           ON ra.room_id = r.id
+          AND ra.personal_no = slot.personal_no
+          AND ra.released_at IS NULL
+    WHERE r.floor BETWEEN 2 AND 5
+      AND ra.id IS NULL
 ),
-name_base AS (
+name_candidates AS (
     SELECT
+        floor_val AS floor,
         ROW_NUMBER() OVER (
-            ORDER BY (given_ord * 53 + family_ord * 17),
-                     family_ord,
-                     given_ord
+            PARTITION BY floor_val
+            ORDER BY (given_ord * 53 + family_ord * 17), family_ord, given_ord
         ) AS seq,
         fam || given AS full_name
     FROM unnest(ARRAY[
@@ -92,37 +193,23 @@ name_base AS (
         '지온','나리','하린','태이','주하','예린','시현','민호','서강','라온비',
         '하예린','서도윤','민서율','채아린','지호윤','다온슬','서리아','윤솔아','하로윤','민아설'
     ]::text[]) WITH ORDINALITY AS g(given, given_ord)
-),
-name_pool AS (
-    SELECT
-        floor_val AS floor,
-        nb.seq,
-        nb.full_name
-    FROM name_base nb
     CROSS JOIN LATERAL generate_series(2, 5) AS floor_val
 ),
 named_slots AS (
     SELECT
-        sp.room_id,
-        sp.floor,
-        sp.room_number,
-        sp.personal_no,
-        sp.login_id,
-        sp.email,
-        np.full_name
-    FROM slot_plan sp
-    JOIN name_pool np
-      ON np.floor = sp.floor
-     AND np.seq = sp.floor_sequence
+        aslots.room_id,
+        aslots.floor,
+        aslots.room_number,
+        aslots.personal_no,
+        aslots.login_id,
+        aslots.email,
+        nc.full_name
+    FROM available_slots aslots
+    JOIN name_candidates nc
+      ON nc.floor = aslots.floor
+     AND nc.seq = aslots.floor_sequence
 )
 SELECT * FROM named_slots;
-
--- 활성 배정을 모두 해제하고 최신 정보로 재구성
-UPDATE room_assignment ra
-   SET released_at = CURRENT_TIMESTAMP,
-       updated_at = CURRENT_TIMESTAMP
- WHERE ra.released_at IS NULL
-   AND ra.room_id IN (SELECT room_id FROM tmp_named_slots);
 
 WITH user_upsert AS (
     INSERT INTO dorm_user (id, login_id, password_hash, full_name, email, status, created_at, updated_at)
@@ -177,11 +264,7 @@ SELECT
     CURRENT_TIMESTAMP
 FROM tmp_named_slots ns
 JOIN dorm_user du ON du.login_id = ns.login_id
-ON CONFLICT (room_id, personal_no) WHERE released_at IS NULL DO UPDATE
-SET dorm_user_id = EXCLUDED.dorm_user_id,
-    assigned_at = EXCLUDED.assigned_at,
-    released_at = NULL,
-    updated_at = CURRENT_TIMESTAMP;
+ON CONFLICT (room_id, personal_no) WHERE released_at IS NULL DO NOTHING;
 
 -- 칸-호실 접근 권한 재구성
 DROP TABLE IF EXISTS tmp_active_compartments;
@@ -224,7 +307,7 @@ SELECT
 FROM tmp_active_compartments ac
 JOIN tmp_rooms_on_floor rf ON rf.floor = ac.floor_no;
 
--- 레이블 시퀀스가 존재하지 않는 칸은 초기화한다.
+-- 레이블 시퀀스 초기화
 INSERT INTO bundle_label_sequence (fridge_compartment_id, next_number, recycled_numbers, created_at, updated_at)
 SELECT
     ac.id,
@@ -235,4 +318,5 @@ SELECT
 FROM tmp_active_compartments ac
 ON CONFLICT (fridge_compartment_id) DO UPDATE
 SET next_number = LEAST(EXCLUDED.next_number, bundle_label_sequence.next_number),
+    recycled_numbers = '[]'::jsonb,
     updated_at = CURRENT_TIMESTAMP;

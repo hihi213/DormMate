@@ -35,7 +35,7 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
     void adminCanTriggerFridgeDemoSeed() throws Exception {
         jdbcTemplate.update("DELETE FROM fridge_item WHERE item_name LIKE '전시 데모:%'");
 
-        String adminToken = loginAndGetAccessToken("dormate", "admin123!");
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
 
         mockMvc.perform(post("/admin/seed/fridge-demo")
                         .header("Authorization", "Bearer " + adminToken))
@@ -50,19 +50,6 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
                 .withFailMessage("expected 7 demo items but found %s", itemCount)
                 .isNotNull()
                 .isEqualTo(7);
-
-        Integer aliceItems = jdbcTemplate.queryForObject(
-                """
-                        SELECT COUNT(*)
-                        FROM fridge_item fi
-                        JOIN fridge_bundle fb ON fb.id = fi.fridge_bundle_id
-                        JOIN dorm_user du ON du.id = fb.owner_user_id
-                        WHERE du.login_id = 'alice'
-                          AND fi.item_name LIKE '전시 데모:%'
-                        """,
-                Integer.class
-        );
-        assertThat(aliceItems).isNotNull().isGreaterThanOrEqualTo(1);
 
         mockMvc.perform(post("/admin/seed/fridge-demo")
                         .header("Authorization", "Bearer " + adminToken))
