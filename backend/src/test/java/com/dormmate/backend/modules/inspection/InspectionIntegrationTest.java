@@ -1,5 +1,8 @@
 package com.dormmate.backend.modules.inspection;
 
+import static com.dormmate.backend.support.TestResidentAccounts.DEFAULT_PASSWORD;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT1;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT3;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
@@ -74,11 +77,11 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         bundlesToCleanup = new ArrayList<>();
-        managerToken = login("bob", "bob123!");
-        residentToken = login("alice", "alice123!");
+        managerToken = login(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD);
+        residentToken = login(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         adminToken = login("dormmate", "admin1!");
         slot2FAId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
-        residentId = fetchUserId("alice");
+        residentId = fetchUserId(FLOOR2_ROOM05_SLOT1);
         residentRoomId = ensureResidentAssignment(residentId);
         ensureCompartmentAccess(residentRoomId, slot2FAId);
 
@@ -94,7 +97,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminReceivesForbiddenForInspectionLifecycle() throws Exception {
-        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        JsonNode bundle = ensureBundleForPrimaryResident(slot2FAId);
         UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
         UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
 
@@ -149,7 +152,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void managerCanRunFullInspectionHappyPath() throws Exception {
-        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        JsonNode bundle = ensureBundleForPrimaryResident(slot2FAId);
         UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
         UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
 
@@ -188,7 +191,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void lockIsExtendedWhenActionsAreRecorded() throws Exception {
-        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        JsonNode bundle = ensureBundleForPrimaryResident(slot2FAId);
         UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
         UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
 
@@ -257,7 +260,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void residentCanViewOwnInspectionSession() throws Exception {
-        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        JsonNode bundle = ensureBundleForPrimaryResident(slot2FAId);
         UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
         UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
 
@@ -297,7 +300,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void residentCanViewSubmittedInspectionHistoryWithFilter() throws Exception {
-        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        JsonNode bundle = ensureBundleForPrimaryResident(slot2FAId);
         UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
         UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
 
@@ -491,11 +494,11 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk());
     }
 
-    private JsonNode ensureBundleForAlice(UUID slotId) throws Exception {
-        return createBundleForAlice(slotId);
+    private JsonNode ensureBundleForPrimaryResident(UUID slotId) throws Exception {
+        return createBundleForPrimaryResident(slotId);
     }
 
-    private JsonNode createBundleForAlice(UUID slotId) throws Exception {
+    private JsonNode createBundleForPrimaryResident(UUID slotId) throws Exception {
         String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(2).toString();
         MvcResult result = mockMvc.perform(post("/fridge/bundles")
                         .header("Authorization", "Bearer " + residentToken)

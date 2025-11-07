@@ -1,5 +1,7 @@
 package com.dormmate.backend.modules.notification;
 
+import static com.dormmate.backend.support.TestResidentAccounts.DEFAULT_PASSWORD;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT1;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -58,9 +60,9 @@ class NotificationControllerIntegrationTest extends AbstractPostgresIntegrationT
 
     @BeforeEach
     void setUp() throws Exception {
-        resident = dormUserRepository.findByLoginIdIgnoreCase("alice")
-                .orElseThrow(() -> new IllegalStateException("alice user not found"));
-        residentToken = loginAndGetAccessToken("alice", "alice123!");
+        resident = dormUserRepository.findByLoginIdIgnoreCase(FLOOR2_ROOM05_SLOT1)
+                .orElseThrow(() -> new IllegalStateException("primary resident user not found"));
+        residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
     }
 
     @AfterEach

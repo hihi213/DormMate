@@ -11,7 +11,14 @@ import { Button } from "@/components/ui/button"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Badge } from "@/components/ui/badge"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import { cn } from "@/lib/utils"
 import { useNotifications } from "@/features/notifications"
 import { resolveNotificationMeta } from "@/features/notifications/utils/metadata"
@@ -315,6 +322,10 @@ export default function HeaderNotifications() {
       <Sheet open={open} onOpenChange={handleOpenChange}>
         <SheetTrigger asChild>{triggerButton}</SheetTrigger>
         <SheetContent side="bottom" className="h-[85vh] p-0">
+          <SheetHeader className="sr-only">
+            <SheetTitle>알림 센터</SheetTitle>
+            <SheetDescription>최근 기숙사 알림을 확인하고 관리하세요</SheetDescription>
+          </SheetHeader>
           {renderPanel("sheet")}
         </SheetContent>
       </Sheet>
