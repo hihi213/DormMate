@@ -2,6 +2,7 @@ package com.dormmate.backend.modules.admin.presentation;
 
 import java.time.LocalTime;
 import java.time.format.DateTimeParseException;
+import java.util.Objects;
 import java.util.UUID;
 
 import jakarta.validation.Valid;
@@ -88,7 +89,7 @@ public class AdminDashboardController {
             @PathVariable UUID userId,
             @Valid @RequestBody UpdateUserStatusRequest request
     ) {
-        String normalized = request.status().trim().toUpperCase();
+        String normalized = Objects.requireNonNull(request.status(), "status").trim().toUpperCase();
         if (!"INACTIVE".equals(normalized)) {
             throw new ProblemException(HttpStatus.BAD_REQUEST, "admin.unsupported_status", "지원하지 않는 상태 변경입니다.");
         }
@@ -110,12 +111,17 @@ public class AdminDashboardController {
             throw new ProblemException(HttpStatus.BAD_REQUEST, "admin.invalid_batch_time", "배치 시각은 HH:mm 형식이어야 합니다.");
         }
 
+        UpdateAdminPoliciesRequest.NotificationPolicy notificationSettings =
+                Objects.requireNonNull(request.notification(), "notification settings");
+        UpdateAdminPoliciesRequest.PenaltyPolicy penaltySettings =
+                Objects.requireNonNull(request.penalty(), "penalty settings");
+
         adminMutationService.updatePolicies(new UpdatePoliciesCommand(
                 batchTime,
-                request.notification().dailyLimit(),
-                request.notification().ttlHours(),
-                request.penalty().limit(),
-                request.penalty().template()
+                notificationSettings.dailyLimit(),
+                notificationSettings.ttlHours(),
+                penaltySettings.limit(),
+                penaltySettings.template()
         ));
         return ResponseEntity.noContent().build();
     }

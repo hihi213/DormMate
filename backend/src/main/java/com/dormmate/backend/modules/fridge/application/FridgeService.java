@@ -126,16 +126,17 @@ public class FridgeService {
         if (!isAdmin) {
             RoomAssignment assignment = roomAssignmentRepository.findActiveAssignment(currentUserId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED"));
+            Room assignedRoom = requireRoom(assignment);
             if (isFloorManager) {
-                short managedFloor = assignment.getRoom().getFloor();
+                short managedFloor = assignedRoom.getFloor();
                 if (floorFilter != null && !Objects.equals(floorFilter, managedFloor)) {
                     throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_SCOPE_VIOLATION");
                 }
                 floorFilter = managedFloor;
             } else {
                 accessibleCompartmentIds = new HashSet<>();
-                List<CompartmentRoomAccess> accesses = compartmentRoomAccessRepository.findByRoomIdAndReleasedAtIsNull(
-                        assignment.getRoom().getId());
+                UUID roomId = requireRoomId(assignment);
+                List<CompartmentRoomAccess> accesses = compartmentRoomAccessRepository.findByRoomIdAndReleasedAtIsNull(roomId);
                 for (CompartmentRoomAccess access : accesses) {
                     accessibleCompartmentIds.add(access.getFridgeCompartment().getId());
                 }
@@ -206,7 +207,7 @@ public class FridgeService {
             verifyBundleReadAccess(currentUser, compartment, isAdmin, true);
             if (finalOwnerFilter != null && isFloorManager) {
                 boolean managesFloor = roomAssignmentRepository.findActiveAssignment(currentUserId)
-                        .map(assignment -> assignment.getRoom().getFloor()
+                .map(assignment -> requireRoom(assignment).getFloor()
                                 == compartment.getFridgeUnit().getFloorNo())
                         .orElse(false);
                 if (managesFloor) {
@@ -320,7 +321,7 @@ public class FridgeService {
         boolean managerHasAccess = false;
         if (isFloorManager && !isAdmin && !isOwner) {
             managerHasAccess = roomAssignmentRepository.findActiveAssignment(currentUserId)
-                    .map(assignment -> assignment.getRoom().getFloor()
+                    .map(assignment -> requireRoom(assignment).getFloor()
                             == bundle.getFridgeCompartment().getFridgeUnit().getFloorNo())
                     .orElse(false);
         }
@@ -585,7 +586,7 @@ public class FridgeService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED"));
 
         if (allowFloorManager && SecurityUtils.hasRole("FLOOR_MANAGER")) {
-            short managedFloor = assignment.getRoom().getFloor();
+            short managedFloor = requireRoom(assignment).getFloor();
             short compartmentFloor = compartment.getFridgeUnit().getFloorNo();
             if (managedFloor == compartmentFloor) {
                 return;
@@ -597,7 +598,7 @@ public class FridgeService {
         boolean accessible = accesses.stream()
                 .map(CompartmentRoomAccess::getRoom)
                 .map(Room::getId)
-                .anyMatch(roomId -> roomId.equals(assignment.getRoom().getId()));
+                .anyMatch(roomId -> roomId.equals(requireRoomId(assignment)));
         if (!accessible) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FORBIDDEN_SLOT");
         }
@@ -745,5 +746,14 @@ public class FridgeService {
         if (activeSessionExists) {
             throw new ResponseStatusException(HttpStatus.LOCKED, "COMPARTMENT_UNDER_INSPECTION");
         }
+    }
+
+    private Room requireRoom(RoomAssignment assignment) {
+        return Objects.requireNonNull(assignment.getRoom(), "room assignment missing room");
+    }
+
+    private UUID requireRoomId(RoomAssignment assignment) {
+        Room room = requireRoom(assignment);
+        return Objects.requireNonNull(room.getId(), "room id");
     }
 }

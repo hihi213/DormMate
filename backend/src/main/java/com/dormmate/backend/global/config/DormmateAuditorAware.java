@@ -7,6 +7,7 @@ import java.util.UUID;
 import com.dormmate.backend.global.security.JwtAuthenticationPrincipal;
 
 import org.springframework.data.domain.AuditorAware;
+import org.springframework.lang.NonNull;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -17,6 +18,7 @@ import org.springframework.security.core.context.SecurityContextHolder;
 public class DormmateAuditorAware implements AuditorAware<UUID> {
 
     @Override
+    @NonNull
     public Optional<UUID> getCurrentAuditor() {
         Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
         if (authentication == null || !authentication.isAuthenticated()) {

@@ -211,7 +211,6 @@ public class NotificationService {
                     .increment(type);
         }
 
-        OffsetDateTime now = OffsetDateTime.now(clock);
         Map<UUID, List<InspectionAction>> actionsByUser = session.getActions().stream()
                 .filter(action -> action.getTargetUser() != null)
                 .collect(Collectors.groupingBy(action -> action.getTargetUser().getId(), LinkedHashMap::new, Collectors.toList()));

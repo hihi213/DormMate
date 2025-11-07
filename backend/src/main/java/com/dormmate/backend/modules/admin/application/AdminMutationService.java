@@ -10,6 +10,7 @@ import java.util.UUID;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.lang.NonNull;
 
 import com.dormmate.backend.global.error.ProblemException;
 import com.dormmate.backend.modules.admin.domain.AdminPolicy;
@@ -57,7 +58,7 @@ public class AdminMutationService {
         this.clock = clock;
     }
 
-    public void promoteToFloorManager(UUID targetUserId, UUID actorUserId) {
+    public void promoteToFloorManager(@NonNull UUID targetUserId, @NonNull UUID actorUserId) {
         DormUser target = findUser(targetUserId);
         DormUser actor = findUser(actorUserId);
         ensureUserIsActive(target);
@@ -79,8 +80,8 @@ public class AdminMutationService {
         userRoleRepository.save(userRole);
     }
 
-    public void demoteFloorManager(UUID targetUserId) {
-        DormUser target = findUser(targetUserId);
+    public void demoteFloorManager(@NonNull UUID targetUserId) {
+        findUser(targetUserId);
         ensureNoActiveInspection(targetUserId);
 
         List<UserRole> activeRoles = userRoleRepository.findActiveRoles(targetUserId);
@@ -93,7 +94,7 @@ public class AdminMutationService {
         userRoleRepository.save(floorManagerRole);
     }
 
-    public void deactivateUser(UUID targetUserId) {
+    public void deactivateUser(@NonNull UUID targetUserId) {
         DormUser target = findUser(targetUserId);
         if (target.getStatus() == DormUserStatus.INACTIVE) {
             return;
@@ -116,7 +117,7 @@ public class AdminMutationService {
         });
     }
 
-    public void updatePolicies(UpdatePoliciesCommand command) {
+    public void updatePolicies(@NonNull UpdatePoliciesCommand command) {
         validatePolicyValues(command);
 
         AdminPolicy policy = adminPolicyRepository.findById(POLICY_ID)
@@ -135,7 +136,7 @@ public class AdminMutationService {
         adminPolicyRepository.save(policy);
     }
 
-    private DormUser findUser(UUID userId) {
+    private DormUser findUser(@NonNull UUID userId) {
         return dormUserRepository.findById(userId)
                 .orElseThrow(() -> new ProblemException(HttpStatus.NOT_FOUND, "admin.user_not_found", "대상 사용자를 찾을 수 없습니다."));
     }

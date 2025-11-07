@@ -18,6 +18,7 @@ import static org.springframework.http.HttpStatus.CONFLICT;
 import static org.springframework.http.HttpStatus.NOT_FOUND;
 
 import com.dormmate.backend.global.error.ProblemException;
+import com.dormmate.backend.modules.audit.application.AuditLogService;
 import com.dormmate.backend.modules.auth.domain.Room;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.RoomRepository;
 import com.dormmate.backend.modules.fridge.domain.CompartmentRoomAccess;
@@ -36,6 +37,7 @@ import com.dormmate.backend.modules.fridge.presentation.dto.admin.ReallocationPr
 import com.dormmate.backend.modules.fridge.presentation.dto.admin.ReallocationPreviewResponse.RoomSummary;
 import com.dormmate.backend.modules.inspection.domain.InspectionStatus;
 import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionSessionRepository;
+import com.dormmate.backend.global.security.SecurityUtils;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -49,6 +51,7 @@ public class FridgeReallocationService {
     private final CompartmentRoomAccessRepository compartmentRoomAccessRepository;
     private final RoomRepository roomRepository;
     private final InspectionSessionRepository inspectionSessionRepository;
+    private final AuditLogService auditLogService;
     private final Clock clock;
 
     public FridgeReallocationService(
@@ -56,12 +59,14 @@ public class FridgeReallocationService {
             CompartmentRoomAccessRepository compartmentRoomAccessRepository,
             RoomRepository roomRepository,
             InspectionSessionRepository inspectionSessionRepository,
+            AuditLogService auditLogService,
             Clock clock
     ) {
         this.fridgeCompartmentRepository = fridgeCompartmentRepository;
         this.compartmentRoomAccessRepository = compartmentRoomAccessRepository;
         this.roomRepository = roomRepository;
         this.inspectionSessionRepository = inspectionSessionRepository;
+        this.auditLogService = auditLogService;
         this.clock = clock;
     }
 
@@ -220,13 +225,35 @@ public class FridgeReallocationService {
             }
         }
 
-        return new ReallocationApplyResponse(
+        ReallocationApplyResponse response = new ReallocationApplyResponse(
                 floor,
                 compartments.size(),
                 releasedCount,
                 createdCount,
                 now
         );
+
+        UUID actorUserId = null;
+        try {
+            actorUserId = SecurityUtils.getCurrentUserId();
+        } catch (Exception ignored) {
+            // fall back to null actor when security context is unavailable (e.g., batch)
+        }
+
+        auditLogService.record(new AuditLogService.AuditLogCommand(
+                "FRIDGE_REALLOCATION_APPLY",
+                "FRIDGE_FLOOR",
+                Short.toString(floor),
+                actorUserId,
+                null,
+                Map.of(
+                        "affectedCompartments", response.affectedCompartments(),
+                        "releasedAssignments", response.releasedAssignments(),
+                        "createdAssignments", response.createdAssignments()
+                )
+        ));
+
+        return response;
     }
 
     private Map<UUID, List<UUID>> buildRecommendedAssignments(List<UUID> roomIds, List<FridgeCompartment> chillCompartments) {
