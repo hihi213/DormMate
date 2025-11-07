@@ -12,7 +12,9 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.Objects;
 
+import com.dormmate.backend.modules.audit.application.AuditLogService;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeBundleResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeDtoMapper;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionDetailResponse;
@@ -24,8 +26,8 @@ import com.dormmate.backend.modules.inspection.presentation.dto.InspectionSessio
 import com.dormmate.backend.modules.inspection.presentation.dto.StartInspectionRequest;
 import com.dormmate.backend.modules.inspection.presentation.dto.SubmitInspectionRequest;
 import com.dormmate.backend.modules.auth.domain.DormUser;
+import com.dormmate.backend.modules.auth.domain.Room;
 import com.dormmate.backend.modules.auth.domain.RoomAssignment;
-import com.dormmate.backend.modules.fridge.domain.CompartmentRoomAccess;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundle;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundleStatus;
 import com.dormmate.backend.modules.fridge.domain.FridgeCompartment;
@@ -75,6 +77,7 @@ public class InspectionService {
     private final CompartmentRoomAccessRepository compartmentRoomAccessRepository;
     private final InspectionScheduleRepository inspectionScheduleRepository;
     private final NotificationService notificationService;
+    private final AuditLogService auditLogService;
     private final Clock clock;
 
     public InspectionService(
@@ -87,6 +90,7 @@ public class InspectionService {
             CompartmentRoomAccessRepository compartmentRoomAccessRepository,
             InspectionScheduleRepository inspectionScheduleRepository,
             NotificationService notificationService,
+            AuditLogService auditLogService,
             Clock clock
     ) {
         this.inspectionSessionRepository = inspectionSessionRepository;
@@ -98,6 +102,7 @@ public class InspectionService {
         this.compartmentRoomAccessRepository = compartmentRoomAccessRepository;
         this.inspectionScheduleRepository = inspectionScheduleRepository;
         this.notificationService = notificationService;
+        this.auditLogService = auditLogService;
         this.clock = clock;
     }
 
@@ -253,6 +258,7 @@ public class InspectionService {
         if (session.getStatus() != InspectionStatus.IN_PROGRESS) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "SESSION_NOT_ACTIVE");
         }
+        DormUser actor = loadCurrentUser();
         OffsetDateTime now = OffsetDateTime.now(clock);
         session.setStatus(InspectionStatus.CANCELLED);
         session.setEndedAt(now);
@@ -266,6 +272,19 @@ public class InspectionService {
             schedule.setCompletedAt(null);
             inspectionScheduleRepository.save(schedule);
         });
+
+        auditLogService.record(new AuditLogService.AuditLogCommand(
+                "INSPECTION_CANCEL",
+                "INSPECTION_SESSION",
+                session.getId().toString(),
+                actor.getId(),
+                null,
+                Map.of(
+                        "floor", session.getFridgeCompartment().getFridgeUnit().getFloorNo(),
+                        "slotIndex", session.getFridgeCompartment().getSlotIndex(),
+                        "reason", "MANUAL_CANCEL"
+                )
+        ));
     }
 
     public InspectionSessionResponse recordActions(UUID sessionId, InspectionActionRequest request) {
@@ -386,6 +405,21 @@ public class InspectionService {
             }
         });
         notificationService.sendInspectionResultNotifications(saved);
+
+        auditLogService.record(new AuditLogService.AuditLogCommand(
+                "INSPECTION_SUBMIT",
+                "INSPECTION_SESSION",
+                saved.getId().toString(),
+                currentUser.getId(),
+                null,
+                Map.of(
+                        "floor", saved.getFridgeCompartment().getFridgeUnit().getFloorNo(),
+                        "slotIndex", saved.getFridgeCompartment().getSlotIndex(),
+                        "status", saved.getStatus().name(),
+                        "totalBundles", saved.getTotalBundleCount()
+                )
+        ));
+
         return mapSession(saved, currentUser);
     }
 
@@ -575,16 +609,17 @@ public class InspectionService {
         }
         RoomAssignment assignment = roomAssignmentRepository.findActiveAssignment(viewer.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED"));
+        Room assignedRoom = requireRoom(assignment);
 
         short sessionFloor = session.getFridgeCompartment().getFridgeUnit().getFloorNo();
         if (SecurityUtils.hasRole("FLOOR_MANAGER")) {
-            if (assignment.getRoom().getFloor() != sessionFloor) {
+            if (assignedRoom.getFloor() != sessionFloor) {
                 throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_SCOPE_VIOLATION");
             }
             return;
         }
 
-        UUID viewerRoomId = assignment.getRoom().getId();
+        UUID viewerRoomId = requireRoomId(assignment);
         boolean accessible = compartmentRoomAccessRepository
                 .findByFridgeCompartmentIdAndReleasedAtIsNullOrderByAssignedAtAsc(session.getFridgeCompartment().getId())
                 .stream()
@@ -604,5 +639,14 @@ public class InspectionService {
                     .ifPresent(assignment -> result.put(ownerId, assignment));
         }
         return result;
+    }
+
+    private Room requireRoom(RoomAssignment assignment) {
+        return Objects.requireNonNull(assignment.getRoom(), "room assignment missing room");
+    }
+
+    private UUID requireRoomId(RoomAssignment assignment) {
+        Room room = requireRoom(assignment);
+        return Objects.requireNonNull(room.getId(), "room id");
     }
 }

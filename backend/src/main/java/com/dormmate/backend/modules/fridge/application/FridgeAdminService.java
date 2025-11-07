@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -61,7 +62,8 @@ public class FridgeAdminService {
                 .toList();
     }
 
-    public FridgeSlotResponse updateCompartment(UUID compartmentId, UpdateCompartmentConfigRequest request) {
+    public FridgeSlotResponse updateCompartment(@NonNull UUID compartmentId,
+                                                @NonNull UpdateCompartmentConfigRequest request) {
         ensureAdminRole();
 
         FridgeCompartment compartment = fridgeCompartmentRepository.findById(compartmentId)
