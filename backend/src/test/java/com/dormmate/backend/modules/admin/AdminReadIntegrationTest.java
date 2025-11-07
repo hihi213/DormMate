@@ -1,5 +1,7 @@
 package com.dormmate.backend.modules.admin;
 
+import static com.dormmate.backend.support.TestResidentAccounts.DEFAULT_PASSWORD;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT1;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -55,7 +57,7 @@ class AdminReadIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void nonAdminCannotAccessAdminReadEndpoints() throws Exception {
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
 
         mockMvc.perform(get("/admin/dashboard")
                         .header("Authorization", "Bearer " + residentToken))

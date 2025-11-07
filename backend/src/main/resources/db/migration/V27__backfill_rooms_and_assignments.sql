@@ -1,7 +1,6 @@
--- 재배포 환경 백필: 기본 호실 메타데이터 및 거주자/데모 계정 배정 보정
+-- 재배포 환경 백필: 기본 호실 메타데이터 및 거주자 계정을 재구성한다.
 -- - 2~5층 호실 정보를 최신 규칙으로 갱신한다.
--- - 데모 계정(alice/bob/...)의 배정과 권한을 복구한다.
--- - 비어 있는 슬롯에는 새로운 거주자 계정을 생성해 배정한다.
+-- - 기존 데모/거주자 계정을 제거하고 최신 규칙으로 다시 채운다.
 
 SET TIME ZONE 'UTC';
 
@@ -56,99 +55,60 @@ room_upsert AS (
 )
 SELECT 1;
 
--- 데모 사용자 권한 및 배정 복구
-WITH demo_seed AS (
-    SELECT *
-    FROM (VALUES
-        ('alice', false),
-        ('bob',   true ),
-        ('carol', false),
-        ('dylan', false),
-        ('diana', false),
-        ('eric',  true ),
-        ('fiona', false)
-    ) AS v(login_id, is_floor_manager)
+-- 기존 거주자/데모 계정 및 배정 초기화
+WITH target_rooms AS (
+    SELECT id
+    FROM room
+    WHERE floor BETWEEN 2 AND 5
 ),
-resolved_demo AS (
-    SELECT du.id AS dorm_user_id, ds.login_id, ds.is_floor_manager
-    FROM demo_seed ds
-    JOIN dorm_user du ON du.login_id = ds.login_id
-)
-INSERT INTO user_role (id, dorm_user_id, role_code, granted_at, created_at, updated_at)
-SELECT
-    gen_random_uuid(),
-    resolved_demo.dorm_user_id,
-    CASE WHEN resolved_demo.is_floor_manager THEN 'FLOOR_MANAGER' ELSE 'RESIDENT' END,
-    CURRENT_TIMESTAMP,
-    CURRENT_TIMESTAMP,
-    CURRENT_TIMESTAMP
-FROM resolved_demo
-ON CONFLICT (dorm_user_id, role_code) WHERE revoked_at IS NULL DO NOTHING;
-
-WITH demo_targets AS (
-    SELECT
-        du.id AS dorm_user_id,
-        ds.floor_no,
-        ds.room_number,
-        ds.personal_no,
-        r.id AS room_id
+removed_assignments AS (
+    DELETE FROM room_assignment
+    WHERE room_id IN (SELECT id FROM target_rooms)
+    RETURNING dorm_user_id
+),
+role_candidates AS (
+    SELECT DISTINCT dorm_user_id
+    FROM user_role
+    WHERE role_code IN ('RESIDENT', 'FLOOR_MANAGER')
+      AND revoked_at IS NULL
+),
+pattern_candidates AS (
+    SELECT du.id AS dorm_user_id
+    FROM dorm_user du
+    WHERE du.login_id ~ '^[2-5][0-9]{2}-[1-3]$'
+       OR du.login_id LIKE 'resident%'
+       OR du.login_id IN ('alice','bob','carol','dylan','diana','eric','fiona')
+),
+candidate_users AS (
+    SELECT DISTINCT dorm_user_id
     FROM (
-        SELECT *
-        FROM (VALUES
-            ('alice', 2, '05', 1),
-            ('bob',   2, '05', 2),
-            ('carol', 2, '06', 1),
-            ('dylan', 2, '17', 2),
-            ('diana', 3, '05', 1),
-            ('eric',  3, '13', 1),
-            ('fiona', 3, '24', 1)
-        ) AS v(login_id, floor_no, room_number, personal_no)
-    ) ds
-    JOIN dorm_user du ON du.login_id = ds.login_id
-    JOIN room r ON r.floor = ds.floor_no AND r.room_number = ds.room_number
+        SELECT dorm_user_id FROM removed_assignments
+        UNION
+        SELECT dorm_user_id FROM role_candidates
+        UNION
+        SELECT dorm_user_id FROM pattern_candidates
+    ) AS unioned
+),
+deleted_roles AS (
+    DELETE FROM user_role
+    WHERE dorm_user_id IN (SELECT dorm_user_id FROM candidate_users)
+      AND role_code IN ('RESIDENT', 'FLOOR_MANAGER')
+    RETURNING dorm_user_id
+),
+admin_users AS (
+    SELECT DISTINCT dorm_user_id
+    FROM user_role
+    WHERE role_code = 'ADMIN'
+      AND revoked_at IS NULL
+),
+deletable_users AS (
+    SELECT cu.dorm_user_id
+    FROM candidate_users cu
+    LEFT JOIN admin_users au ON au.dorm_user_id = cu.dorm_user_id
+    WHERE au.dorm_user_id IS NULL
 )
-UPDATE room_assignment ra
-SET released_at = CURRENT_TIMESTAMP,
-    updated_at = CURRENT_TIMESTAMP
-FROM demo_targets tgt
-WHERE ra.dorm_user_id = tgt.dorm_user_id
-  AND ra.released_at IS NULL
-  AND ra.room_id <> tgt.room_id;
-
-UPDATE room_assignment ra
-SET released_at = CURRENT_TIMESTAMP,
-    updated_at = CURRENT_TIMESTAMP
-FROM demo_targets tgt
-WHERE ra.room_id = tgt.room_id
-  AND ra.personal_no = tgt.personal_no
-  AND ra.released_at IS NULL
-  AND ra.dorm_user_id <> tgt.dorm_user_id;
-
-INSERT INTO room_assignment (
-    id,
-    room_id,
-    dorm_user_id,
-    personal_no,
-    assigned_at,
-    released_at,
-    created_at,
-    updated_at
-)
-SELECT
-    gen_random_uuid(),
-    tgt.room_id,
-    tgt.dorm_user_id,
-    tgt.personal_no,
-    CURRENT_TIMESTAMP,
-    NULL,
-    CURRENT_TIMESTAMP,
-    CURRENT_TIMESTAMP
-FROM demo_targets tgt
-ON CONFLICT (room_id, personal_no) WHERE released_at IS NULL DO UPDATE
-SET dorm_user_id = EXCLUDED.dorm_user_id,
-    assigned_at = EXCLUDED.assigned_at,
-    released_at = NULL,
-    updated_at = CURRENT_TIMESTAMP;
+DELETE FROM dorm_user
+WHERE id IN (SELECT dorm_user_id FROM deletable_users);
 
 -- 비어 있는 슬롯에 신규 거주자 계정 생성
 DROP TABLE IF EXISTS tmp_named_slots;
@@ -163,9 +123,9 @@ WITH available_slots AS (
         format('resident%s%s-%s@dormmate.dev', r.floor, r.room_number, slot.personal_no) AS email,
         ROW_NUMBER() OVER (
             PARTITION BY r.floor
-            ORDER BY r.room_number::INTEGER, slot.personal_no
+            ORDER BY md5(concat(r.floor::text, '-', r.room_number, '-', slot.personal_no, '-seed'))
         ) AS floor_sequence
-    FROM room_upsert r
+    FROM room r
     CROSS JOIN LATERAL generate_series(1, r.capacity) AS slot(personal_no)
     LEFT JOIN room_assignment ra
            ON ra.room_id = r.id
@@ -265,6 +225,19 @@ SELECT
 FROM tmp_named_slots ns
 JOIN dorm_user du ON du.login_id = ns.login_id
 ON CONFLICT (room_id, personal_no) WHERE released_at IS NULL DO NOTHING;
+
+-- 기본 층별장 역할 지정 (2층 05호 3번 자리)
+INSERT INTO user_role (id, dorm_user_id, role_code, granted_at, created_at, updated_at)
+SELECT
+    gen_random_uuid(),
+    du.id,
+    'FLOOR_MANAGER',
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP,
+    CURRENT_TIMESTAMP
+FROM dorm_user du
+WHERE du.login_id IN ('205-3')
+ON CONFLICT (dorm_user_id, role_code) WHERE revoked_at IS NULL DO NOTHING;
 
 -- 칸-호실 접근 권한 재구성
 DROP TABLE IF EXISTS tmp_active_compartments;

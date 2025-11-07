@@ -1,5 +1,8 @@
 package com.dormmate.backend.modules.inspection;
 
+import static com.dormmate.backend.support.TestResidentAccounts.DEFAULT_PASSWORD;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT1;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT3;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -53,8 +56,8 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
     void setUp() throws Exception {
         jdbcTemplate.update("DELETE FROM notification");
         jdbcTemplate.update("DELETE FROM inspection_schedule");
-        managerToken = login("bob", "bob123!");
-        residentToken = login("alice", "alice123!");
+        managerToken = login(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD);
+        residentToken = login(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         adminToken = login("dormmate", "admin1!");
         slot2FAId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
     }

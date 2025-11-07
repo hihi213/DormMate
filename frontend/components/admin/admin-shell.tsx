@@ -32,7 +32,14 @@ import {
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { getCurrentUser, logout, subscribeAuth, type AuthUser } from "@/lib/auth"
@@ -313,6 +320,10 @@ export default function AdminShell({ children }: AdminShellProps) {
                   </div>
                 </div>
                 <SheetContent side="left" className="w-[280px] p-0">
+                  <SheetHeader className="sr-only">
+                    <SheetTitle>모바일 관리자 내비게이션</SheetTitle>
+                    <SheetDescription>관리자 페이지 간 이동 메뉴</SheetDescription>
+                  </SheetHeader>
                   <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 pr-9">
                     <div className="flex items-center gap-2">
                       <span className="rounded-full bg-emerald-100 p-2">
@@ -435,6 +446,10 @@ export default function AdminShell({ children }: AdminShellProps) {
                     className="h-[80vh] overflow-y-auto px-4 py-6"
                     aria-label="운영 보조 정보"
                   >
+                    <SheetHeader className="sr-only">
+                      <SheetTitle>운영 보조 정보</SheetTitle>
+                      <SheetDescription>운영 런북과 참고 정보를 확인하세요</SheetDescription>
+                    </SheetHeader>
                     <div className="mx-auto max-w-xl space-y-6">{railContent}</div>
                   </SheetContent>
                 </Sheet>

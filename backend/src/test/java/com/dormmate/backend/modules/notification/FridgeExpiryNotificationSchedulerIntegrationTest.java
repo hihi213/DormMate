@@ -1,5 +1,6 @@
 package com.dormmate.backend.modules.notification;
 
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT1;
 import static com.dormmate.backend.modules.notification.application.NotificationService.KIND_FRIDGE_EXPIRED;
 import static com.dormmate.backend.modules.notification.application.NotificationService.KIND_FRIDGE_EXPIRY;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -92,8 +93,8 @@ class FridgeExpiryNotificationSchedulerIntegrationTest extends AbstractPostgresI
         when(clock.instant()).thenReturn(fixedInstant);
         when(clock.getZone()).thenReturn(ZoneOffset.UTC);
 
-        owner = dormUserRepository.findByLoginIdIgnoreCase("alice")
-                .orElseThrow(() -> new IllegalStateException("alice user not found"));
+        owner = dormUserRepository.findByLoginIdIgnoreCase(FLOOR2_ROOM05_SLOT1)
+                .orElseThrow(() -> new IllegalStateException("primary resident user not found"));
         ownerBundle = fridgeBundleRepository.findAll().stream()
                 .findFirst()
                 .orElseThrow(() -> new IllegalStateException("bundle not found"));
