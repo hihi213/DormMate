@@ -303,6 +303,7 @@ export default function AdminFridgePage() {
   const [slotAlerts, setSlotAlerts] = useState<Record<string, boolean>>({})
   const searchParams = useSearchParams()
   const initialSlotIdRef = useRef<string | null>(searchParams.get("slot") ?? searchParams.get("slotId"))
+  const lastSyncedSlotParamRef = useRef<string | null>(initialSlotIdRef.current ?? null)
   const initialOwnerIdRef = useRef<string | null>(searchParams.get("ownerId"))
   const initialBundleIdRef = useRef<string | null>(searchParams.get("bundle") ?? searchParams.get("bundleId"))
   const initialInspectionIdRef = useRef<string | null>(
@@ -364,6 +365,7 @@ export default function AdminFridgePage() {
       }
       return changed
     })
+    lastSyncedSlotParamRef.current = selectedSlotId ?? null
   }, [selectedSlotId, syncQueryEnabled, pendingSlotId, updateQueryParams])
 
   useEffect(() => {
@@ -397,9 +399,12 @@ export default function AdminFridgePage() {
   )
 
   useEffect(() => {
-    const slotParam = searchParams.get("slot") ?? searchParams.get("slotId")
-    if (slotParam && slotParam !== selectedSlotId && slotParam !== pendingSlotId) {
-      setPendingSlotId(slotParam)
+    const slotParam = searchParams.get("slot") ?? searchParams.get("slotId") ?? null
+    if (slotParam !== lastSyncedSlotParamRef.current) {
+      lastSyncedSlotParamRef.current = slotParam
+      if (slotParam && slotParam !== selectedSlotId && slotParam !== pendingSlotId) {
+        setPendingSlotId(slotParam)
+      }
     }
 
     const ownerParam = searchParams.get("ownerId")
