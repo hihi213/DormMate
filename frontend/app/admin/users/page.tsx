@@ -268,6 +268,10 @@ export default function AdminUsersPage() {
 
   const resetSelection = () => setSelectedIds([])
   const openDrawer = (user: AdminUser) => {
+    if (typeof document !== "undefined") {
+      const activeElement = document.activeElement as HTMLElement | null
+      activeElement?.blur()
+    }
     setDrawerUser(user)
     setFocusedUserId(user.id)
   }
