@@ -27,7 +27,7 @@ export async function resetDemoDataset() {
     return
   }
 
-  const { error } = await safeApiCall<{ message?: string }>("/admin/seed/demo-reset", {
+  const { error } = await safeApiCall<{ message?: string }>("/admin/seed/fridge-demo", {
     method: "POST",
   })
 

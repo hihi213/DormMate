@@ -182,5 +182,3 @@ END;
 $$;
 
 SELECT public.fn_demo_reset_fridge();
-
-DROP FUNCTION public.fn_demo_reset_fridge();
