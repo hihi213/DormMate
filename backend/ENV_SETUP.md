@@ -6,21 +6,27 @@
 프로젝트 루트의 `deploy/.env.prod` 파일 하나만 관리하면 됩니다. 파일은 `.gitignore`에 포함되어 저장소에 커밋되지 않습니다.
 
 ```bash
-# deploy/.env.prod
+# deploy/.env.prod  (값은 배포 전 반드시 직접 채워야 합니다)
 DB_URL=
 DB_USERNAME=
 DB_PASSWORD=
 
-REDIS_PORT=6379
-JWT_SECRET=dev-jwt-secret-key-change-in-production-2025
-JWT_REFRESH_EXPIRATION=604800000
-AWS_S3_BUCKET=dormmate-storage
-AWS_REGION=ap-northeast-2
-AWS_ACCESS_KEY=change-me
-AWS_SECRET_KEY=change-me
+REDIS_HOST=
+REDIS_PORT=
+REDIS_PASSWORD=
+
+JWT_SECRET=
+JWT_EXPIRATION=
+JWT_REFRESH_EXPIRATION=
+
+AWS_S3_BUCKET=
+AWS_REGION=
+AWS_ACCESS_KEY=
+AWS_SECRET_KEY=
+
 ADMIN_USERNAME=
 ADMIN_PASSWORD=
-SERVER_PORT=8080
+SERVER_PORT=
 ```
 
 > **참고**: `docker-compose.yml`이 PostgreSQL 컨테이너의 `5432` 포트를 호스트에 노출합니다. 로컬 툴에서 접근할 때는 `jdbc:postgresql://localhost:5432/...`를 사용하고, 컨테이너 간 통신만 필요하면 `jdbc:postgresql://db:5432/...`와 같이 `host=db`로 지정하세요.
