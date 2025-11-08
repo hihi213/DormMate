@@ -731,6 +731,40 @@ components:
         notes:
           type: string
           nullable: true
+    InspectionActionMutation:
+      type: object
+      properties:
+        actionId:
+          type: integer
+          format: int64
+          nullable: true
+        bundleId:
+          type: string
+          format: uuid
+          nullable: true
+        itemId:
+          type: string
+          format: uuid
+          nullable: true
+        action: { $ref: '#/components/schemas/InspectionAction' }
+        note:
+          type: string
+          nullable: true
+      required: [action]
+    UpdateInspectionSessionRequest:
+      type: object
+      properties:
+        notes:
+          type: string
+          nullable: true
+        mutations:
+          type: array
+          items: { $ref: '#/components/schemas/InspectionActionMutation' }
+        deleteActionIds:
+          type: array
+          items:
+            type: integer
+            format: int64
 paths:
   /auth/login:
     post:
@@ -1437,6 +1471,26 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Inspections]
+      summary: 검사 정정
+      security: [{ BearerAuth: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateInspectionSessionRequest' }
+      responses:
+        '200':
+          description: 정정된 검사 세션
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/InspectionSession' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409': { $ref: '#/components/responses/Conflict' }
     delete:
       tags: [Inspections]
       summary: 검사 세션 취소
@@ -1457,7 +1511,7 @@ paths:
         - in: path
           name: sessionId
           required: true
-          schema: { type: integer, format: int64 }
+          schema: { type: string, format: uuid }
       requestBody:
         required: true
         content:

@@ -45,6 +45,8 @@
     - (PASS, 2024-11-24 — 추가 마이그레이션 없음, idempotent 검증)
   - `docker compose ps`
     - (PASS, 2024-11-24 — db/redis/pgadmin 컨테이너 기동 및 healthy 상태 확인)
+- **추가 로그**
+  - 2025-11-05: `R__demo_reset.sql` repeatable 스크립트에 `penalty_history` 초기화/삽입을 추가하고, `/admin/seed/fridge-demo` 실행 후 폐기 조치/벌점 샘플 데이터가 정상 삽입되는지 로컬 DB에서 재확인.
 - **리스크/의존성**: Flyway 9.x가 PostgreSQL 15까지만 공식 지원 → 배포 환경에서 16.x 사용 시 업그레이드 계획 필요. 시드 스크립트는 UPSERT(ON CONFLICT) 기반이라 재적용 안전하나, 외부에서 수동 데이터 수정 시 label_range/next_label 값 역행 가능성 있음.
 
 ### EN-102 데이터 베이스라인 (Flyway 10.x 업그레이드) — DONE (2024-11-24, Codex)
@@ -379,8 +381,12 @@
   4. [ ] 배치 실패 재시도/오류 코드 정책 문서화 및 관리자 알림 연동. (TODO: `docs/ops/batch-notifications.md` 기반)
 - **진행 로그**
   - 2025-11-03: 임박/만료 배치 서비스 구현, dedupe/TTL 정책 반영, `FridgeExpiryNotificationSchedulerIntegrationTest`로 검증.
+  - 2025-11-08: 스케줄러 통합 테스트를 고정 Clock + 전용 슬롯 번들/선호도 픽스처로 재작성하고, `AdminSeedIntegrationTest`에서 FK 정리 순서를 보강해 `/admin/seed/fridge-demo` 절차와 동기화했다.
 - **테스트**
   - `./gradlew test --tests *FridgeExpiryNotificationSchedulerIntegrationTest`
+    - (PASS, 2025-11-08 — 전용 번들/선호도 픽스처 기반으로 임박/만료 1건씩 생성 및 FAILED 로그 경로 검증)
+  - `./gradlew clean test`
+    - (PASS, 2025-11-08 — 스케줄러/데모 시드 정리 및 관련 통합 테스트 전체 회귀)
 
 
 프런트 개선
@@ -417,6 +423,22 @@
 * 테스트로 NotificationControllerIntegrationTest를 추가했으니, 프런트에서도 목록/읽음/설정 시나리오를 QA할 때 참고하면 좋겠습니다.
 
 
+
+### IN-307 검사 정정·알림 재발송 — DONE (2025-11-05, Codex)
+- **근거 문서**: `docs/mvp-plan.md (IN-303 확장)`, `docs/feature-inventory.md §2`, `docs/design/admin-wireframes.md §17`
+- **변경 사항**
+  1. `/fridge/inspections/{sessionId}` PATCH 엔드포인트와 `UpdateInspectionSessionRequest` 스키마를 추가해 ADMIN이 제출된 세션의 메모/조치를 정정할 수 있게 했다. 정정 시 `INSPECTION_ADJUST` 감사 로그가 남고, 조치 타입 변경에 따라 `penalty_history`를 재계산한다.
+  2. 관리자 UI “정정” 버튼을 PATCH API와 연동해 조치 추가/수정/삭제, 노트 편집, 토스트 피드백을 제공한다. 저장 성공 시 해당 세션 카드와 패널이 즉시 갱신된다.
+  3. 데모 초기화 스크립트(`fn_demo_reset_fridge`)가 `penalty_history`를 정리한 뒤 데모용 폐기 조치에 1점 벌점을 주입하도록 확장해, 초기화 직후에도 정정/벌점 시나리오를 시연할 수 있게 했다.
+- **테스트**
+  - `./gradlew test --tests com.dormmate.backend.modules.inspection.*` *(NOT RUN — 로컬 환경 제약, 차후 CI에서 회귀 예정)*
+  - `npm run lint`
+    - (PASS, 2025-11-05 — 정정 모달 연동 후 ESLint/TypeScript 경고 없음)
+  - 수동: 관리자 계정으로 데모 초기화 → 폐기 조치 정정(폐기→경고) → 벌점/알림 변화 확인.
+- **진행 로그**
+  - 2025-11-05: `InspectionService`에 정정 로직과 감사 로그 기록을 추가하고, 벌점 재계산 흐름을 보강.
+  - 2025-11-05: `/admin/fridge` 검사 다이얼로그에 정정 모달/토스트/상태 동기화를 구현.
+  - 2025-11-05: `R__demo_reset.sql` repeatable 스크립트 재적용 후 데모용 폐기 벌점 데이터 정상 삽입 확인.
 
 * 09:00 임박/만료 알림이 서버 배치로 생성되기 시작했습니다. FRIDGE_EXPIRY(D-3 이내), FRIDGE_EXPIRED(이미 지난 항목) 두 종류가 하루 한 번 생성되며 dedupe 키({kind}:{userId}:{yyyyMMdd})와 24시간 TTL로 중복을 막습니다. 알림 본문에는 개수와 최대 3개 샘플 품목명이 포함됩니다.
 * 알림이 프런트로 내려오면 기존 GET /notifications 목록 API로 그대로 전달되므로 추가 API 연동은 없습니다. 다만 임박/만료 알림이 새로 생성되면, UI에서 사용자에게 배지/강조 색상 등을 적용할 때 kind 코드로 분기해 주세요.

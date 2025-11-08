@@ -4,6 +4,19 @@ DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위�
 
 > 최신 MVP 범위와 구현 단계는 `docs/mvp-scenario.md`, `docs/mvp-plan.md`를 참고하세요. 기능·정책의 전체 정의는 `docs/feature-inventory.md`에 정리되어 있습니다.
 
+## 현재 구현된 핵심 기능 스냅샷
+
+- **거주자 냉장고 관리**
+  - 배정된 칸만 조회/등록 가능, 라벨 자동 발급 및 삭제 시 재사용, 임박/만료 배지 및 검색(라벨·호실·사용자) 제공.
+- **층별장 검사**
+  - 세션 잠금/연장, 조치·벌점 기록, 제출 시 알림/감사 로그 발행. 제출 완료된 검사에 대해 ADMIN이 메모·조치를 정정(PATCH `/fridge/inspections/{id}`)하고 벌점/알림이 즉시 재계산된다.
+- **관리자 포털**
+  - `/admin/fridge`에서 칸 상태, 포장 CRUD, 검사 이력, 재배분, 데모 시드 실행을 통합 관리. 검사 정정, 알림 재발송, 재검 요청, 데모 데이터 초기화 버튼이 실제 API와 연결돼 있다.
+- **알림/배치**
+  - 사용자 알림 REST API(`GET /notifications`, `PATCH /notifications/{id}/read`, `GET/PATCH /notifications/preferences`)와 임박/만료 배치가 운영 중이며, 실패 로그는 `notification_dispatch_log`에 기록된다.
+- **감사/시드**
+  - 모든 관리자 액션(검사 제출·정정, 재배분, 데모 초기화 등)이 `audit_log`에 JSON 메타데이터로 기록된다. `/admin/seed/fridge-demo`는 전시용 포장/검사/벌점 데이터를 다시 삽입하므로 **운영 DB에서는 절대 실행하지 않는다.**
+
 ## 주요 스택 & 권장 버전
 
 - **Backend**: Spring Boot 3.3.4, Java 21, Gradle 8.9, Flyway 10.17, PostgreSQL 16

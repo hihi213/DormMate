@@ -1,140 +1,103 @@
-# DormMate 환경변수 설정 가이드
+# DormMate 환경 변수 설정 가이드
 
-## 🚀 **개발 환경 설정**
+본 문서는 `deploy/.env.prod` 한 벌을 기준으로 로컬·CI·운영 환경을 구성하는 방법을 설명합니다. 저장소에는 **값이 비워진 샘플(.env, deploy/.env.prod)** 이 포함되어 있으므로, 실제 비밀 값은 복사본을 만들어 주입합니다.
 
-### **1. 환경변수 파일 생성**
-프로젝트 루트의 `deploy/.env.prod` 파일 하나만 관리하면 됩니다. 파일은 `.gitignore`에 포함되어 저장소에 커밋되지 않습니다.
+---
 
-```bash
-# deploy/.env.prod  (값은 배포 전 반드시 직접 채워야 합니다)
-DB_URL=
-DB_USERNAME=
-DB_PASSWORD=
+## 1. 파일 구성
+| 용도 | 경로 | 비고 |
+| --- | --- | --- |
+| 샘플(추적) | `.env`, `deploy/.env.prod` | 키 목록과 기본 주석만 포함. Git에 남아 있으므로 비밀번호를 입력하지 말 것 |
+| 로컬 실행 | `deploy/.env.local` (임의) | 샘플을 복사해 값 채우기 |
+| 운영 배포 | CI가 생성한 `deploy/.env.prod` | Secret Manager/Vault에서 값을 받아 런타임 전에만 생성하고 종료 시 즉시 삭제 |
 
-REDIS_HOST=
-REDIS_PORT=
-REDIS_PASSWORD=
+필수 변수 요약:
+- **DB 연결**: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` (또는 `POSTGRES_*`)
+- **Redis**: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
+- **보안**: `JWT_SECRET`, `JWT_EXPIRATION`, `JWT_REFRESH_EXPIRATION`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` 또는 `ADMIN_PASSWORD_HASH`
+- **운영 옵션**: `SERVER_PORT`, `TZ`, `CORS_ALLOWED_ORIGINS`, `RATE_LIMIT_REQ_PER_MIN`
 
-JWT_SECRET=
-JWT_EXPIRATION=
-JWT_REFRESH_EXPIRATION=
+샘플 파일은 기본 자격증명이 포함되어 있으므로 절대 그대로 배포하지 마세요.
 
-AWS_S3_BUCKET=
-AWS_REGION=
-AWS_ACCESS_KEY=
-AWS_SECRET_KEY=
+---
 
-ADMIN_USERNAME=
-ADMIN_PASSWORD=
-SERVER_PORT=
-```
-
-> **참고**: `docker-compose.yml`이 PostgreSQL 컨테이너의 `5432` 포트를 호스트에 노출합니다. 로컬 툴에서 접근할 때는 `jdbc:postgresql://localhost:5432/...`를 사용하고, 컨테이너 간 통신만 필요하면 `jdbc:postgresql://db:5432/...`와 같이 `host=db`로 지정하세요.
-
-### **2. 환경변수 로드**
-터미널에서 다음 명령어로 환경변수를 로드하세요:
-
-```bash
-# macOS/Linux (프로젝트 루트 기준)
-set -a
-source deploy/.env.prod
-set +a
-```
-
-> `direnv`를 사용하면 `dotenv deploy/.env.prod`만 `.envrc`에 추가하여 디렉터리 진입 시 자동으로 로드할 수 있습니다.
-
-### **3. Flyway 마이그레이션 실행**
-환경 파일을 지정하지 않으면 `deploy/.env.prod`가 기본으로 사용됩니다.
-
-```bash
-# 기본 환경
-backend/scripts/flyway.sh
-
-# 다른 파일을 사용하려면 명시적으로 전달
-backend/scripts/flyway.sh secrets/prod.env
-backend/scripts/flyway.sh secrets/prod.env clean
-```
-
-## 🏭 **운영 환경 설정**
-
-### **1. 서버용 `.env` 관리**
-- 배포 스크립트가 필요한 값을 이용해 `deploy/.env.prod`를 생성합니다.
-- 값은 Secret Manager, 환경변수, Vault 등 안전한 저장소에 보관하세요.
-
-### **2. 배포 시 적용**
-배포 스크립트가 `.env`를 만든 뒤 필요한 명령을 실행하고, 완료 후 파일을 삭제합니다.
-
-```bash
-# 예시: 프로덕션 마이그레이션
-backend/scripts/flyway.sh deploy/.env.prod
-
-# 예시: 애플리케이션 실행
-set -a && source deploy/.env.prod && set +a
-./gradlew bootRun --args='--spring.profiles.active=prod'
-```
-
-## 🔒 **보안 체크리스트**
-
-### **개발 환경**
-- [ ] `deploy/.env.prod` 파일이 `.gitignore`에 포함되어 있는지 확인
-- [ ] 하드코딩된 비밀번호가 없는지 확인
-- [ ] JWT 시크릿이 예측 가능하지 않은지 확인
-
-### **운영 환경**
-- [ ] 모든 비밀번호가 강력한지 확인 (16자 이상, 특수문자 포함)
-- [ ] 데이터베이스가 프라이빗 서브넷에 있는지 확인
-- [ ] 방화벽 규칙이 적절히 설정되어 있는지 확인
-- [ ] SSL/TLS 인증서가 설정되어 있는지 확인
-
-## 🚨 **주의사항**
-
-1. **절대 소스코드에 비밀번호를 하드코딩하지 마세요**
-2. **환경변수 파일은 절대 Git에 커밋하지 마세요**
-3. **운영 환경의 비밀번호는 정기적으로 변경하세요**
-4. **JWT 시크릿은 256비트 이상의 랜덤 문자열을 사용하세요**
-
-## 📝 **환경별 실행 방법**
-
-### **개발 환경**
-```bash
-# (프로젝트 루트에서) 환경변수 로드 후
-./auto dev backend
-```
-
-### **운영 환경**
-```bash
-# 환경변수 로드 후
-./gradlew bootRun --args='--spring.profiles.active=prod'
-```
-
-### **Docker 환경**
-```bash
-docker compose --env-file deploy/.env.prod up migrate
-docker compose --env-file deploy/.env.prod up app
-```
-
-## 🚢 **배포 절차 요약**
-1. 앱 빌드  
+## 2. 로컬 개발 절차
+1. **샘플 복사**
    ```bash
-   cd frontend && npm run build
-   cd ../backend && ./gradlew bootJar
+   cp deploy/.env.prod deploy/.env.local
    ```
-2. 이미지 태그 및 배포  
+2. **값 채우기**
+   - PostgreSQL/Redis를 Docker Compose로 기동한다면 기본 호스트(`localhost`, `redis`)만 맞추면 된다.
+   - `SPRING_PROFILES_ACTIVE` 기본값이 `prod`이므로, 로컬 개발에서는 아래처럼 덮어쓴다.
+     ```bash
+     echo "SPRING_PROFILES_ACTIVE=dev-local" >> deploy/.env.local
+     ```
+3. **환경 변수 로드**
    ```bash
-   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml build app
-   docker tag dorm_app:latest dormmate/app:<TAG>
+   set -a && source deploy/.env.local && set +a
+   ```
+   `direnv`를 사용할 경우 `.envrc`에 `dotenv deploy/.env.local`을 추가하면 자동으로 로드된다.
+4. **마이그레이션 & 실행**
+   ```bash
+   backend/scripts/flyway.sh deploy/.env.local
+   ./gradlew bootRun --args='--spring.profiles.active=dev-local'
+   ```
+   `backend/scripts/flyway.sh`는 지정한 파일을 자동으로 `set -a` → `source`한 뒤 Flyway 태스크를 실행한다. DB 정보가 비어 있으면 즉시 실패하므로 값 확인 후 실행한다.
+
+---
+
+## 3. CI·운영 환경
+1. **비밀 관리**: Secret Manager, AWS SSM, Vault 등에서 `deploy/.env.prod` 템플릿과 동일한 키를 제공한다.
+2. **배포 스크립트 예시**
+   ```bash
+   # 1) 비밀 주입
+   printf "%s" "$ENV_FILE_CONTENTS" > deploy/.env.prod
+
+   # 2) 마이그레이션
+   backend/scripts/flyway.sh deploy/.env.prod
+
+   # 3) 애플리케이션 실행
+   set -a && source deploy/.env.prod && set +a
+   ./gradlew bootRun --args='--spring.profiles.active=prod'
+   ```
+3. **Docker Compose**
+   ```bash
    docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app
    ```
-3. 롤백  
-   ```bash
-   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml down
-   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app --build --no-cache
-   ```
+4. **데모 시드 보호**
+   - `/admin/seed/fridge-demo`는 모든 냉장고/검사 데이터를 초기화하므로 운영 환경에서 호출하면 안 된다.
+   - 운영 배포 시에는 방화벽 또는 `DEMO_SEED_ENABLED=false` 와 같은 서버 환경 변수를 사용해 컨트롤한다.
 
-배포 전에는 `./auto tests core --full-playwright` 결과를 확인하고, `deploy/.env.prod`가 최신인지 점검하세요.
+---
 
-## 🧊 냉장고 라벨 시드 참고
+## 4. 보안 체크리스트
+### 개발 환경
+- [ ] `.env`, `deploy/.env.*`가 `.gitignore`에 명시되어 있는지 확인
+- [ ] 인증 정보는 90일 이하 주기로 교체
+- [ ] `JWT_SECRET`은 256bit 이상 무작위 값 사용
 
-- `R__Seed.sql`은 각 보관 칸당 라벨 번호 1~999를 한 번에 채우기 위해 `generate_series`와 `CROSS JOIN`을 사용합니다.
-- 배포 파이프라인에서 시드 단계가 오래 걸리지 않는지 확인하고, 필요하면 배치 크기를 줄이거나 `COPY` 기반 스크립트로 교체할 수 있습니다.
-- 대량 삽입 후 `VACUUM ANALYZE label_pool;`을 실행해 통계를 최신화하면 이후 라벨 할당 쿼리 성능이 안정적으로 유지됩니다.
+### 운영 환경
+- [ ] DB/Redis는 사설 서브넷에 두고, 필요한 포트만 보안 그룹으로 허용
+- [ ] TLS(예: ALB, Nginx)로 외부 통신 암호화
+- [ ] Flyway 실행 권한은 CI/운영 계정으로 제한
+- [ ] 데모 시드 SQL(R__demo_reset.sql)은 운영 계정으로 실행되지 않도록 권한 분리
+
+---
+
+## 5. 자주 묻는 질문
+| 질문 | 답변 |
+| --- | --- |
+| **`Connection refused` 에러** | DB 컨테이너가 켜져 있는지(`docker compose ps`), `DB_HOST`가 `localhost`인지 확인. CI에서는 `db` 서비스 이름을 사용해야 한다. |
+| **Flyway checksum mismatch** | 이미 배포된 버전 SQL을 수정하지 말고, 새 버전(V\_\_)을 추가하거나 `flyway repair` + DB 백업 후 처리한다. |
+| **프로파일이 prod로 실행됨** | `.env`에 `SPRING_PROFILES_ACTIVE=dev-local`을 추가했는지 확인. 없으면 기본 prod 환경이 로드된다. |
+| **Redis 연결 실패** | Docker 네트워크 내부에서는 `redis`, 로컬 호스트에서 직접 돌릴 때는 `localhost`를 사용해야 한다. |
+
+---
+
+## 6. 배포 전 점검
+1. `backend/scripts/flyway.sh deploy/.env.prod info`
+2. `./gradlew test`
+3. `./auto tests core --full-playwright` (프런트/관리자 E2E)
+4. `.env` 최신 여부, 비밀 만료일 확인
+
+위 절차 이후에만 `docker compose ... up app` 혹은 K8s 배포를 진행한다.
