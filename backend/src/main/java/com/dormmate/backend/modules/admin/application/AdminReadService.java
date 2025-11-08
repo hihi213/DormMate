@@ -383,7 +383,7 @@ public class AdminReadService {
         if (roles.contains("RESIDENT")) {
             return "RESIDENT";
         }
-        return roles.isEmpty() ? "RESIDENT" : roles.get(0);
+        return roles.isEmpty() ? "RESIDENT" : roles.getFirst();
     }
 
     private boolean hasActiveRole(DormUser user, String roleCode) {

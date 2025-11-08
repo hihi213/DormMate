@@ -267,11 +267,8 @@ public class InspectionScheduleService {
 
     private boolean isScheduleConflictViolation(DataIntegrityViolationException ex) {
         Throwable root = NestedExceptionUtils.getMostSpecificCause(ex);
-        if (root == null || root.getMessage() == null) {
-            return false;
-        }
         String message = root.getMessage();
-        return message.contains("uq_inspection_schedule_active_compartment_scheduled_at");
+        return message != null && message.contains("uq_inspection_schedule_active_compartment_scheduled_at");
     }
 
     private void notifyResidentsOfSchedule(InspectionSchedule schedule, FridgeCompartment compartment) {
@@ -364,7 +361,7 @@ public class InspectionScheduleService {
         }
         RoomAssignment assignment = assignmentOpt.get();
         short managerFloor = assignment.getRoom().getFloor();
-        short compartmentFloor = (short) compartment.getFridgeUnit().getFloorNo();
+        short compartmentFloor = compartment.getFridgeUnit().getFloorNo();
         if (managerFloor != compartmentFloor) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_SCOPE_VIOLATION");
         }

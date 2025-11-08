@@ -92,7 +92,7 @@ set -a && source deploy/.env.prod && set +a
 ### **개발 환경**
 ```bash
 # (프로젝트 루트에서) 환경변수 로드 후
-SPRING_PROFILES_ACTIVE=dev ./auto dev backend
+./auto dev backend
 ```
 
 ### **운영 환경**

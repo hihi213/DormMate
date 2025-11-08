@@ -145,7 +145,7 @@ springBoot {
 }
 
 flyway {
-    url = System.getenv('DB_URL') ?: 'jdbc:postgresql://localhost:5432/dormitory_db'
+    url = System.getenv('DB_URL') ?: 'jdbc:postgresql://localhost:5432/prod_dormmate'
     user = System.getenv('DB_USERNAME') ?: 'dormmate_user'
     password = System.getenv('DB_PASSWORD') ?: 'pleasesetup'
     schemas = ['public']

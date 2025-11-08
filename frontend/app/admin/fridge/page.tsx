@@ -350,6 +350,7 @@ export default function AdminFridgePage() {
       if (selectedSlotId) {
         const current = params.get("slot") ?? params.get("slotId")
         if (current === selectedSlotId) return false
+        console.log("[querySync] push slot", { selectedSlotId })
         params.set("slot", selectedSlotId)
         params.delete("slotId")
         return true
@@ -365,7 +366,6 @@ export default function AdminFridgePage() {
       }
       return changed
     })
-    lastSyncedSlotParamRef.current = selectedSlotId ?? null
   }, [selectedSlotId, syncQueryEnabled, pendingSlotId, updateQueryParams])
 
   useEffect(() => {
@@ -401,6 +401,12 @@ export default function AdminFridgePage() {
   useEffect(() => {
     const slotParam = searchParams.get("slot") ?? searchParams.get("slotId") ?? null
     if (slotParam !== lastSyncedSlotParamRef.current) {
+      console.log("[queryWatch] apply new slotParam", {
+        slotParam,
+        selectedSlotId,
+        pendingSlotId,
+        lastSynced: lastSyncedSlotParamRef.current,
+      })
       lastSyncedSlotParamRef.current = slotParam
       if (slotParam && slotParam !== selectedSlotId && slotParam !== pendingSlotId) {
         setPendingSlotId(slotParam)
@@ -454,6 +460,8 @@ export default function AdminFridgePage() {
       if (floor === selectedFloor) return
       resetBundleFilters()
       setSelectedSlotId(null)
+      setPendingSlotId(null)
+      lastSyncedSlotParamRef.current = null
       setSelectedFloor(floor)
     },
     [resetBundleFilters, selectedFloor],
@@ -522,11 +530,15 @@ export default function AdminFridgePage() {
 
   const handleSlotSelect = useCallback(
     (slotId: string) => {
+      console.log("[handleSlotSelect]", { slotId, selectedSlotId, pendingSlotId })
       if (slotId === selectedSlotId) {
         if (isMobile) {
           setMobileDetailOpen((prev) => !prev)
         }
         return
+      }
+      if (pendingSlotId) {
+        setPendingSlotId(null)
       }
       resetBundleFilters()
       setHighlightedBundleId(null)
