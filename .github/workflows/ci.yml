@@ -8,12 +8,12 @@ on:
   pull_request:
 
 env:
-  POSTGRES_DB: ${{ secrets.POSTGRES_DB || 'dormmate_local' }}
-  POSTGRES_USER: ${{ secrets.POSTGRES_USER || 'dormmate_user' }}
+  POSTGRES_DB: ${{ secrets.POSTGRES_DB != '' && secrets.POSTGRES_DB || 'dormmate_local' }}
+  POSTGRES_USER: ${{ secrets.POSTGRES_USER != '' && secrets.POSTGRES_USER || 'dormmate_user' }}
   POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-  DB_USERNAME: ${{ secrets.POSTGRES_USER || 'dormmate_user' }}
+  DB_USERNAME: ${{ secrets.POSTGRES_USER != '' && secrets.POSTGRES_USER || 'dormmate_user' }}
   DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-  DB_URL: jdbc:postgresql://localhost:5432/${{ secrets.POSTGRES_DB || 'dormmate_local' }}
+  DB_URL: ${{ format('jdbc:postgresql://localhost:5432/%s', secrets.POSTGRES_DB != '' && secrets.POSTGRES_DB || 'dormmate_local') }}
   NEXT_TELEMETRY_DISABLED: "1"
   PYTHONUNBUFFERED: "1"
   GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-cache
