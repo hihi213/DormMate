@@ -1098,11 +1098,25 @@ export default function AdminFridgePage() {
   }, [])
 
   const handleInspectionAdjust = useCallback(() => {
-    toast({
-      title: "아직 지원되지 않는 기능입니다.",
-      description: "검사 편집은 후속 구현이 완료되면 사용할 수 있습니다.",
-    })
-  }, [toast])
+    if (!selectedInspection) {
+      toast({
+        title: "검사를 선택해 주세요.",
+        description: "정정하려는 검사 기록을 먼저 선택해야 합니다.",
+        variant: "destructive",
+      })
+      return
+    }
+    inspectionOriginalActionsRef.current = selectedInspection.actions
+    setInspectionDraftNotes(selectedInspection.notes ?? "")
+    if (selectedInspection.actions.length > 0) {
+      setInspectionDraftActions(
+        selectedInspection.actions.map((action, index) => createActionDraft(action, index)),
+      )
+    } else {
+      setInspectionDraftActions([])
+    }
+    setInspectionEditOpen(true)
+  }, [createActionDraft, selectedInspection, toast])
 
   const handleInspectionResend = useCallback(async () => {
     toast({

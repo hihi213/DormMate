@@ -7,6 +7,7 @@ import com.dormmate.backend.modules.inspection.presentation.dto.InspectionAction
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionSessionResponse;
 import com.dormmate.backend.modules.inspection.presentation.dto.StartInspectionRequest;
 import com.dormmate.backend.modules.inspection.presentation.dto.SubmitInspectionRequest;
+import com.dormmate.backend.modules.inspection.presentation.dto.UpdateInspectionSessionRequest;
 import com.dormmate.backend.modules.inspection.application.InspectionService;
 
 import jakarta.validation.Valid;
@@ -15,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -57,6 +59,14 @@ public class InspectionController {
     @GetMapping("/{sessionId}")
     public ResponseEntity<InspectionSessionResponse> getSession(@PathVariable("sessionId") UUID sessionId) {
         return ResponseEntity.ok(inspectionService.getSession(sessionId));
+    }
+
+    @PatchMapping("/{sessionId}")
+    public ResponseEntity<InspectionSessionResponse> updateSession(
+            @PathVariable("sessionId") UUID sessionId,
+            @Valid @RequestBody UpdateInspectionSessionRequest request
+    ) {
+        return ResponseEntity.ok(inspectionService.updateSession(sessionId, request));
     }
 
     @DeleteMapping("/{sessionId}")

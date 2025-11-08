@@ -30,6 +30,12 @@ BEGIN
     END IF;
 
     PERFORM
+        (CASE WHEN to_regclass('public.penalty_history') IS NOT NULL THEN 1 END);
+    IF FOUND THEN
+        EXECUTE 'DELETE FROM penalty_history';
+    END IF;
+
+    PERFORM
         (CASE WHEN to_regclass('public.inspection_session') IS NOT NULL THEN 1 END);
     IF FOUND THEN
         EXECUTE 'DELETE FROM inspection_session';
@@ -450,6 +456,35 @@ BEGIN
         gen_random_uuid()
     FROM tmp_actions ta
     JOIN tmp_bundle_items bi ON bi.fridge_bundle_id = ta.fridge_bundle_id;
+
+    INSERT INTO penalty_history (
+        id,
+        user_id,
+        issuer_id,
+        inspection_action_id,
+        source,
+        points,
+        reason,
+        issued_at,
+        created_at,
+        updated_at
+    )
+    SELECT
+        gen_random_uuid(),
+        fb.owner_id,
+        ia.recorded_by,
+        ia.id,
+        'FRIDGE_INSPECTION',
+        1,
+        ia.action_type,
+        ia.recorded_at,
+        CURRENT_TIMESTAMP,
+        CURRENT_TIMESTAMP
+    FROM inspection_action ia
+    JOIN tmp_sessions ts ON ts.session_id = ia.inspection_session_id
+    JOIN tmp_floor_bundles fb ON fb.bundle_id = ia.fridge_bundle_id
+    WHERE ia.inspection_session_id IN (SELECT session_id FROM tmp_sessions)
+      AND ia.action_type IN ('DISPOSE_EXPIRED', 'UNREGISTERED_DISPOSE');
 END;
 $$;
 
