@@ -8,6 +8,7 @@ import java.util.UUID;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -42,5 +43,18 @@ public interface NotificationRepository extends JpaRepository<Notification, UUID
             @Param("userId") UUID userId,
             @Param("states") List<NotificationState> states,
             Pageable pageable
+    );
+
+    @Modifying(clearAutomatically = true)
+    @Query("""
+            update Notification n
+               set n.state = com.dormmate.backend.modules.notification.domain.NotificationState.READ,
+                   n.readAt = :readAt
+             where n.user.id = :userId
+               and n.state = com.dormmate.backend.modules.notification.domain.NotificationState.UNREAD
+            """)
+    int markAllRead(
+            @Param("userId") UUID userId,
+            @Param("readAt") OffsetDateTime readAt
     );
 }

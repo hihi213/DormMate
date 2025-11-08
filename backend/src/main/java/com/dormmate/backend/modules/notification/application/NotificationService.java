@@ -132,14 +132,8 @@ public class NotificationService {
     }
 
     public int markAllNotificationsRead(UUID userId) {
-        List<Notification> unread = notificationRepository.findByUserIdAndState(userId, NotificationState.UNREAD);
-        if (unread.isEmpty()) {
-            return 0;
-        }
         OffsetDateTime now = OffsetDateTime.now(clock);
-        unread.forEach(notification -> notification.markRead(now));
-        notificationRepository.saveAll(unread);
-        return unread.size();
+        return notificationRepository.markAllRead(userId, now);
     }
 
     @Transactional(readOnly = true)

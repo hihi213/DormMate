@@ -4,11 +4,12 @@ import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { AlertTriangle } from "lucide-react"
+import { format } from "date-fns"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
@@ -16,7 +17,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
-import { BulkEditor, DangerZoneModal, DetailsDrawer, PaginatedTable } from "@/components/admin"
+import { BulkEditor, DangerZoneModal, DetailsDrawer } from "@/components/admin"
 import {
   demoteAdminFloorManager,
   deactivateAdminUser,
@@ -205,6 +206,7 @@ export default function AdminUsersPage() {
 
   const totalItems = filteredUsers.length
   const paginated = filteredUsers.slice((page - 1) * pageSize, page * pageSize)
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
 
   useEffect(() => {
     if (!pendingFocusId || !focusCandidate) return
@@ -564,112 +566,112 @@ export default function AdminUsersPage() {
             </Alert>
           ) : null}
           <Card className="shadow-sm">
-            <CardContent>
-              <PaginatedTable
-                columns={[
-                  {
-                    key: "select",
-                    header: "",
-                    width: "40px",
-                    render: (row) => (
-                      <Checkbox
-                        aria-label={`${row.name} 선택`}
-                        checked={selectedIds.includes(row.id)}
-                        onCheckedChange={(checked) => toggleSelection(row.id, Boolean(checked))}
-                        disabled={!isSelectionEnabled || actionLoading}
-                        onClick={(event) => event.stopPropagation()}
-                      />
-                    ),
-                  },
-                  {
-                    key: "room",
-                    header: "호실",
-                    render: (row) => {
-                      const code = resolveRoomCode(row)
-                      return code ? (
-                        <span className="font-medium text-slate-800">{code}</span>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      )
-                    },
-                  },
-                  {
-                    key: "personal",
-                    header: "개인번호",
-                    render: (row) =>
-                      row.personalNo != null ? (
-                        <Badge variant="outline" className="border-slate-200 bg-slate-50 px-2 font-semibold text-slate-700">
-                          {row.personalNo}
-                        </Badge>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      ),
-                  },
-                  {
-                    key: "name",
-                    header: "사용자",
-                    render: (row) => (
-                      <div className="flex flex-col">
-                        <span className="font-medium text-slate-900">{row.name}</span>
-                        <span className="text-xs text-muted-foreground">{formatRoomWithPersonal(row)}</span>
-                      </div>
-                    ),
-                  },
-                  {
-                    key: "extra",
-                    header: "추가 권한",
-                    render: (row) =>
-                      row.role === "FLOOR_MANAGER" ? (
-                        <Badge variant="outline" className="border-emerald-200 text-emerald-700">
-                          층별장
-                        </Badge>
-                      ) : (
-                        <span className="text-slate-400">-</span>
-                      ),
-                  },
-                  {
-                    key: "penalties",
-                    header: "벌점",
-                    render: (row) => (
-                      <span
-                        className={
-                          row.penalties && row.penalties > 0 ? "font-medium text-rose-600" : "text-slate-600"
+            <CardContent className="space-y-3">
+              {paginated.length === 0 && !loading ? (
+                <p className="text-center text-xs text-muted-foreground">표시할 사용자가 없습니다.</p>
+              ) : (
+                paginated.map((user) => {
+                  const penaltiesLabel = `${(user.penalties ?? 0).toLocaleString()}점`
+                  const isFocused = focusedUserId === user.id
+                  const isSelected = selectedIds.includes(user.id)
+                  return (
+                    <div
+                      key={user.id}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => handleRowClick(user)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault()
+                          handleRowClick(user)
                         }
-                      >
-                        {(row.penalties ?? 0).toLocaleString()}점
-                      </span>
-                    ),
-                  },
-                  {
-                    key: "lastLogin",
-                    header: "최근 로그인",
-                  },
-                  {
-                    key: "status",
-                    header: "상태",
-                    render: (row) => (
-                      <Badge
-                        variant="outline"
-                        className={row.status === "ACTIVE" ? "border-emerald-200 text-emerald-700" : "border-slate-200 text-slate-500"}
-                      >
-                        {row.status}
-                      </Badge>
-                    ),
-                  },
-                ]}
-                data={paginated}
-                onRowClick={(row) => handleRowClick(row)}
-                pagination={{
-                  page,
-                  pageSize,
-                  totalItems,
-                  onPageChange: setPage,
-                }}
-                getRowId={(row) => row.id}
-                getRowClassName={(row) =>
-                  row.id === focusedUserId ? "bg-emerald-50/80 ring-1 ring-inset ring-emerald-200" : undefined
-                }
-              />
+                      }}
+                      className={cn(
+                        "rounded-2xl border border-slate-200 bg-white/95 p-4 text-sm shadow-sm transition hover:border-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500",
+                        isFocused && "ring-2 ring-emerald-200",
+                      )}
+                    >
+                      <div className="flex flex-col gap-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2">
+                            {selectionMode ? (
+                              <Checkbox
+                                aria-label={`${user.name} 선택`}
+                                checked={isSelected}
+                                disabled={actionLoading}
+                                onCheckedChange={(checked) => toggleSelection(user.id, Boolean(checked))}
+                                onClick={(event) => event.stopPropagation()}
+                              />
+                            ) : null}
+                            <span
+                              className={cn(
+                                "inline-flex min-w-[52px] items-center justify-center rounded-full border px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide",
+                                user.role === "FLOOR_MANAGER"
+                                  ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                                  : "border-slate-200 bg-slate-50 text-slate-500",
+                              )}
+                            >
+                              {user.role === "FLOOR_MANAGER" ? "층별장" : "일반"}
+                            </span>
+                            <p className="text-lg font-semibold text-slate-900">{user.name}</p>
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 sm:text-sm">
+                          <div className="flex flex-wrap items-baseline gap-4 font-medium text-slate-700">
+                            <span>
+                              <span className="mr-1 text-[11px] uppercase tracking-wide text-slate-400">호실</span>
+                              {resolveRoomCode(user) ?? "-"}
+                            </span>
+                            <span>
+                              <span className="mr-1 text-[11px] uppercase tracking-wide text-slate-400">번호</span>
+                              {user.personalNo != null ? `${user.personalNo}` : "-"}
+                            </span>
+                            <span>
+                              <span className="mr-1 text-[11px] uppercase tracking-wide text-slate-400">벌점</span>
+                              {penaltiesLabel}
+                            </span>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-4 text-xs font-medium text-slate-600 sm:text-sm">
+                            <span>
+                              <span className="mr-1 text-[11px] uppercase tracking-wide text-slate-400">상태</span>
+                              {user.status === "ACTIVE" ? "활성" : "비활성"}
+                            </span>
+                            <span className="inline-flex min-w-[140px] justify-between text-[12px] text-slate-500">
+                              <span className="text-[11px] uppercase tracking-wide text-slate-400">최근 로그인</span>
+                              <span className="font-semibold text-slate-700">{formatLastLogin(user.lastLogin)}</span>
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+              {totalPages > 1 ? (
+                <div className="flex items-center justify-center gap-3 pt-2 sm:justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPage((current) => Math.max(1, current - 1))}
+                    disabled={page <= 1}
+                  >
+                    이전
+                  </Button>
+                  <span className="text-xs font-medium text-slate-500">
+                    {page} / {totalPages}
+                  </span>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+                    disabled={page >= totalPages}
+                  >
+                    다음
+                  </Button>
+                </div>
+              ) : null}
               {loading && paginated.length === 0 ? (
                 <p className="mt-4 text-xs text-muted-foreground">사용자 데이터를 불러오는 중입니다…</p>
               ) : null}
@@ -935,6 +937,15 @@ function QuickLink({ href, label }: { href: string; label: string }) {
       <span className="text-sm font-semibold text-slate-900">{label}</span>
     </Link>
   )
+}
+
+function formatLastLogin(value?: string | null): string {
+  if (!value) return "미기록"
+  try {
+    return format(new Date(value), "MM/dd HH:mm")
+  } catch (_error) {
+    return "미기록"
+  }
 }
 
 function resolveUserFloor(user: AdminUser): number | null {
