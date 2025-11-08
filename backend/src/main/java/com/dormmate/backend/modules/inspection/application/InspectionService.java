@@ -1,5 +1,9 @@
 package com.dormmate.backend.modules.inspection.application;
 
+import static com.dormmate.backend.modules.auth.application.RoomAssignmentSupport.isFloorManagerOnFloor;
+import static com.dormmate.backend.modules.auth.application.RoomAssignmentSupport.requireRoom;
+import static com.dormmate.backend.modules.auth.application.RoomAssignmentSupport.requireRoomId;
+
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
@@ -12,7 +16,6 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import java.util.Objects;
 
 import com.dormmate.backend.modules.audit.application.AuditLogService;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeBundleResponse;
@@ -26,7 +29,6 @@ import com.dormmate.backend.modules.inspection.presentation.dto.InspectionSessio
 import com.dormmate.backend.modules.inspection.presentation.dto.StartInspectionRequest;
 import com.dormmate.backend.modules.inspection.presentation.dto.SubmitInspectionRequest;
 import com.dormmate.backend.modules.auth.domain.DormUser;
-import com.dormmate.backend.modules.auth.domain.Room;
 import com.dormmate.backend.modules.auth.domain.RoomAssignment;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundle;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundleStatus;
@@ -609,14 +611,13 @@ public class InspectionService {
         }
         RoomAssignment assignment = roomAssignmentRepository.findActiveAssignment(viewer.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED"));
-        Room assignedRoom = requireRoom(assignment);
 
         short sessionFloor = session.getFridgeCompartment().getFridgeUnit().getFloorNo();
-        if (SecurityUtils.hasRole("FLOOR_MANAGER")) {
-            if (assignedRoom.getFloor() != sessionFloor) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_SCOPE_VIOLATION");
-            }
+        if (isFloorManagerOnFloor(assignment, sessionFloor)) {
             return;
+        }
+        if (SecurityUtils.hasRole("FLOOR_MANAGER")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_SCOPE_VIOLATION");
         }
 
         UUID viewerRoomId = requireRoomId(assignment);
@@ -641,12 +642,4 @@ public class InspectionService {
         return result;
     }
 
-    private Room requireRoom(RoomAssignment assignment) {
-        return Objects.requireNonNull(assignment.getRoom(), "room assignment missing room");
-    }
-
-    private UUID requireRoomId(RoomAssignment assignment) {
-        Room room = requireRoom(assignment);
-        return Objects.requireNonNull(room.getId(), "room id");
-    }
 }
