@@ -298,14 +298,14 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                     .filter(res -> res.getStatus() == HttpStatus.CREATED.value())
                     .findFirst()
                     .orElseThrow();
-            JsonNode successJson = objectMapper.readTree(successResponse.getContentAsString());
+            JsonNode successJson = readJson(successResponse);
             bundlesToCleanup.add(UUID.fromString(successJson.path("bundle").path("bundleId").asText()));
 
             MockHttpServletResponse failureResponse = responses.stream()
                     .filter(res -> res.getStatus() == HttpStatus.UNPROCESSABLE_ENTITY.value())
                     .findFirst()
                     .orElseThrow();
-            JsonNode failureJson = objectMapper.readTree(failureResponse.getContentAsString());
+            JsonNode failureJson = readJson(failureResponse);
             assertThat(failureJson.path("code").asText()).isEqualTo("CAPACITY_EXCEEDED");
             assertThat(failureJson.path("detail").asText()).isEqualTo("CAPACITY_EXCEEDED");
         } finally {
@@ -344,7 +344,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode updatedBundle = objectMapper.readTree(updateResult.getResponse().getContentAsString());
+        JsonNode updatedBundle = readJson(updateResult);
         assertThat(updatedBundle.path("bundleName").asText()).isEqualTo("updated bundle");
         assertThat(updatedBundle.path("memo").asText()).isEqualTo("updated memo");
 
@@ -356,7 +356,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode summaries = objectMapper.readTree(listResult.getResponse().getContentAsString()).path("items");
+        JsonNode summaries = readJson(listResult).path("items");
         JsonNode summary = findBundleSummaryById(summaries, bundleId);
         assertThat(summary.path("bundleName").asText()).isEqualTo("updated bundle");
     }
@@ -415,7 +415,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andReturn();
 
         assertThat(updateItemResult.getResponse().getStatus()).isEqualTo(HttpStatus.OK.value());
-        JsonNode updatedItem = objectMapper.readTree(updateItemResult.getResponse().getContentAsString());
+        JsonNode updatedItem = readJson(updateItemResult);
         assertThat(updatedItem.path("name").asText()).isEqualTo("updated item");
         assertThat(updatedItem.path("quantity").asInt()).isEqualTo(3);
         assertThat(updatedItem.path("expiryDate").asText()).isEqualTo(newExpiry);
@@ -445,7 +445,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andReturn();
 
         assertThat(unauthorizedResult.getResponse().getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
-        JsonNode unauthorizedBody = objectMapper.readTree(unauthorizedResult.getResponse().getContentAsString());
+        JsonNode unauthorizedBody = readJson(unauthorizedResult);
         assertThat(unauthorizedBody.path("code").asText()).isEqualTo("FORBIDDEN_SLOT");
     }
 
@@ -588,7 +588,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                     .andExpect(status().isCreated())
                     .andReturn();
 
-            JsonNode session = objectMapper.readTree(startResult.getResponse().getContentAsString());
+            JsonNode session = readJson(startResult);
             sessionId = UUID.fromString(session.path("sessionId").asText());
 
             applyLockState(slotId, false, null);
@@ -683,7 +683,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                     .andExpect(status().isOk())
                     .andReturn();
 
-            JsonNode slots = objectMapper.readTree(result.getResponse().getContentAsString());
+            JsonNode slots = readJson(result);
             JsonNode slot = findSlot(slots, FLOOR_2, SLOT_INDEX_A);
 
             assertThat(slot.path("capacity").asInt()).isEqualTo(updatedCapacity);
@@ -727,7 +727,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode bundleList = objectMapper.readTree(listResult.getResponse().getContentAsString());
+        JsonNode bundleList = readJson(listResult);
         JsonNode summaries = bundleList.path("items");
 
         JsonNode aliceSummary = findBundleSummaryById(summaries, aliceBundleId);
@@ -747,7 +747,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode detail = objectMapper.readTree(detailResult.getResponse().getContentAsString());
+        JsonNode detail = readJson(detailResult);
         assertThat(detail.path("bundleName").asText()).isEqualTo(aliceBundleName);
         assertThat(detail.path("ownerDisplayName").asText()).isEqualTo(aliceName);
         assertThat(detail.path("items").isArray()).isTrue();
@@ -784,7 +784,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                     .andExpect(status().isOk())
                     .andReturn();
 
-            JsonNode slotSummaries = objectMapper.readTree(slotTokenResult.getResponse().getContentAsString()).path("items");
+            JsonNode slotSummaries = readJson(slotTokenResult).path("items");
             JsonNode slotSummary = findBundleSummaryById(slotSummaries, bundleId);
             assertThat(slotSummary).isNotNull();
             assertThat(slotSummary.path("slotLabel").asText()).isEqualTo("AA");
@@ -807,7 +807,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                     .andExpect(status().isOk())
                     .andReturn();
 
-            JsonNode roomSummaries = objectMapper.readTree(roomResult.getResponse().getContentAsString()).path("items");
+            JsonNode roomSummaries = readJson(roomResult).path("items");
             JsonNode roomSummary = findBundleSummaryById(roomSummaries, bundleId);
             assertThat(roomSummary).isNotNull();
             assertThat(roomSummary.path("ownerRoomNumber").asText()).isEqualTo(roomSearchToken);
@@ -858,7 +858,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode filteredBody = objectMapper.readTree(filteredResult.getResponse().getContentAsString());
+        JsonNode filteredBody = readJson(filteredResult);
         JsonNode filteredItems = filteredBody.path("items");
         assertThat(filteredItems.isArray()).isTrue();
         assertThat(filteredItems.size()).isGreaterThanOrEqualTo(1);
@@ -872,7 +872,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode unfilteredItems = objectMapper.readTree(unfilteredResult.getResponse().getContentAsString()).path("items");
+        JsonNode unfilteredItems = readJson(unfilteredResult).path("items");
         assertThat(unfilteredItems.isArray()).isTrue();
         assertThat(unfilteredItems.size()).isGreaterThanOrEqualTo(filteredItems.size());
         unfilteredItems.forEach(item -> {
@@ -913,7 +913,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
 
-        JsonNode created = objectMapper.readTree(createResult.getResponse().getContentAsString());
+        JsonNode created = readJson(createResult);
         UUID bundleId = UUID.fromString(created.path("bundle").path("bundleId").asText());
         bundlesToCleanup.add(bundleId);
 
@@ -925,7 +925,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode summaries = objectMapper.readTree(listResult.getResponse().getContentAsString()).path("items");
+        JsonNode summaries = readJson(listResult).path("items");
         JsonNode managerSummary = findBundleSummaryById(summaries, bundleId);
         assertThat(managerSummary.has("memo")).isFalse();
 
@@ -936,7 +936,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode detail = objectMapper.readTree(detailResult.getResponse().getContentAsString());
+        JsonNode detail = readJson(detailResult);
         assertThat(detail.has("memo")).isFalse();
         assertThat(detail.path("bundleName").asText()).isNotBlank();
         assertThat(detail.path("items").isArray()).isTrue();
@@ -973,7 +973,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
 
-        JsonNode created = objectMapper.readTree(createResult.getResponse().getContentAsString());
+        JsonNode created = readJson(createResult);
         UUID bundleId = UUID.fromString(created.path("bundle").path("bundleId").asText());
         bundlesToCleanup.add(bundleId);
 
@@ -985,7 +985,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode summaries = objectMapper.readTree(listResult.getResponse().getContentAsString()).path("items");
+        JsonNode summaries = readJson(listResult).path("items");
         JsonNode adminSummary = findBundleSummaryById(summaries, bundleId);
         assertThat(adminSummary.has("memo")).isFalse();
         assertThat(adminSummary.path("itemCount").asInt()).isEqualTo(1);
@@ -997,7 +997,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode detail = objectMapper.readTree(detailResult.getResponse().getContentAsString());
+        JsonNode detail = readJson(detailResult);
         assertThat(detail.has("memo")).isFalse();
         assertThat(detail.path("items").isArray()).isTrue();
         assertThat(detail.path("items").size()).isEqualTo(1);
@@ -1028,7 +1028,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        JsonNode body = readJson(result);
         assertThat(body.path("totalCount").asInt()).isEqualTo(1);
         JsonNode items = body.path("items");
         assertThat(items.isArray()).isTrue();
@@ -1059,7 +1059,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        JsonNode body = readJson(result);
         assertThat(body.path("totalCount").asInt()).isEqualTo(1);
         JsonNode item = body.path("items").get(0);
         assertThat(item.path("bundleId").asText()).isEqualTo(secondBundle.path("bundle").path("bundleId").asText());
@@ -1094,7 +1094,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        JsonNode body = readJson(result);
         assertThat(body.path("totalCount").asInt()).isEqualTo(1);
         JsonNode item = body.path("items").get(0);
         assertThat(item.path("bundleId").asText()).isEqualTo(deletedBundleId.toString());
@@ -1108,7 +1108,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 )
                 .andExpect(status().isOk())
                 .andReturn();
-        JsonNode activeBody = objectMapper.readTree(activeResult.getResponse().getContentAsString());
+        JsonNode activeBody = readJson(activeResult);
         assertThat(activeBody.path("items").findValuesAsText("bundleId"))
                 .contains(activeBundle.path("bundle").path("bundleId").asText());
     }
@@ -1160,7 +1160,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode defaultResponse = objectMapper.readTree(defaultWindowResult.getResponse().getContentAsString());
+        JsonNode defaultResponse = readJson(defaultWindowResult);
         assertThat(defaultResponse.path("totalCount").asInt()).isEqualTo(1);
         JsonNode items = defaultResponse.path("items");
         assertThat(items.isArray()).isTrue();
@@ -1176,7 +1176,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode extendedResponse = objectMapper.readTree(extendedWindowResult.getResponse().getContentAsString());
+        JsonNode extendedResponse = readJson(extendedWindowResult);
         assertThat(extendedResponse.path("totalCount").asInt()).isEqualTo(2);
         List<String> bundleIds = new ArrayList<>();
         extendedResponse.path("items").forEach(node -> bundleIds.add(node.path("bundleId").asText()));
@@ -1422,7 +1422,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 )
                 .andExpect(status().isCreated())
                 .andReturn();
-        JsonNode bundle = objectMapper.readTree(result.getResponse().getContentAsString());
+        JsonNode bundle = readJson(result);
         bundlesToCleanup.add(UUID.fromString(bundle.path("bundle").path("bundleId").asText()));
         return bundle;
     }
@@ -1448,8 +1448,16 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 )
                 .andExpect(status().isOk())
                 .andReturn();
-        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
+        JsonNode response = readJson(result);
         return response.path("tokens").path("accessToken").asText();
+    }
+
+    private JsonNode readJson(MvcResult result) throws Exception {
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray());
+    }
+
+    private JsonNode readJson(MockHttpServletResponse response) throws Exception {
+        return objectMapper.readTree(response.getContentAsByteArray());
     }
 
     private JsonNode findSlot(JsonNode root, int floorNo, int slotIndex) {
@@ -1588,7 +1596,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode body = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode body = readJson(response);
         JsonNode slots = body.path("items");
         assertThat(slots.isArray()).isTrue();
 
@@ -1612,7 +1620,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode body = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode body = readJson(response);
         JsonNode slots = body.path("items");
         assertThat(slots.isArray()).isTrue();
 

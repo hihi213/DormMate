@@ -146,7 +146,7 @@ public class FridgeExpiryNotificationScheduler {
             String dedupeKey = kindCode + ":" + owner.getId() + ":" + dateKey;
 
             try {
-                Optional<Notification> created = notificationService.sendNotification(
+                Optional<NotificationService.NotificationDelivery> created = notificationService.sendNotification(
                         owner.getId(),
                         kindCode,
                         title,
@@ -157,7 +157,13 @@ public class FridgeExpiryNotificationScheduler {
                         null
                 );
 
-                created.ifPresent(notification -> recordDispatchLog(notification, NotificationDispatchStatus.SUCCESS, null, null));
+                created.ifPresent(delivery -> {
+                    if (delivery.allowBackground()) {
+                        recordDispatchLog(delivery.notification(), NotificationDispatchStatus.SUCCESS, null, null);
+                    } else {
+                        log.debug("Skipping background dispatch for notification {} due to preference", delivery.notification().getId());
+                    }
+                });
             } catch (Exception ex) {
                 log.warn("[ALERT][Batch][{}] attempt={} user={} errorCode={} detail={}",
                         kindCode,

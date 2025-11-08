@@ -14,6 +14,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
+import com.dormmate.backend.modules.audit.application.AuditLogService;
 import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.auth.domain.DormUserStatus;
 import com.dormmate.backend.modules.auth.domain.RoomAssignment;
@@ -58,6 +59,7 @@ public class InspectionScheduleService {
     private final FridgeCompartmentRepository fridgeCompartmentRepository;
     private final CompartmentRoomAccessRepository compartmentRoomAccessRepository;
     private final NotificationService notificationService;
+    private final AuditLogService auditLogService;
 
     public InspectionScheduleService(
             InspectionScheduleRepository inspectionScheduleRepository,
@@ -66,7 +68,8 @@ public class InspectionScheduleService {
             Clock clock,
             FridgeCompartmentRepository fridgeCompartmentRepository,
             CompartmentRoomAccessRepository compartmentRoomAccessRepository,
-            NotificationService notificationService
+            NotificationService notificationService,
+            AuditLogService auditLogService
     ) {
         this.inspectionScheduleRepository = inspectionScheduleRepository;
         this.inspectionSessionRepository = inspectionSessionRepository;
@@ -75,6 +78,7 @@ public class InspectionScheduleService {
         this.fridgeCompartmentRepository = fridgeCompartmentRepository;
         this.compartmentRoomAccessRepository = compartmentRoomAccessRepository;
         this.notificationService = notificationService;
+        this.auditLogService = auditLogService;
     }
 
     @Transactional(readOnly = true)
@@ -123,6 +127,7 @@ public class InspectionScheduleService {
 
         InspectionSchedule saved = saveSchedule(schedule);
         notifyResidentsOfSchedule(saved, compartment);
+        recordScheduleAudit("SCHEDULE_CREATE", saved, baseScheduleDetail(saved));
         return toResponse(saved);
     }
 
@@ -130,6 +135,7 @@ public class InspectionScheduleService {
         ensureManagerRole();
         InspectionSchedule schedule = inspectionScheduleRepository.findById(scheduleId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SCHEDULE_NOT_FOUND"));
+        Map<String, Object> previousDetail = baseScheduleDetail(schedule);
 
         if (request.scheduledAt() != null) {
             schedule.setScheduledAt(request.scheduledAt());
@@ -180,6 +186,10 @@ public class InspectionScheduleService {
         }
 
         InspectionSchedule saved = saveSchedule(schedule);
+        recordScheduleAudit("SCHEDULE_UPDATE", saved, Map.of(
+                "previous", previousDetail,
+                "current", baseScheduleDetail(saved)
+        ));
         return toResponse(saved);
     }
 
@@ -187,7 +197,52 @@ public class InspectionScheduleService {
         ensureManagerRole();
         InspectionSchedule schedule = inspectionScheduleRepository.findById(scheduleId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SCHEDULE_NOT_FOUND"));
+        Map<String, Object> detail = baseScheduleDetail(schedule);
         inspectionScheduleRepository.delete(schedule);
+        recordScheduleAudit("SCHEDULE_DELETE", schedule, detail);
+    }
+
+    private void recordScheduleAudit(String actionType, InspectionSchedule schedule, Map<String, Object> detail) {
+        if (schedule.getId() == null) {
+            return;
+        }
+        Map<String, Object> payload = detail != null ? new LinkedHashMap<>(detail) : baseScheduleDetail(schedule);
+        auditLogService.record(new AuditLogService.AuditLogCommand(
+                actionType,
+                "INSPECTION_SCHEDULE",
+                schedule.getId().toString(),
+                currentActorId(),
+                null,
+                payload
+        ));
+    }
+
+    private Map<String, Object> baseScheduleDetail(InspectionSchedule schedule) {
+        Map<String, Object> detail = new LinkedHashMap<>();
+        detail.put("scheduleId", schedule.getId());
+        detail.put("scheduledAt", schedule.getScheduledAt());
+        detail.put("status", schedule.getStatus() != null ? schedule.getStatus().name() : null);
+        detail.put("completedAt", schedule.getCompletedAt());
+        detail.put("title", schedule.getTitle());
+        detail.put("notes", schedule.getNotes());
+        FridgeCompartment compartment = schedule.getFridgeCompartment();
+        if (compartment != null) {
+            detail.put("compartmentId", compartment.getId());
+            detail.put("slotIndex", compartment.getSlotIndex());
+            detail.put("floorNo", compartment.getFridgeUnit() != null ? compartment.getFridgeUnit().getFloorNo() : null);
+        }
+        if (schedule.getInspectionSession() != null) {
+            detail.put("inspectionSessionId", schedule.getInspectionSession().getId());
+        }
+        return detail;
+    }
+
+    private UUID currentActorId() {
+        try {
+            return SecurityUtils.getCurrentUserId();
+        } catch (Exception ignored) {
+            return null;
+        }
     }
 
     private InspectionScheduleStatus parseStatus(String raw, boolean allowNull) {

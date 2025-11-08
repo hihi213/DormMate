@@ -61,6 +61,9 @@ public class Notification extends AbstractTimestampedEntity {
     @Column(name = "correlation_id", columnDefinition = "uuid")
     private UUID correlationId;
 
+    @Column(name = "allow_background", nullable = false)
+    private boolean allowBackground = true;
+
     @Column(name = "read_at")
     private OffsetDateTime readAt;
 
@@ -141,6 +144,14 @@ public class Notification extends AbstractTimestampedEntity {
 
     public void setCorrelationId(UUID correlationId) {
         this.correlationId = correlationId;
+    }
+
+    public boolean isAllowBackground() {
+        return allowBackground;
+    }
+
+    public void setAllowBackground(boolean allowBackground) {
+        this.allowBackground = allowBackground;
     }
 
     public OffsetDateTime getReadAt() {

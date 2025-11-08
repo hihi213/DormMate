@@ -37,7 +37,10 @@ import com.dormmate.backend.modules.notification.application.NotificationService
 import com.dormmate.backend.modules.notification.domain.Notification;
 import com.dormmate.backend.modules.notification.domain.NotificationDispatchLog;
 import com.dormmate.backend.modules.notification.domain.NotificationDispatchStatus;
+import com.dormmate.backend.modules.notification.domain.NotificationPreference;
+import com.dormmate.backend.modules.notification.domain.NotificationPreferenceId;
 import com.dormmate.backend.modules.notification.infrastructure.persistence.NotificationDispatchLogRepository;
+import com.dormmate.backend.modules.notification.infrastructure.persistence.NotificationPreferenceRepository;
 import com.dormmate.backend.modules.notification.infrastructure.persistence.NotificationRepository;
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
 
@@ -74,6 +77,9 @@ class FridgeExpiryNotificationSchedulerIntegrationTest extends AbstractPostgresI
 
     @Autowired
     private NotificationDispatchLogRepository notificationDispatchLogRepository;
+
+    @Autowired
+    private NotificationPreferenceRepository notificationPreferenceRepository;
 
     @MockBean
     private Clock clock;
@@ -139,6 +145,7 @@ class FridgeExpiryNotificationSchedulerIntegrationTest extends AbstractPostgresI
         assertThat(expiryNotification.getBody()).contains("임박");
         assertThat(expiryNotification.getMetadata()).containsEntry("count", 2);
         assertThat(expiryNotification.getMetadata()).containsEntry("batchDate", today.toString());
+        assertThat(expiryNotification.isAllowBackground()).isTrue();
 
         List<NotificationDispatchLog> dispatchLogs = notificationDispatchLogRepository
                 .findByNotification_Id(expiryNotification.getId());
@@ -195,6 +202,32 @@ class FridgeExpiryNotificationSchedulerIntegrationTest extends AbstractPostgresI
             assertThat(log.getErrorCode()).isEqualTo("EXPIRY_BATCH_FAILED");
             assertThat(log.getErrorMessage()).contains("Simulated failure");
         });
+    }
+
+    @Test
+    @Transactional
+    void runDailyBatchDoesNotDispatchBackgroundWhenPreferenceDisabled() {
+        LocalDate today = FIXED_DATE;
+        buildItem("버터", today.plusDays(1));
+
+        NotificationPreference preference = new NotificationPreference(
+                new NotificationPreferenceId(owner.getId(), KIND_FRIDGE_EXPIRY),
+                owner
+        );
+        preference.setEnabled(true);
+        preference.setAllowBackground(false);
+        notificationPreferenceRepository.save(preference);
+
+        scheduler.runDailyBatch();
+
+        Notification expiryNotification = notificationRepository.findAll().stream()
+                .filter(notification -> notification.getKindCode().equals(KIND_FRIDGE_EXPIRY))
+                .findFirst()
+                .orElseThrow();
+        assertThat(expiryNotification.isAllowBackground()).isFalse();
+        List<NotificationDispatchLog> dispatchLogs = notificationDispatchLogRepository
+                .findByNotification_Id(expiryNotification.getId());
+        assertThat(dispatchLogs).isEmpty();
     }
 
     private FridgeItem buildItem(String name, LocalDate expiryDate) {

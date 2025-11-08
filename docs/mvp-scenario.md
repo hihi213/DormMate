@@ -97,3 +97,43 @@
 
 ## 시간남으면 할것(배포후 할것)
 - 그래도 시간이 남으면 임시저장 서버에 draft로 저장 
+
+---
+
+## 코드 검토 메모 (실제 구현 기능)
+- **환경/런타임**  
+  - prod 기준 `.env` 단일화(`backend/ENV_SETUP.md`, `deploy/.env.prod`)와 Flyway 스크립트 진입점(`backend/scripts/flyway.sh`)이 완성돼 있어 누구나 동일한 자격·명령으로 DB를 갱신할 수 있다.  
+  - `application.properties`가 기본 프로파일을 prod로 고정하고 Redis 리포지토리를 명시적으로 토글하는 구조 (`RedisConfig`). 임시값 대신 실제 실행 정책이 반영됨.
+- **시드/감사 로그**  
+  - `DemoSeedService`가 `db/demo/fridge_exhibition_items.sql`을 실행해 데모 데이터를 완전히 재구성하고, `AuditLogService`로 `FRIDGE_DEMO_SEED_EXECUTED` 기록을 남긴다.  
+  - `audit_log` 도메인/마이그레이션(V38, V39)이 존재해 모든 관리자 작업을 JSONB로 보존한다.
+- **냉장고 포장/물품**  
+  - `FridgeService`가 슬롯 접근 제어, 포장/물품 등록·수정·삭제, 라벨 재사용, 잠금/용량 검사까지 모두 서버에서 검증한다.  
+  - 관리자 재배분(`FridgeReallocationService`)은 층/잠금/검사 충돌 검증과 감사 로그 기록을 실제 코드로 구현.  
+  - 프런트 `FridgeContext`와 API 모듈이 동일 정책으로 동작하며 422/423 오류에 맞춘 UX까지 제공.
+- **층별장 검사 플로우**  
+  - `InspectionService`가 세션 시작(잠금)→조치 기록→벌점(`PenaltyHistory`)→제출(알림 발송, 일정 완료)까지 end-to-end 구현.  
+  - 검사 화면(`frontend/app/fridge/inspect`)은 Draft 저장/복원, 조치 전송, 제출/취소, 슬롯 새로고침까지 실제 API와 연결돼 있다.
+- **알림 및 배치**  
+  - `NotificationService`가 검사 결과 알림을 dedupe·메타데이터 포함 형태로 생성하고, 사용자 선호도(ON/OFF·allowBackground)에 맞춰 발송 여부를 결정.  
+  - `FridgeExpiryNotificationScheduler`가 임박/만료 배치 알림과 실패 로그를 운영 수준으로 기록.  
+  - 프런트 `features/notifications`와 헤더 알림 UI가 목록/읽음/설정/배지 로직을 모두 구현한 상태다.
+
+### 2024-xx 추가 검증 메모
+- **환경 & 배포 스크립트**  
+  - `deploy/.env.prod`와 루트 `.env`가 동일한 템플릿을 공유하지만 둘 다 `.gitignore`에 포함되어 있어 샘플 자격 증명은 리포지토리로 유출되지 않는다.  
+  - `backend/scripts/flyway.sh`는 지정한 `.env`를 로드해 `./gradlew flywayMigrate`를 실행하며, 필수 값이 비어 있으면 Gradle 단계에서 실패한다. 사전 검증 로직을 추가하면 “값 누락 시 즉시 차단” 요구도 충족할 수 있다.
+- **데모 시드 보호**  
+  - `DemoSeedService.seedFridgeDemoData()`는 prod/floor 가드 없이 `ROLE_ADMIN`만 있으면 언제든 실행돼 운영 데이터가 초기화될 수 있다. `/admin/seed/fridge-demo` 엔드포인트에는 `@Profile("!prod")` 또는 별도 토글로 보호 장치를 추가해야 한다.  
+  - 실행 시 `AuditLogService`에 `FRIDGE_DEMO_SEED_EXECUTED` 로그가 남으므로 감사 추적은 가능하다.
+- **검사→벌점→알림 파이프라인**  
+  - `InspectionService.recordActions()`가 액션마다 `correlationId`를 부여하고 폐기/미등록 폐기 시 `PenaltyHistory`(1점)를 자동 부착한다.  
+  - `submitSession()`은 세션을 `SUBMITTED`로 바꾸고 잠금을 해제한 뒤 `NotificationService.sendInspectionResultNotifications()`를 호출해 사용자별로 경고/폐기 요약 알림을 생성한다.  
+  - 알림 메타데이터에는 `sessionId/actionIds/actionItemIds/penaltyHistoryIds`가 모두 포함되어 있지만, 현재 프런트 알림 컴포넌트는 정적 `href`만 사용하고 있어 메타데이터 기반 딥링크는 아직 구현되지 않았다.
+- **검사 일정 & 알림 연계**  
+  - `InspectionScheduleService`가 층별장 권한을 강제하고, 칸/시간 중복(`uq_inspection_schedule_active_compartment_scheduled_at`)을 서버에서 차단한다.  
+  - 일정 저장 시 `notifyResidentsOfSchedule()`가 `FRIDGE_SCHEDULE` 알림을 발송하며, `recordScheduleAudit()`이 `SCHEDULE_CREATE/UPDATE/DELETE` 이벤트를 `audit_log`에 남겨 일정 CRUD도 감사 대상이 된다.  
+  - 프런트 `frontend/app/fridge/inspections/page.tsx`는 동일 API를 사용해 일정 생성/수정/삭제 UI와 검사 시작 플로우를 제공한다.
+- **감사 로그 활용**  
+  - `audit_log` 테이블은 `action/resource` 인덱스로 빠르게 조회할 수 있고, 현재 `DemoSeedService`, `InspectionService(cancel/submit)`, `FridgeReallocationService`, `InspectionScheduleService` 등 주요 관리자 액션이 모두 JSONB detail과 함께 기록된다.  
+  - 추가로 감사가 필요한 기능은 `AuditLogService`를 주입해 같은 패턴으로 확장하면 된다.
