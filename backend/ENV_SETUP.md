@@ -64,7 +64,10 @@
    ```bash
    docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app
    ```
-4. **데모 시드 보호**
+4. **관리(Actuator) 포트 설정**
+   - 기본값은 `SERVER_PORT`와 동일하며, CI에서도 이 구성을 사용한다. 별도 포트(예: 8081)를 두고 싶다면 `.env.prod`에 `MANAGEMENT_SERVER_PORT=8081`을 추가한다.
+   - 이때만 `MANAGEMENT_SERVER_ADDRESS=127.0.0.1`과 같이 바인딩 주소를 설정한다. *동일 포트를 사용할 때는 주소 변수를 비워 두어야 Spring Boot가 오류 없이 기동된다.*
+5. **데모 시드 보호**
    - `/admin/seed/fridge-demo`는 모든 냉장고/검사 데이터를 초기화하므로 운영 환경에서 호출하면 안 된다.
    - 운영 배포 시에는 방화벽 또는 `DEMO_SEED_ENABLED=false` 와 같은 서버 환경 변수를 사용해 컨트롤한다.
 
