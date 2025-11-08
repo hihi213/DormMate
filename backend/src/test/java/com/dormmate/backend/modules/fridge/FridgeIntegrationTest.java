@@ -146,14 +146,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 slotId
         );
 
-        jdbcTemplate.update(
-                "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
-                slotId
-        );
-        jdbcTemplate.update(
-                "DELETE FROM fridge_bundle WHERE fridge_compartment_id = ?",
-                slotId
-        );
+        clearSlotBundles(slotId);
         jdbcTemplate.update(
                 "UPDATE fridge_compartment SET max_bundle_count = ? WHERE id = ?",
                 1,
@@ -235,14 +228,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 slotId
         );
 
-        jdbcTemplate.update(
-                "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
-                slotId
-        );
-        jdbcTemplate.update(
-                "DELETE FROM fridge_bundle WHERE fridge_compartment_id = ?",
-                slotId
-        );
+        clearSlotBundles(slotId);
         jdbcTemplate.update(
                 "UPDATE fridge_compartment SET max_bundle_count = ? WHERE id = ?",
                 1,
