@@ -12,7 +12,7 @@
 | 운영 배포 | CI가 생성한 `deploy/.env.prod` | Secret Manager/Vault에서 값을 받아 런타임 전에만 생성하고 종료 시 즉시 삭제 |
 
 필수 변수 요약:
-- **DB 연결**: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` (또는 `POSTGRES_*`)
+- **DB 연결**: `DB_URL`, `DB_USERNAME`, `DB_PASSWORD` (또는 `POSTGRES_*`) — Docker Compose는 지정되지 않으면 `POSTGRES_DB=dormitory_db`로 기본값을 넣으므로, 실제 환경에서는 `.env`에 프로젝트별 DB 이름을 반드시 명시하세요.
 - **Redis**: `REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`
 - **보안**: `JWT_SECRET`, `JWT_EXPIRATION`, `JWT_REFRESH_EXPIRATION`, `ADMIN_USERNAME`, `ADMIN_PASSWORD` 또는 `ADMIN_PASSWORD_HASH`
 - **운영 옵션**: `SERVER_PORT`, `TZ`, `CORS_ALLOWED_ORIGINS`, `RATE_LIMIT_REQ_PER_MIN`

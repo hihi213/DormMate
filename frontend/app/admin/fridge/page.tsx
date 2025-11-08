@@ -23,7 +23,7 @@ import { format, formatDistanceToNowStrict, parseISO, subMonths } from "date-fns
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
-import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuCheckboxItem, DropdownMenuContent, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Progress } from "@/components/ui/progress"
@@ -66,8 +66,6 @@ import type { ResourceStatus, Slot, UpdateCompartmentConfigPayload } from "@/fea
 const FLOOR_OPTIONS = [2, 3, 4, 5]
 const BUNDLE_PAGE_SIZE = 8
 const DELETED_PAGE_SIZE = 10
-const LABEL_REUSE_LOOKBACK_MONTHS = 3
-
 const STATUS_BADGE: Record<ResourceStatus, { label: string; className: string }> = {
   ACTIVE: { label: "운영중", className: "bg-emerald-100 text-emerald-700" },
   SUSPENDED: { label: "일시 중단", className: "bg-amber-100 text-amber-700" },
@@ -297,7 +295,6 @@ export default function AdminFridgePage() {
   const [bundleSearch, setBundleSearch] = useState("")
   const [bundleContextKey, setBundleContextKey] = useState("")
   const [bundleSearchInput, setBundleSearchInput] = useState("")
-  const [labelReuseLookup, setLabelReuseLookup] = useState<Record<string, string>>({})
   const [slotAlerts, setSlotAlerts] = useState<Record<string, boolean>>({})
   const searchParams = useSearchParams()
   const initialSlotIdRef = useRef<string | null>(searchParams.get("slot") ?? searchParams.get("slotId"))
@@ -322,7 +319,6 @@ export default function AdminFridgePage() {
   const [inspectionDraftActions, setInspectionDraftActions] = useState<InspectionActionDraft[]>([])
   const [inspectionDraftNotes, setInspectionDraftNotes] = useState("")
   const [inspectionEditSubmitting, setInspectionEditSubmitting] = useState(false)
-  const [inspectionActionLoading, setInspectionActionLoading] = useState(false)
   const [inspectionReloadToken, setInspectionReloadToken] = useState(0)
   const inspectionOriginalActionsRef = useRef<AdminInspectionActionDetail[]>([])
 
@@ -545,7 +541,7 @@ export default function AdminFridgePage() {
         setMobileDetailOpen(false)
       }
     },
-    [selectedSlotId, resetBundleFilters, isMobile],
+    [selectedSlotId, resetBundleFilters, isMobile, pendingSlotId],
   )
 
   useEffect(() => {
@@ -753,66 +749,6 @@ export default function AdminFridgePage() {
       cancelled = true
     }
   }, [pendingSlotId, slots, selectedFloor, setSelectedFloor, setPendingSlotId])
-
-  useEffect(() => {
-    const slotId = selectedSlotId
-    if (!slotId) return
-    let cancelled = false
-    const loadLabelReuse = async () => {
-      try {
-        const sinceISO = subMonths(new Date(), LABEL_REUSE_LOOKBACK_MONTHS).toISOString()
-        const response = await fetchAdminDeletedBundles({
-          slotId,
-          since: sinceISO,
-          page: 0,
-          size: 200,
-        })
-        if (cancelled) return
-        const prefix = `${slotId}::`
-        setLabelReuseLookup((prev) => {
-          const next = { ...prev }
-          for (const key of Object.keys(next)) {
-            if (key.startsWith(prefix)) {
-              delete next[key]
-            }
-          }
-          const entries = Array.isArray(response.items)
-            ? (response.items as AdminBundleListResponseDto["items"])
-            : []
-          entries.forEach((item: (typeof entries)[number]) => {
-            if (!item) return
-            if (item.slotId !== slotId) return
-            const bundle = mapAdminBundleSummary(item)
-            const label = bundle.labelDisplay
-            if (!label) return
-            const deletedAt =
-              bundle.deletedAt ?? bundle.removedAt ?? bundle.updatedAt ?? null
-            next[`${prefix}${label}`] = deletedAt ?? ""
-          })
-          return next
-        })
-      } catch (error) {
-        if (cancelled) return
-        console.error("Failed to evaluate label reuse history", error)
-        const prefix = `${slotId}::`
-        setLabelReuseLookup((prev) => {
-          const next = { ...prev }
-          for (const key of Object.keys(next)) {
-            if (key.startsWith(prefix)) {
-              delete next[key]
-            }
-          }
-          return next
-        })
-      }
-    }
-
-    void loadLabelReuse()
-
-    return () => {
-      cancelled = true
-    }
-  }, [selectedSlotId])
 
   useEffect(() => {
     if (!selectedSlotId) {
@@ -2209,12 +2145,7 @@ export default function AdminFridgePage() {
                 <section className="space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-semibold text-slate-900">조치 타임라인</h3>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={handleInspectionAdjust}
-                      disabled={inspectionEditSubmitting || inspectionActionLoading}
-                    >
+                    <Button size="sm" variant="outline" onClick={handleInspectionAdjust} disabled={inspectionEditSubmitting}>
                       정정
                     </Button>
                   </div>
@@ -2299,13 +2230,7 @@ export default function AdminFridgePage() {
               <Separator className="mt-4" />
               <DialogFooter className="mt-6 flex flex-col gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-between">
                 <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1"
-                    onClick={handleInspectionResend}
-                    disabled={inspectionActionLoading}
-                  >
+                  <Button size="sm" variant="outline" className="gap-1" onClick={handleInspectionResend} disabled={inspectionEditSubmitting}>
                     알림 재발송
                   </Button>
                   <Button asChild size="sm" variant="ghost" className="gap-1 text-slate-600">
@@ -2314,12 +2239,7 @@ export default function AdminFridgePage() {
                     </Link>
                   </Button>
                 </div>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={closeInspectionDialog}
-                  disabled={inspectionActionLoading}
-                >
+                <Button variant="outline" size="sm" onClick={closeInspectionDialog} disabled={inspectionEditSubmitting}>
                   닫기
                 </Button>
               </DialogFooter>
