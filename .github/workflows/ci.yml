@@ -14,6 +14,7 @@ env:
   DB_USERNAME: ${{ secrets.POSTGRES_USER != '' && secrets.POSTGRES_USER || 'dormmate_user' }}
   DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
   DB_URL: jdbc:postgresql://localhost:5432/${{ secrets.POSTGRES_DB != '' && secrets.POSTGRES_DB || 'dormmate_local' }}
+  JWT_SECRET: ${{ secrets.JWT_SECRET != '' && secrets.JWT_SECRET || 'ci-jwt-secret-please-override-0123456789abcdef' }}
   NEXT_TELEMETRY_DISABLED: "1"
   PYTHONUNBUFFERED: "1"
   GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-cache
