@@ -148,6 +148,7 @@ jobs:
           fi
 
       - name: Compare runtime OpenAPI with spec
+        working-directory: backend
         run: |
           LOGIN_PAYLOAD='{"loginId":"dormmate","password":"admin1!","deviceId":"ci-runner"}'
           curl -fsS -H "Content-Type: application/json" -d "$LOGIN_PAYLOAD" http://localhost:8080/auth/login > login-response.json
