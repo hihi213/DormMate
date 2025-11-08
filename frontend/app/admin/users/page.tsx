@@ -75,8 +75,6 @@ export default function AdminUsersPage() {
       ? "관리자"
       : "거주자"
     : undefined
-  const extraRoleLabel =
-    drawerUser?.role === "FLOOR_MANAGER" ? "층별장" : drawerUser?.role === "ADMIN" ? "관리자" : "-"
   const canPromoteCurrent = drawerUser != null && drawerUser.role !== "FLOOR_MANAGER"
   const canDemoteCurrent = drawerUser?.role === "FLOOR_MANAGER"
   const trimmedRoleChangeReason = roleChangeReason.trim()

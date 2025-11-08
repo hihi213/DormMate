@@ -10,7 +10,7 @@ services: # 이 파일로 관리할 컨테이너(서비스)들의 목록을 정�
     container_name: dorm_postgres # 컨테이너에 고정된 이름을 부여하여 다른 서비스에서 쉽게 참조하고 관리할 수 있게 합니다.
     environment: # 컨테이너 내부에 환경 변수를 설정합니다. 주로 설정이나 비밀번호 등에 사용됩니다.
       # .env 파일이나 셸 환경변수가 없으면 ':-' 뒤의 기본값을 사용합니다.
-      POSTGRES_DB: ${POSTGRES_DB} # 생성할 데이터베이스의 이름을 지정합니다.
+      POSTGRES_DB: ${POSTGRES_DB:-dormitory_db} # 생성할 데이터베이스의 이름을 지정합니다.
       POSTGRES_USER: ${POSTGRES_USER:-dormmate_user} # 데이터베이스에 접근할 사용자 이름을 지정합니다.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-pleasesetup} # 해당 사용자의 비밀번호를 지정합니다.
     volumes:
