@@ -35,6 +35,9 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminCanTriggerFridgeDemoSeed() throws Exception {
+        jdbcTemplate.update("DELETE FROM penalty_history");
+        jdbcTemplate.update("DELETE FROM inspection_action_item");
+        jdbcTemplate.update("DELETE FROM inspection_action");
         jdbcTemplate.update("DELETE FROM fridge_item");
         jdbcTemplate.update("DELETE FROM fridge_bundle");
         jdbcTemplate.update("DELETE FROM bundle_label_sequence");

@@ -93,6 +93,8 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         jdbcTemplate.update("UPDATE fridge_item SET status = 'ACTIVE', deleted_at = NULL");
         jdbcTemplate.update("UPDATE fridge_bundle SET status = 'ACTIVE', deleted_at = NULL");
         jdbcTemplate.update("UPDATE fridge_compartment SET is_locked = FALSE, locked_until = NULL");
+
+        clearSlot(slot2FAId);
     }
 
     @Test
@@ -495,6 +497,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     private JsonNode ensureBundleForPrimaryResident(UUID slotId) throws Exception {
+        clearSlot(slotId);
         return createBundleForPrimaryResident(slotId);
     }
 
@@ -563,6 +566,45 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                 UUID.randomUUID(),
                 compartmentId,
                 roomId
+        );
+    }
+
+    private void clearSlot(UUID slotId) {
+        jdbcTemplate.update(
+                """
+                        DELETE FROM inspection_action_item
+                        WHERE fridge_item_id IN (
+                            SELECT id FROM fridge_item
+                            WHERE fridge_bundle_id IN (
+                                SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?
+                            )
+                        )
+                        """,
+                slotId
+        );
+        jdbcTemplate.update(
+                """
+                        DELETE FROM inspection_action_item
+                        WHERE inspection_action_id IN (
+                            SELECT id FROM inspection_action
+                            WHERE fridge_bundle_id IN (
+                                SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?
+                            )
+                        )
+                        """,
+                slotId
+        );
+        jdbcTemplate.update(
+                "DELETE FROM inspection_action WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
+                slotId
+        );
+        jdbcTemplate.update(
+                "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
+                slotId
+        );
+        jdbcTemplate.update(
+                "DELETE FROM fridge_bundle WHERE fridge_compartment_id = ?",
+                slotId
         );
     }
 

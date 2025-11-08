@@ -30,6 +30,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -39,6 +41,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -76,12 +79,23 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     private FridgeItemRepository fridgeItemRepository;
 
     private final List<UUID> bundlesToCleanup = new ArrayList<>();
+    private final Map<String, String> tokenOwners = new HashMap<>();
+
+    @BeforeEach
+    void ensureDefaultAccess() {
+        UUID slot2A = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+        ensureResidentHasAccess(FLOOR2_ROOM05_SLOT1, slot2A);
+        ensureResidentHasAccess(FLOOR2_ROOM05_SLOT3, slot2A);
+        UUID slot3A = fetchSlotId(FLOOR_3, SLOT_INDEX_A);
+        ensureResidentHasAccess(FLOOR3_ROOM05_SLOT1, slot3A);
+    }
 
     @AfterEach
     void tearDown() {
         bundlesToCleanup.forEach(id -> fridgeBundleRepository.findById(id)
                 .ifPresent(fridgeBundleRepository::delete));
         bundlesToCleanup.clear();
+        tokenOwners.clear();
     }
 
     @Test
@@ -1377,6 +1391,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         String accessToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
+        clearSlotBundles(slotId);
+
         JsonNode bundleResponse = createBundle(accessToken, slotId, "미등록 처리 테스트");
         UUID itemId = UUID.fromString(bundleResponse.path("bundle").path("items").get(0).path("itemId").asText());
 
@@ -1422,6 +1438,10 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 )
                 .andExpect(status().isCreated())
                 .andReturn();
+        String ownerLogin = tokenOwners.get(accessToken);
+        if (ownerLogin != null && !"dormmate".equalsIgnoreCase(ownerLogin)) {
+            ensureResidentHasAccess(ownerLogin, slotId);
+        }
         JsonNode bundle = readJson(result);
         bundlesToCleanup.add(UUID.fromString(bundle.path("bundle").path("bundleId").asText()));
         return bundle;
@@ -1449,7 +1469,9 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode response = readJson(result);
-        return response.path("tokens").path("accessToken").asText();
+        String token = response.path("tokens").path("accessToken").asText();
+        tokenOwners.put(token, loginId);
+        return token;
     }
 
     private JsonNode readJson(MvcResult result) throws Exception {
@@ -1480,6 +1502,34 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     private void clearSlotBundles(UUID slotId) {
+        jdbcTemplate.update(
+                """
+                        DELETE FROM inspection_action_item
+                        WHERE fridge_item_id IN (
+                            SELECT id FROM fridge_item
+                            WHERE fridge_bundle_id IN (
+                                SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?
+                            )
+                        )
+                        """,
+                slotId
+        );
+        jdbcTemplate.update(
+                """
+                        DELETE FROM inspection_action_item
+                        WHERE inspection_action_id IN (
+                            SELECT id FROM inspection_action
+                            WHERE fridge_bundle_id IN (
+                                SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?
+                            )
+                        )
+                        """,
+                slotId
+        );
+        jdbcTemplate.update(
+                "DELETE FROM inspection_action WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
+                slotId
+        );
         jdbcTemplate.update(
                 "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
                 slotId
@@ -1607,6 +1657,55 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         }
 
         assertThat(slotIdsFromApi).containsExactlyInAnyOrderElementsOf(Set.copyOf(accessibleSlotIds));
+    }
+
+    private void ensureResidentHasAccess(String loginId, UUID compartmentId) {
+        UUID userId = fetchUserId(loginId);
+        UUID roomId = fetchActiveRoomId(userId);
+        Integer existing = jdbcTemplate.queryForObject(
+                """
+                        SELECT COUNT(*)
+                        FROM compartment_room_access
+                        WHERE room_id = ? AND fridge_compartment_id = ? AND released_at IS NULL
+                        """,
+                Integer.class,
+                roomId,
+                compartmentId
+        );
+        if (existing != null && existing > 0) {
+            return;
+        }
+        jdbcTemplate.update(
+                """
+                        INSERT INTO compartment_room_access (
+                            id, fridge_compartment_id, room_id, assigned_at, released_at, created_at, updated_at
+                        ) VALUES (?, ?, ?, NOW(), NULL, NOW(), NOW())
+                        """,
+                UUID.randomUUID(),
+                compartmentId,
+                roomId
+        );
+    }
+
+    private UUID fetchUserId(String loginId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM dorm_user WHERE login_id = ?",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                loginId
+        );
+    }
+
+    private UUID fetchActiveRoomId(UUID userId) {
+        return jdbcTemplate.queryForObject(
+                """
+                        SELECT room_id
+                        FROM room_assignment
+                        WHERE dorm_user_id = ?
+                          AND released_at IS NULL
+                        """,
+                (rs, rowNum) -> UUID.fromString(rs.getString("room_id")),
+                userId
+        );
     }
 
     private void assertSlotsMatchExpected(String accessToken, Integer floor, List<UUID> expectedSlotIds) throws Exception {

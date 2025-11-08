@@ -30,8 +30,10 @@ import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepo
 import com.dormmate.backend.modules.fridge.domain.FridgeBundle;
 import com.dormmate.backend.modules.fridge.domain.FridgeItem;
 import com.dormmate.backend.modules.fridge.domain.FridgeItemStatus;
+import com.dormmate.backend.modules.fridge.domain.FridgeCompartment;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeCompartmentRepository;
 import com.dormmate.backend.modules.notification.application.FridgeExpiryNotificationScheduler;
 import com.dormmate.backend.modules.notification.application.NotificationService;
 import com.dormmate.backend.modules.notification.domain.Notification;
@@ -50,8 +52,11 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.boot.test.mock.mockito.SpyBean;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.transaction.annotation.Transactional;
 
 @SpringBootTest
@@ -59,6 +64,7 @@ import org.springframework.transaction.annotation.Transactional;
 class FridgeExpiryNotificationSchedulerIntegrationTest extends AbstractPostgresIntegrationTest {
 
     private static final LocalDate FIXED_DATE = LocalDate.of(2025, 1, 15);
+    private static final int SLOT_INDEX_A = 0;
 
     @Autowired
     private FridgeExpiryNotificationScheduler scheduler;
@@ -81,42 +87,38 @@ class FridgeExpiryNotificationSchedulerIntegrationTest extends AbstractPostgresI
     @Autowired
     private NotificationPreferenceRepository notificationPreferenceRepository;
 
-    @MockBean
-    private Clock clock;
+    @Autowired
+    private FridgeCompartmentRepository fridgeCompartmentRepository;
+
+    @Autowired
+    private JdbcTemplate jdbcTemplate;
 
     @SpyBean
     private NotificationService notificationService;
 
     private DormUser owner;
     private FridgeBundle ownerBundle;
-    private DormUser originalBundleOwner;
     private final List<UUID> createdItemIds = new ArrayList<>();
+    private UUID slot2FAId;
 
     @BeforeEach
     void setUp() {
-        Instant fixedInstant = FIXED_DATE.atStartOfDay().toInstant(ZoneOffset.UTC);
-        when(clock.instant()).thenReturn(fixedInstant);
-        when(clock.getZone()).thenReturn(ZoneOffset.UTC);
-
+        resetNotificationArtifacts();
         owner = dormUserRepository.findByLoginIdIgnoreCase(FLOOR2_ROOM05_SLOT1)
                 .orElseThrow(() -> new IllegalStateException("primary resident user not found"));
-        ownerBundle = fridgeBundleRepository.findAll().stream()
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("bundle not found"));
-        originalBundleOwner = ownerBundle.getOwner();
-        ownerBundle.setOwner(owner);
-        fridgeBundleRepository.save(ownerBundle);
+        slot2FAId = fetchSlotId((short) 2, SLOT_INDEX_A);
+        ownerBundle = createOwnerBundle();
+        ensurePreferenceEnabled(KIND_FRIDGE_EXPIRY, true);
+        ensurePreferenceEnabled(KIND_FRIDGE_EXPIRED, true);
     }
 
     @AfterEach
     void tearDown() {
-        notificationDispatchLogRepository.deleteAll();
-        notificationRepository.deleteAll();
+        resetNotificationArtifacts();
         createdItemIds.forEach(fridgeItemRepository::deleteById);
         createdItemIds.clear();
-        if (ownerBundle != null && originalBundleOwner != null) {
-            ownerBundle.setOwner(originalBundleOwner);
-            fridgeBundleRepository.save(ownerBundle);
+        if (ownerBundle != null) {
+            fridgeBundleRepository.deleteById(ownerBundle.getId());
         }
     }
 
@@ -129,14 +131,34 @@ class FridgeExpiryNotificationSchedulerIntegrationTest extends AbstractPostgresI
         buildItem("요거트", today.plusDays(1));
         buildItem("김치", today.minusDays(1));
 
+        var expiringItems = fridgeItemRepository.findActiveItemsExpiringBetween(
+                FridgeItemStatus.ACTIVE,
+                today,
+                today.plusDays(3)
+        );
+        var expiredItems = fridgeItemRepository.findActiveItemsExpiredBefore(
+                FridgeItemStatus.ACTIVE,
+                today
+        );
+        assertThat(expiringItems)
+                .describedAs("Expiring items prepared for batch")
+                .hasSize(2);
+        assertThat(expiredItems)
+                .describedAs("Expired items prepared for batch")
+                .hasSize(1);
+
         scheduler.runDailyBatch();
 
         List<Notification> notifications = notificationRepository.findAll();
         Map<String, Long> countsByKind = notifications.stream()
                 .collect(Collectors.groupingBy(Notification::getKindCode, Collectors.counting()));
 
-        assertThat(countsByKind.get(KIND_FRIDGE_EXPIRY)).isEqualTo(1L);
-        assertThat(countsByKind.get(KIND_FRIDGE_EXPIRED)).isEqualTo(1L);
+        assertThat(countsByKind.get(KIND_FRIDGE_EXPIRY))
+                .describedAs("Actual counts after batch: %s", countsByKind)
+                .isEqualTo(1L);
+        assertThat(countsByKind.get(KIND_FRIDGE_EXPIRED))
+                .describedAs("Actual counts after batch: %s", countsByKind)
+                .isEqualTo(1L);
 
         Notification expiryNotification = notifications.stream()
                 .filter(notification -> notification.getKindCode().equals(KIND_FRIDGE_EXPIRY))
@@ -241,5 +263,69 @@ class FridgeExpiryNotificationSchedulerIntegrationTest extends AbstractPostgresI
         FridgeItem saved = fridgeItemRepository.save(item);
         createdItemIds.add(saved.getId());
         return saved;
+    }
+
+    private FridgeBundle createOwnerBundle() {
+        FridgeCompartment compartment = fridgeCompartmentRepository.findById(slot2FAId)
+                .orElseThrow(() -> new IllegalStateException("slot not found for scheduler test"));
+
+        FridgeBundle bundle = new FridgeBundle();
+        bundle.setOwner(owner);
+        bundle.setFridgeCompartment(compartment);
+        bundle.setBundleName("scheduler-test-bundle");
+        bundle.setLabelNumber(nextLabelNumber(slot2FAId));
+        return fridgeBundleRepository.save(bundle);
+    }
+
+    private int nextLabelNumber(UUID compartmentId) {
+        Integer next = jdbcTemplate.queryForObject(
+                """
+                        SELECT COALESCE(MAX(label_number), 0) + 1
+                        FROM fridge_bundle
+                        WHERE fridge_compartment_id = ?
+                        """,
+                Integer.class,
+                compartmentId
+        );
+        return next != null ? next : 1;
+    }
+
+    private void resetNotificationArtifacts() {
+        notificationDispatchLogRepository.deleteAll();
+        notificationRepository.deleteAll();
+        notificationPreferenceRepository.deleteAll();
+    }
+
+    private void ensurePreferenceEnabled(String kindCode, boolean allowBackground) {
+        NotificationPreferenceId prefId = new NotificationPreferenceId(owner.getId(), kindCode);
+        NotificationPreference preference = notificationPreferenceRepository.findById(prefId)
+                .orElseGet(() -> new NotificationPreference(prefId, owner));
+        preference.setEnabled(true);
+        preference.setAllowBackground(allowBackground);
+        notificationPreferenceRepository.save(preference);
+    }
+
+    private UUID fetchSlotId(short floor, int slotIndex) {
+        return jdbcTemplate.queryForObject(
+                """
+                        SELECT fc.id
+                        FROM fridge_compartment fc
+                        JOIN fridge_unit fu ON fu.id = fc.fridge_unit_id
+                        WHERE fu.floor_no = ? AND fc.slot_index = ?
+                        """,
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                floor,
+                slotIndex
+        );
+    }
+
+    @TestConfiguration
+    static class FixedClockConfig {
+        @Bean
+        @Primary
+        Clock testClock() {
+            Instant fixedInstant = FIXED_DATE.atStartOfDay().toInstant(ZoneOffset.UTC);
+            return Clock.fixed(fixedInstant, ZoneOffset.UTC);
+        }
     }
 }

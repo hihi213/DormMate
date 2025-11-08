@@ -212,7 +212,53 @@
 
 ---
 
-## 6. 실행 후 정리
+## 5. 검사 정정·알림·벌점 검증
+
+> ADMIN만 `/fridge/inspections/{sessionId}` PATCH를 호출할 수 있습니다. 정정 시 `penalty_history`, `notification`, `audit_log`가 함께 갱신되므로 각 항목을 검증합니다.
+
+### C1. ADMIN 검사 정정 성공
+- **Method & Path**: `PATCH /fridge/inspections/{sessionId}`
+- **Headers**: `Authorization: Bearer {adminAccessToken}`
+- **Body**
+  ```json
+  {
+    "notes": "정정 시나리오",
+    "mutations": [
+      { "actionId": 101, "action": "WARN_INFO_MISMATCH", "note": "메모 수정" }
+    ],
+    "deleteActionIds": [102]
+  }
+  ```
+- **기대 결과**: 200 응답. 응답 본문에 수정된 메모·조치가 반영되고 `actions[].actionType`이 변경된다.
+- **추가 검증**: `penalty_history`에서 삭제된 조치와 연결된 벌점이 제거됐는지 확인하고, `audit_log`에 `INSPECTION_ADJUST` 이벤트가 층/slotIndex/변경 건수 메타데이터로 기록됐는지 확인한다.
+
+### C2. 비ADMIN 정정 차단
+- **Headers**: `Authorization: Bearer {floorManagerAccessToken}` (또는 거주자 토큰)
+- **기대 결과**: 403 `ADMIN_ONLY`. 프런트에서도 정정 버튼이 노출되지 않아야 하며, 강제 호출 시 동일 오류가 반환된다.
+
+### C3. 정정 후 알림·벌점 재검증
+- **Step 1**: `GET /notifications?state=all` — 정정된 검사 알림의 `metadata.penaltyHistoryIds`가 최신 값인지 확인한다.
+- **Step 2**: 필요 시 재발송 기능(향후 `/fridge/inspections/{sessionId}/notifications/resend`)을 테스트하고, 중복 발송이 dedupe 키로 차단되는지 확인한다.
+
+## 6. 데모 데이터 초기화 안전 장치
+
+> `/admin/seed/fridge-demo`는 **데모/스테이징 전용**입니다. 실행 시 냉장고/검사/벌점 데이터가 전시용으로 재삽입되므로 운영 DB에서는 절대 호출하지 마세요.
+
+### D1. 권한 검증
+- **Method & Path**: `POST /admin/seed/fridge-demo`
+- **Headers**: ADMIN / 비ADMIN 토큰
+- **기대 결과**: ADMIN만 200 응답과 함께 `"message": "FRIDGE_DEMO_DATA_REFRESHED"`. 비ADMIN은 403.
+- **추가 검증**: `audit_log`에 `FRIDGE_DEMO_SEED_EXECUTED` 이벤트가 기록되고 `metadata.script`가 `db/demo/fridge_exhibition_items.sql`인지 확인한다.
+
+### D2. 데이터 주입 확인
+- `SELECT COUNT(*) FROM fridge_bundle WHERE bundle_name LIKE '전시 데모:%';` → 7 유지.
+- `SELECT COUNT(*) FROM penalty_history WHERE source = 'FRIDGE_INSPECTION' AND reason LIKE '전시 데모%';` → 데모용 벌점이 주입됐는지 확인.
+- `/admin/fridge` UI에서 전시 포장/검사 카드가 바로 나타나고, 검사 정정 시나리오를 곧바로 실행할 수 있는지 확인한다.
+
+
+---
+
+## 7. 실행 후 정리
 
 1. 생성된 테스트 알림·포장·검사 세션 데이터를 정리한다. (필요 시 `./auto cleanup` 활용)
 2. 계정 잠금·비활성 상태를 원복한다.
