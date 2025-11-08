@@ -722,7 +722,7 @@ export default function AdminUsersPage() {
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-1">
                     <h2 className="text-lg font-semibold text-slate-900">{drawerUser.name}</h2>
-                    <p className="text-xs text-slate-500">DormMate 계정</p>
+                    <p className="text-xs text-slate-500">{formatRoomWithPersonal(drawerUser)}</p>
                   </div>
                   <Badge
                     variant={drawerUser.status === "ACTIVE" ? "outline" : "destructive"}
@@ -733,41 +733,39 @@ export default function AdminUsersPage() {
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">호실 · 개인번호</p>
-                    <p className="font-medium text-slate-900">{formatRoomWithPersonal(drawerUser)}</p>
-                  </div>
-                  <div className="space-y-1">
                     <p className="text-xs text-muted-foreground">마지막 로그인</p>
                     <p className="font-medium text-slate-900">{drawerUser.lastLogin || "기록 없음"}</p>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">기본 역할</p>
-                    <p className="font-medium text-slate-900">{primaryRoleLabel ?? "-"}</p>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <p className="text-xs text-muted-foreground">기본 역할</p>
+                        <p className="font-medium text-slate-900">{primaryRoleLabel ?? "-"}</p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={actionLoading || (!canPromoteCurrent && !canDemoteCurrent)}
+                        onClick={() => {
+                          if (!drawerUser) return
+                          setRoleChangeMode(drawerUser.role === "FLOOR_MANAGER" ? "DEMOTE" : "PROMOTE")
+                          setRoleChangeReason("")
+                          setRoleDialogOpen(true)
+                        }}
+                      >
+                        역할 변경
+                      </Button>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs text-muted-foreground">추가 권한</p>
+                    <p className="font-medium text-slate-900">{extraRoleLabel}</p>
                   </div>
                   <div className="space-y-1">
                     <p className="text-xs text-muted-foreground">알림 선호</p>
                     <p className="text-xs text-slate-500">알림 선호 연동 준비 중</p>
                   </div>
-                </div>
-                <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-3">
-                  <div className="space-y-0.5">
-                    <p className="text-xs text-muted-foreground">추가 권한</p>
-                    <p className="font-medium text-slate-900">{extraRoleLabel}</p>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={actionLoading || (!canPromoteCurrent && !canDemoteCurrent)}
-                    onClick={() => {
-                      if (!drawerUser) return
-                      setRoleChangeMode(drawerUser.role === "FLOOR_MANAGER" ? "DEMOTE" : "PROMOTE")
-                      setRoleChangeReason("")
-                      setRoleDialogOpen(true)
-                    }}
-                  >
-                    역할 변경
-                  </Button>
                 </div>
                 <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-700">
                   권한 변경 후 감사 로그에 사유를 남기고, 층별 공지를 통해 빠르게 공유하세요.
