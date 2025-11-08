@@ -530,7 +530,6 @@ export default function AdminFridgePage() {
 
   const handleSlotSelect = useCallback(
     (slotId: string) => {
-      console.log("[handleSlotSelect]", { slotId, selectedSlotId, pendingSlotId })
       if (slotId === selectedSlotId) {
         if (isMobile) {
           setMobileDetailOpen((prev) => !prev)
@@ -1496,34 +1495,7 @@ export default function AdminFridgePage() {
               {slot.displayName ?? `${slot.floorNo}F · ${slot.slotLetter}`}
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {hasAttention ? (
-              <Badge className="bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
-                조치 필요
-              </Badge>
-            ) : null}
-            {badge ? <Badge className={badge.className}>{badge.label}</Badge> : null}
-            <Badge
-              variant={slot.locked ? "destructive" : "outline"}
-              className={cn(
-                "gap-1",
-                slot.locked
-                  ? "border-rose-200 bg-rose-50 text-rose-600"
-                  : "border-emerald-200 text-emerald-600",
-              )}
-            >
-              {slot.locked ? (
-                <>
-                  <Lock className="size-3" aria-hidden />
-                  잠금
-                </>
-              ) : (
-                <>
-                  <LockOpen className="size-3" aria-hidden />
-                  해제
-                </>
-              )}
-            </Badge>
+          <div className="flex flex-col items-end gap-2">
             <Button
               variant="outline"
               size="sm"
@@ -1548,6 +1520,35 @@ export default function AdminFridgePage() {
                 </>
               )}
             </Button>
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              {hasAttention ? (
+                <Badge className="bg-rose-100 px-2 py-0.5 text-xs font-semibold text-rose-700">
+                  조치 필요
+                </Badge>
+              ) : null}
+              {badge ? <Badge className={badge.className}>{badge.label}</Badge> : null}
+              <Badge
+                variant={slot.locked ? "destructive" : "outline"}
+                className={cn(
+                  "gap-1",
+                  slot.locked
+                    ? "border-rose-200 bg-rose-50 text-rose-600"
+                    : "border-emerald-200 text-emerald-600",
+                )}
+              >
+                {slot.locked ? (
+                  <>
+                    <Lock className="size-3" aria-hidden />
+                    잠금
+                  </>
+                ) : (
+                  <>
+                    <LockOpen className="size-3" aria-hidden />
+                    해제
+                  </>
+                )}
+              </Badge>
+            </div>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3">
