@@ -107,6 +107,7 @@ class NotificationServiceTest {
         assertThat(saved.getMetadata()).containsEntry("actionItemIds", java.util.List.of());
         assertThat(saved.getMetadata()).containsEntry("penaltyHistoryIds", java.util.List.of());
         assertThat(saved.getTtlAt()).isAfter(OffsetDateTime.now(clock));
+        assertThat(saved.isAllowBackground()).isTrue();
     }
 
     @Test
