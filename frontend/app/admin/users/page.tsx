@@ -759,10 +759,6 @@ export default function AdminUsersPage() {
                     </div>
                   </div>
                   <div className="space-y-1">
-                    <p className="text-xs text-muted-foreground">추가 권한</p>
-                    <p className="font-medium text-slate-900">{extraRoleLabel}</p>
-                  </div>
-                  <div className="space-y-1">
                     <p className="text-xs text-muted-foreground">알림 선호</p>
                     <p className="text-xs text-slate-500">알림 선호 연동 준비 중</p>
                   </div>
