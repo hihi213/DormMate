@@ -1125,13 +1125,6 @@ export default function AdminFridgePage() {
     })
   }, [toast])
 
-  const handleInspectionRequestReinspection = useCallback(async () => {
-    toast({
-      title: "아직 지원되지 않는 기능입니다.",
-      description: "재검 요청 기능은 추후 업데이트에서 제공될 예정입니다.",
-    })
-  }, [toast])
-
   const handleInspectionRetry = useCallback(() => {
     setInspectionState((prev) => ({ ...prev, loading: true }))
     setInspectionReloadToken((token) => token + 1)
@@ -2314,15 +2307,6 @@ export default function AdminFridgePage() {
                     disabled={inspectionActionLoading}
                   >
                     알림 재발송
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="gap-1 text-slate-600"
-                    onClick={handleInspectionRequestReinspection}
-                    disabled={inspectionActionLoading}
-                  >
-                    재검 요청
                   </Button>
                   <Button asChild size="sm" variant="ghost" className="gap-1 text-slate-600">
                     <Link href={`/admin/audit?module=fridge&sessionId=${selectedInspection.sessionId}`}>
