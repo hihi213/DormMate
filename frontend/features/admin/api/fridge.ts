@@ -7,7 +7,6 @@ type BundleSummaryDto = components["schemas"]["FridgeBundleSummary"]
 type BundleListResponseDto = components["schemas"]["BundleListResponse"]
 type InspectionSessionDto = components["schemas"]["InspectionSession"]
 type UpdateInspectionSessionRequestDto = components["schemas"]["UpdateInspectionSessionRequest"]
-type ReinspectRequestDto = components["schemas"]["ReinspectRequest"]
 type InspectionScheduleDto = components["schemas"]["InspectionSchedule"]
 type ReallocationPreviewResponseDto = components["schemas"]["ReallocationPreviewResponse"]
 type ReallocationApplyRequestDto = components["schemas"]["ReallocationApplyRequest"]
@@ -215,25 +214,6 @@ export async function resendInspectionNotification(
   return data
 }
 
-export async function requestInspectionReinspection(
-  sessionId: string,
-  payload?: ReinspectRequestDto,
-): Promise<InspectionScheduleDto> {
-  const { data, error } = await safeApiCall<InspectionScheduleDto>(
-    `/fridge/inspections/${sessionId}/reinspect`,
-    {
-      method: "POST",
-      body: payload,
-    },
-  )
-
-  if (error || !data) {
-    raiseAdminFridgeError(error, "재검 일정을 생성하지 못했습니다.")
-  }
-
-  return data
-}
-
 export async function previewReallocation(
   floor: number,
 ): Promise<ReallocationPreviewResponseDto> {
@@ -276,7 +256,6 @@ export type {
   FridgeSlotDto as AdminFridgeSlotDto,
   InspectionSessionDto as AdminInspectionSessionDto,
   UpdateInspectionSessionRequestDto as AdminUpdateInspectionSessionRequestDto,
-  ReinspectRequestDto as AdminReinspectRequestDto,
   InspectionScheduleDto as AdminInspectionScheduleDto,
   ReallocationPreviewResponseDto as AdminReallocationPreviewDto,
   ReallocationApplyRequestDto as AdminReallocationApplyRequestDto,

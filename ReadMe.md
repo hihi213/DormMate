@@ -11,7 +11,7 @@ DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위�
 - **층별장 검사**
   - 세션 잠금/연장, 조치·벌점 기록, 제출 시 알림/감사 로그 발행. 제출 완료된 검사에 대해 ADMIN이 메모·조치를 정정(PATCH `/fridge/inspections/{id}`)하고 벌점/알림이 즉시 재계산된다.
 - **관리자 포털**
-  - `/admin/fridge`에서 칸 상태, 포장 CRUD, 검사 이력, 재배분, 데모 시드 실행을 통합 관리. 검사 정정, 알림 재발송, 재검 요청, 데모 데이터 초기화 버튼이 실제 API와 연결돼 있다.
+  - `/admin/fridge`에서 칸 상태, 포장 CRUD, 검사 이력, 재배분, 데모 시드 실행을 통합 관리한다. 검사 정정은 서버 PATCH와 연동되어 있고, 알림 재발송은 버튼·토스트만 제공되며 재검 요청은 현재 UI에서 제거된 상태다.
 - **알림/배치**
   - 사용자 알림 REST API(`GET /notifications`, `PATCH /notifications/{id}/read`, `GET/PATCH /notifications/preferences`)와 임박/만료 배치가 운영 중이며, 실패 로그는 `notification_dispatch_log`에 기록된다.
 - **감사/시드**
