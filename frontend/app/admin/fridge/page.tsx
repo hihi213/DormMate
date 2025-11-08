@@ -45,8 +45,6 @@ import {
   fetchAdminDeletedBundles,
   fetchAdminInspectionSessions,
   updateAdminInspectionSession,
-  resendInspectionNotification,
-  requestInspectionReinspection,
   previewReallocation,
   type AdminBundleListResponseDto,
   type AdminInspectionSessionDto,
@@ -1100,84 +1098,25 @@ export default function AdminFridgePage() {
   }, [])
 
   const handleInspectionAdjust = useCallback(() => {
-    if (!selectedInspection) return
-    inspectionOriginalActionsRef.current = selectedInspection.actions
-    setInspectionDraftNotes(selectedInspection.notes ?? "")
-    if (selectedInspection.actions.length > 0) {
-      setInspectionDraftActions(
-        selectedInspection.actions.map((action, index) => createActionDraft(action, index)),
-      )
-    } else {
-      const localId =
-        typeof crypto !== "undefined" && "randomUUID" in crypto
-          ? crypto.randomUUID()
-          : `new-${Date.now()}`
-      setInspectionDraftActions([
-        {
-          localId,
-          actionId: null,
-          actionType: DEFAULT_INSPECTION_ACTION,
-          note: "",
-          bundleId: null,
-          targetUserId: null,
-          remove: false,
-          isNew: true,
-        },
-      ])
-    }
-    setInspectionEditOpen(true)
-  }, [createActionDraft, selectedInspection])
+    toast({
+      title: "아직 지원되지 않는 기능입니다.",
+      description: "검사 편집은 후속 구현이 완료되면 사용할 수 있습니다.",
+    })
+  }, [toast])
 
   const handleInspectionResend = useCallback(async () => {
-    if (!selectedInspection) return
-    try {
-      setInspectionActionLoading(true)
-      const updated = await resendInspectionNotification(selectedInspection.sessionId)
-      applyInspectionSessionUpdate(updated)
-      toast({
-        title: "검사 결과 알림을 재발송했습니다.",
-        description: "사용자에게 최신 검사 결과 알림을 다시 전송했습니다.",
-      })
-    } catch (error) {
-      const message =
-        error && typeof error === "object" && "message" in error && typeof error.message === "string"
-          ? (error as { message: string }).message
-          : "알림 재발송 중 문제가 발생했습니다."
-      toast({
-        title: "알림 재발송 실패",
-        description: message,
-        variant: "destructive",
-      })
-    } finally {
-      setInspectionActionLoading(false)
-    }
-  }, [applyInspectionSessionUpdate, selectedInspection, toast])
+    toast({
+      title: "아직 지원되지 않는 기능입니다.",
+      description: "검사 알림 재전송은 서버 지원 후 제공될 예정입니다.",
+    })
+  }, [toast])
 
   const handleInspectionRequestReinspection = useCallback(async () => {
-    if (!selectedInspection) return
-    try {
-      setInspectionActionLoading(true)
-      const schedule = await requestInspectionReinspection(selectedInspection.sessionId)
-      toast({
-        title: "재검 일정을 생성했습니다.",
-        description: schedule.scheduledAt
-          ? `${formatDateTime(schedule.scheduledAt, "-")} 예정`
-          : "재검 일정이 생성되었습니다.",
-      })
-    } catch (error) {
-      const message =
-        error && typeof error === "object" && "message" in error && typeof error.message === "string"
-          ? (error as { message: string }).message
-          : "재검 일정을 생성하지 못했습니다."
-      toast({
-        title: "재검 요청 실패",
-        description: message,
-        variant: "destructive",
-      })
-    } finally {
-      setInspectionActionLoading(false)
-    }
-  }, [selectedInspection, toast])
+    toast({
+      title: "아직 지원되지 않는 기능입니다.",
+      description: "재검 요청 기능은 추후 업데이트에서 제공될 예정입니다.",
+    })
+  }, [toast])
 
   const handleInspectionRetry = useCallback(() => {
     setInspectionState((prev) => ({ ...prev, loading: true }))
