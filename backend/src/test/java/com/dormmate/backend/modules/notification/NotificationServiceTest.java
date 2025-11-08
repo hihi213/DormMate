@@ -11,7 +11,6 @@ import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -108,6 +107,7 @@ class NotificationServiceTest {
         assertThat(saved.getMetadata()).containsEntry("actionItemIds", java.util.List.of());
         assertThat(saved.getMetadata()).containsEntry("penaltyHistoryIds", java.util.List.of());
         assertThat(saved.getTtlAt()).isAfter(OffsetDateTime.now(clock));
+        assertThat(saved.isAllowBackground()).isTrue();
     }
 
     @Test

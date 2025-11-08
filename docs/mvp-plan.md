@@ -35,7 +35,7 @@
 - **Status ID**: EN-102
 - **체크리스트**
   - [x] Flyway 베이스라인과 전시용 데모 시드(`db/demo/fridge_exhibition_items.sql`) 자동화를 검증하고 롤백 절차를 문서화.
-  - [x] 데모 환경 `.env`·Docker Compose 구성 정리 및 비상 전환 플랜(mvp-scenario.md §4) 기록.
+  - [x] 데모 환경 `deploy/.env.prod`·Docker Compose 구성 정리 및 비상 전환 플랜(mvp-scenario.md §4) 기록.
 - **목표**: 데모/로컬 환경에서 동일한 데이터로 기동·롤백을 수행할 수 있다.
 - **참고**: [mvp-scenario.md §2](mvp-scenario.md#2-사전-준비), [feature-inventory.md §2](feature-inventory.md#2-냉장고--일반-기숙사생)
 
@@ -102,13 +102,13 @@
 ### FR-204 검사 후 수정 추적·벌점 안내
 - **Status ID**: FR-204
 - **체크리스트**
-  - [ ] 거주자 목록에서 검사 이후 수정된 물품을 필터링/배지로 표시하고 `updatedAfterInspection` 플래그를 일관되게 사용.
+  - [ ] 층별장 검사 화면에서 `만료`, `검사 후 수정` 두 가지 토글 필터를 제공하고 `updatedAfterInspection` 플래그를 검사 흐름에서 일관되게 사용.
   - [ ] 폐기/경고 조치가 발생한 포장에 대해 벌점 안내·기록 모듈과 연동하고, 거주자 화면에서 누적 벌점을 노출.
   - [ ] 검사 결과 후 수정·벌점 안내 흐름을 통합/Playwright 테스트로 검증.
   - [ ] 포장/슬롯 목록 UI 문구(임박/만료 배지, 메모 비공개 안내 등)를 최신 정책과 일치하도록 정비하고 스냅샷을 갱신한다.
   - [ ] `inspection_action_item` 스냅샷과 `penalty_history` 누적 정보를 `correlationId`로 연결해 알림/상세 화면에 노출하고, API 스키마 변경사항을 프런트 타입 정의에 반영한다.
 - **Feature 링크**: [Feature Inventory §2 냉장고 – 일반 기숙사생](feature-inventory.md#2-냉장고--일반-기숙사생), [Feature Inventory §3 냉장고 – 알림 & 일정](feature-inventory.md#3-냉장고--알림--일정)
-- **목표**: 검사 이후 변경된 물품과 벌점 안내가 거주자 화면에서 명확히 드러난다.
+- **목표**: 검사 진행 중 필요한 상태(만료, 검사 후 수정)를 빠르게 추려 보고 벌점 안내 흐름과 연동한다.
 - **참고**: [mvp-scenario.md §3.3](mvp-scenario.md#33-검사-후-사용자-알림)
 
 ### FR-205 데이터 시드
@@ -246,8 +246,8 @@
 - **체크리스트**
   - [x] Spring Scheduling cron(09:00) 설정 확인 및 개발용 수동 트리거 Bean 작성.
   - [x] `FRIDGE_EXPIRY`·`FRIDGE_EXPIRED` dedupe 키와 TTL(24h) 적용 검증, 중복 방지 로직을 단위 테스트로 보호.
-  - [ ] 배치 재시도/오류 코드 정책을 정리하고 [`docs/ops/batch-notifications.md`](ops/batch-notifications.md)와 코드에 반영한다.
-  - [ ] 스케줄러 통합 테스트(가짜 Clock/TaskScheduler) 작성하고, 배치 실패 시 `notification_dispatch_log`에 기록되는지 확인.
+  - [x] 배치 재시도/오류 코드 정책을 정리하고 [`docs/ops/batch-notifications.md`](ops/batch-notifications.md)와 코드에 반영한다. (2025-11-08: 회귀 테스트 섹션 추가, 실패 코드/재시도 정책 최신화)
+  - [x] 스케줄러 통합 테스트(고정 Clock/전용 슬롯 픽스처) 작성하고, 배치 실패 시 `notification_dispatch_log`에 기록되는지 확인. (`FridgeExpiryNotificationSchedulerIntegrationTest`가 전용 번들/선호도 데이터를 직접 구성해 FRIDGE_EXPIRY/FRIDGE_EXPIRED 1건씩 생성되는지 검증함)
   - [ ] 임박/만료 배치 알림 생성 로직을 구현해 거주자에게 실제 발송하고, dedupe·TTL 정책이 문서와 일치하는지 점검한다.
 - **Feature 링크**: [Feature Inventory §3 냉장고 – 알림 & 일정](feature-inventory.md#3-냉장고--알림--일정)
 - **목표**: 임박/만료 배치가 중복 없이 생성되고 테스트로 보호된다.
@@ -397,3 +397,37 @@
 - **Feature 링크**: [Feature Inventory §4 냉장고 – 층별장(검사자) · 실시간 협업](feature-inventory.md#실시간-협업-및-복구)
 - **목표**: 다중 검사자가 하나의 세션에서 실시간으로 협업하고, 네트워크 장애 시 안전하게 복구한다. *(MVP 직후 최우선 확장 항목으로 계획한다.)*
 - **참고**: [mvp-scenario.md §3.2](mvp-scenario.md#32-층별장-검사-세션-단독-흐름)
+
+## Post-MVP 체크리스트 (미완 항목 요약)
+
+아래 항목은 현재 코드 기준 미완료이며, 차기 사이클에서 우선순위/범위를 다시 합의한다.
+
+1. **IN-304 거주자 검사 열람 뷰**
+   - 검사 조회 서비스에 거주자 권한을 추가하고 본인 칸만 필터링하는 DTO를 제공.
+   - `/fridge/inspections` 프런트를 열람 전용 모드로 분기, 버튼/액션 비활성화.
+   - `residentCanViewOwnInspectionHistory`, `residentCannotViewOthersInspection` 통합 테스트 및 Playwright @inspection-resident 작성.
+
+2. **IN-306 실시간 검사 합류·복구**
+   - SSE/웹소켓 채널, 재연결 로직, `inspection_participant` 상태 전파 완료.
+   - 프런트 다중 검사자 UI, 충돌 감지, 토스트 피드백 구현.
+   - 부하/복구 테스트 및 감사 로그(합류/퇴장 이벤트) 보강.
+
+3. **NO-403 알림 UI/QA 전면화**
+   - `/notifications` 페이지/설정 화면 마무리, 목록·읽음·설정 플로우를 UI에 노출.
+   - QA 체크리스트(읽음→read-all→preference 토글→401/403) 문서화 및 Playwright @notifications 추가.
+   - 알림 메타데이터(sessionId/actionIds 등)를 활용한 딥링크 이동 UX 구현.
+
+4. **SC-401 일정 관리 확장**
+   - 관리자 일정 편집/재검 요청 UI, 데이터 마이그레이션 가이드, 거주자 홈 표시(“다음 검사”) 구현.
+   - `/fridge/inspections` 화면을 “예정된 검사 / 검사 기록” 2섹션 구조로 정비하고, 일정 3dot 메뉴 제공.
+   - 일정-세션 연결 통계 및 백업/복구 절차 문서화.
+
+5. **NO-501 배치 재시도/경보**
+   - 5분 간격 3회 자동 재시도 및 실패 경보(Email/Slack 등) 도입.
+   - 배치 재실행 API 혹은 Actuator 엔드포인트 제공, Runbook 업데이트.
+   - `docs/ops/batch-notifications.md`에 재시도 정책과 경보 절차 추가.
+
+6. **AU-103 계정 재설정·감사 UI**
+   - 비밀번호 재설정/초기화 흐름, 관리자 잠금 해제 API, 감사 로그 뷰어 구현.
+   - `audit_log`에 로그인 실패/잠금/해제, 비밀번호 변경, 재설정 이벤트를 모두 남기고 보관 정책 문서화.
+   - 보안 체크리스트에 재설정/감사 UI 테스트 절차 추가.

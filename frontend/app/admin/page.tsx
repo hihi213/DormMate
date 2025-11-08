@@ -32,7 +32,7 @@ const defaultWatchlist: WatchlistItem[] = [
   {
     id: "fridge-lock",
     category: "조치 필요",
-    title: "A동 냉장고 2칸 잠금 해제 요청",
+    title: "냉장고 2칸 잠금 해제 요청",
     due: "오늘 14:00 마감",
     owner: "3층 층별장",
     link: "/admin/fridge?unit=A&compartment=2",
@@ -62,7 +62,7 @@ const moduleSnapshots = [
   {
     id: "fridge",
     label: "냉장고",
-    summary: "층별 임박 12건 · 검사 예정 3건",
+    summary: "임박 물품 12건 · 검사 예정 3건",
     metrics: [
       { label: "임박 물품", value: "12", trend: "+2", tone: "warn" as const },
       { label: "폐기 조치", value: "3", trend: "-1", tone: "critical" as const },
@@ -143,12 +143,12 @@ function AdminDashboard() {
           </div>
           <Tabs defaultValue="fridge" className="w-full">
             <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-              <TabsList className="grid h-auto grid-cols-2 gap-2 bg-slate-50 p-4 sm:grid-cols-4">
+              <TabsList className="flex h-auto gap-2 overflow-x-auto bg-slate-50 p-4">
                 {moduleSnapshots.map((module) => (
                   <TabsTrigger
                     key={module.id}
                     value={module.id}
-                    className="rounded-xl border border-transparent bg-white/70 text-xs font-medium text-slate-600 shadow-sm transition hover:border-emerald-200 hover:text-emerald-700 data-[state=active]:border-emerald-200 data-[state=active]:bg-emerald-50/80 data-[state=active]:text-emerald-700 sm:text-sm"
+                    className="shrink-0 rounded-full border border-transparent bg-white/70 px-4 py-2 text-xs font-medium text-slate-600 shadow-sm transition hover:border-emerald-200 hover:text-emerald-700 data-[state=active]:border-emerald-200 data-[state=active]:bg-emerald-50/80 data-[state=active]:text-emerald-700 sm:text-sm"
                   >
                     {module.label}
                   </TabsTrigger>
@@ -169,7 +169,7 @@ function AdminDashboard() {
                         </Link>
                       </Button>
                     </div>
-                    <div className="grid gap-4 md:grid-cols-4">
+                    <div className="grid grid-cols-2 gap-3 sm:gap-4 md:grid-cols-4">
                       {module.metrics.map((metric) => (
                         <div key={metric.label} className="space-y-1 rounded-xl border border-slate-100 bg-slate-50/60 p-4">
                           <p className="text-xs font-medium text-slate-500">{metric.label}</p>

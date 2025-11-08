@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toYMD } from "@/lib/date-utils"
 import { summarizeEntries, validateTemplate } from "./validation"
 import type { PendingEntry, TemplateState } from "./types"
-import type { Bundle, ItemUnit } from "@/features/fridge/types"
+import type { ActionResult, Bundle, ItemUnit } from "@/features/fridge/types"
 import { AUTO_PACK_NAME_LIMIT, NAME_LIMIT, PACK_LABEL_LIMIT, QTY_LIMIT } from "./constants"
 import { formatStickerLabel } from "@/features/fridge/utils/labels"
 
@@ -29,18 +29,16 @@ const createInitialTemplate = (slotId: string): TemplateState => ({
   lockName: false,
 })
 
-type ToastFn = (opts: { title: string; description?: string }) => void
+type ToastFn = (opts: { title: string; description?: string; variant?: "default" | "destructive" | null }) => void
 
 type AddBundleFn = (data: {
   slotId: string
   bundleName: string
   memo?: string | null
   units: { name: string; expiryDate: string; quantity: number; unitCode?: string | null }[]
-}) => {
-  success: boolean
-  data?: { bundleId: string; unitIds: string[]; bundle: Bundle; units: ItemUnit[] }
-  error?: string
-}
+}) => Promise<
+  ActionResult<{ bundleId: string; unitIds: string[]; bundle: Bundle; units: ItemUnit[] }>
+>
 
 type CompletionState = {
   bundleLabel: string

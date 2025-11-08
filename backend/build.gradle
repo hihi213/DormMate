@@ -97,9 +97,9 @@ dependencies {
     
     // JWT & Security
     // JWT(JSON Web Token)를 생성하고 검증하기 위한 라이브러리입니다.
-    implementation 'io.jsonwebtoken:jjwt-api:0.12.3' // JWT의 인터페이스(API)
-    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.3' // 실제 구현체
-    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.3' // JSON 파싱을 위한 Jackson 연동 모듈
+    implementation 'io.jsonwebtoken:jjwt-api:0.12.5' // JWT의 인터페이스(API)
+    runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.5' // 실제 구현체
+    runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.5' // JSON 파싱을 위한 Jackson 연동 모듈
     
     // Monitoring & Logging
     // Micrometer 라이브러리를 통해 수집한 애플리케이션 메트릭을 Prometheus가 수집할 수 있는 형식으로 노출해줍니다.
@@ -145,9 +145,9 @@ springBoot {
 }
 
 flyway {
-    url = System.getenv('DB_URL') ?: 'jdbc:postgresql://localhost:5432/dormitory_db'
-    user = System.getenv('DB_USERNAME') ?: 'dorm_user'
-    password = System.getenv('DB_PASSWORD') ?: 'dorm_password'
+    url = System.getenv('DB_URL') ?: 'jdbc:postgresql://localhost:5432/prod_dormmate'
+    user = System.getenv('DB_USERNAME') ?: 'dormmate_user'
+    password = System.getenv('DB_PASSWORD') ?: 'pleasesetup'
     schemas = ['public']
     baselineOnMigrate = true
     locations = ["filesystem:${projectDir}/src/main/resources/db/migration"]

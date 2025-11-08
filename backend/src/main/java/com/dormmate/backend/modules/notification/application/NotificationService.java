@@ -132,14 +132,8 @@ public class NotificationService {
     }
 
     public int markAllNotificationsRead(UUID userId) {
-        List<Notification> unread = notificationRepository.findByUserIdAndState(userId, NotificationState.UNREAD);
-        if (unread.isEmpty()) {
-            return 0;
-        }
         OffsetDateTime now = OffsetDateTime.now(clock);
-        unread.forEach(notification -> notification.markRead(now));
-        notificationRepository.saveAll(unread);
-        return unread.size();
+        return notificationRepository.markAllRead(userId, now);
     }
 
     @Transactional(readOnly = true)
@@ -211,7 +205,6 @@ public class NotificationService {
                     .increment(type);
         }
 
-        OffsetDateTime now = OffsetDateTime.now(clock);
         Map<UUID, List<InspectionAction>> actionsByUser = session.getActions().stream()
                 .filter(action -> action.getTargetUser() != null)
                 .collect(Collectors.groupingBy(action -> action.getTargetUser().getId(), LinkedHashMap::new, Collectors.toList()));
@@ -292,7 +285,17 @@ public class NotificationService {
         return definition == null || definition.defaultEnabled();
     }
 
-    public Optional<Notification> sendNotification(
+    private boolean resolveBackgroundPreference(UUID userId, String kindCode) {
+        NotificationPreferenceId id = new NotificationPreferenceId(userId, kindCode);
+        Optional<NotificationPreference> preference = notificationPreferenceRepository.findById(id);
+        if (preference.isPresent()) {
+            return preference.get().isAllowBackground();
+        }
+        PreferenceDefinition definition = PREFERENCE_BY_CODE.get(kindCode);
+        return definition == null || definition.defaultAllowBackground();
+    }
+
+    public Optional<NotificationDelivery> sendNotification(
             UUID userId,
             String kindCode,
             String title,
@@ -307,7 +310,7 @@ public class NotificationService {
         return createNotification(user, kindCode, title, body, dedupeKey, metadata, ttlHours, correlationId);
     }
 
-    private Optional<Notification> createNotification(
+    private Optional<NotificationDelivery> createNotification(
             DormUser user,
             String kindCode,
             String title,
@@ -337,9 +340,10 @@ public class NotificationService {
         notification.setTtlAt(now.plusHours(ttlHours));
         notification.setCorrelationId(correlationId);
         notification.setMetadata(metadata == null ? Map.of() : metadata);
+        notification.setAllowBackground(resolveBackgroundPreference(user.getId(), kindCode));
 
         notificationRepository.save(notification);
-        return Optional.of(notification);
+        return Optional.of(new NotificationDelivery(notification, notification.isAllowBackground()));
     }
 
     public Notification createFailureNotification(
@@ -359,6 +363,7 @@ public class NotificationService {
         notification.setTtlAt(now);
         notification.setExpiredAt(now);
         notification.setMetadata(metadata == null ? Map.of() : metadata);
+        notification.setAllowBackground(false);
         notificationRepository.save(notification);
         return notification;
     }
@@ -410,6 +415,12 @@ public class NotificationService {
             String description,
             boolean defaultEnabled,
             boolean defaultAllowBackground
+    ) {
+    }
+
+    public record NotificationDelivery(
+            Notification notification,
+            boolean allowBackground
     ) {
     }
 

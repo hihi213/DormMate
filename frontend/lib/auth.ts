@@ -216,7 +216,9 @@ async function ensureTokens(forceRefresh: boolean): Promise<boolean> {
 
 export function subscribeAuth(listener: (user: AuthUser | null) => void) {
   authListeners.add(listener)
-  return () => authListeners.delete(listener)
+  return () => {
+    authListeners.delete(listener)
+  }
 }
 
 export function getCurrentUser(): AuthUser | null {

@@ -1,5 +1,8 @@
 package com.dormmate.backend.modules.inspection;
 
+import static com.dormmate.backend.support.TestResidentAccounts.DEFAULT_PASSWORD;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT1;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT3;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasItem;
 import static org.hamcrest.Matchers.not;
@@ -74,11 +77,11 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         bundlesToCleanup = new ArrayList<>();
-        managerToken = login("bob", "bob123!");
-        residentToken = login("alice", "alice123!");
-        adminToken = login("admin", "password");
+        managerToken = login(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD);
+        residentToken = login(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+        adminToken = login("dormmate", "admin1!");
         slot2FAId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
-        residentId = fetchUserId("alice");
+        residentId = fetchUserId(FLOOR2_ROOM05_SLOT1);
         residentRoomId = ensureResidentAssignment(residentId);
         ensureCompartmentAccess(residentRoomId, slot2FAId);
 
@@ -90,11 +93,13 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
         jdbcTemplate.update("UPDATE fridge_item SET status = 'ACTIVE', deleted_at = NULL");
         jdbcTemplate.update("UPDATE fridge_bundle SET status = 'ACTIVE', deleted_at = NULL");
         jdbcTemplate.update("UPDATE fridge_compartment SET is_locked = FALSE, locked_until = NULL");
+
+        clearSlot(slot2FAId);
     }
 
     @Test
     void adminReceivesForbiddenForInspectionLifecycle() throws Exception {
-        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        JsonNode bundle = ensureBundleForPrimaryResident(slot2FAId);
         UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
         UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
 
@@ -149,7 +154,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void managerCanRunFullInspectionHappyPath() throws Exception {
-        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        JsonNode bundle = ensureBundleForPrimaryResident(slot2FAId);
         UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
         UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
 
@@ -188,7 +193,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void lockIsExtendedWhenActionsAreRecorded() throws Exception {
-        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        JsonNode bundle = ensureBundleForPrimaryResident(slot2FAId);
         UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
         UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
 
@@ -257,7 +262,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void residentCanViewOwnInspectionSession() throws Exception {
-        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        JsonNode bundle = ensureBundleForPrimaryResident(slot2FAId);
         UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
         UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
 
@@ -297,7 +302,7 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void residentCanViewSubmittedInspectionHistoryWithFilter() throws Exception {
-        JsonNode bundle = ensureBundleForAlice(slot2FAId);
+        JsonNode bundle = ensureBundleForPrimaryResident(slot2FAId);
         UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
         UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
 
@@ -491,11 +496,12 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk());
     }
 
-    private JsonNode ensureBundleForAlice(UUID slotId) throws Exception {
-        return createBundleForAlice(slotId);
+    private JsonNode ensureBundleForPrimaryResident(UUID slotId) throws Exception {
+        clearSlot(slotId);
+        return createBundleForPrimaryResident(slotId);
     }
 
-    private JsonNode createBundleForAlice(UUID slotId) throws Exception {
+    private JsonNode createBundleForPrimaryResident(UUID slotId) throws Exception {
         String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(2).toString();
         MvcResult result = mockMvc.perform(post("/fridge/bundles")
                         .header("Authorization", "Bearer " + residentToken)
@@ -560,6 +566,45 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                 UUID.randomUUID(),
                 compartmentId,
                 roomId
+        );
+    }
+
+    private void clearSlot(UUID slotId) {
+        jdbcTemplate.update(
+                """
+                        DELETE FROM inspection_action_item
+                        WHERE fridge_item_id IN (
+                            SELECT id FROM fridge_item
+                            WHERE fridge_bundle_id IN (
+                                SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?
+                            )
+                        )
+                        """,
+                slotId
+        );
+        jdbcTemplate.update(
+                """
+                        DELETE FROM inspection_action_item
+                        WHERE inspection_action_id IN (
+                            SELECT id FROM inspection_action
+                            WHERE fridge_bundle_id IN (
+                                SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?
+                            )
+                        )
+                        """,
+                slotId
+        );
+        jdbcTemplate.update(
+                "DELETE FROM inspection_action WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
+                slotId
+        );
+        jdbcTemplate.update(
+                "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
+                slotId
+        );
+        jdbcTemplate.update(
+                "DELETE FROM fridge_bundle WHERE fridge_compartment_id = ?",
+                slotId
         );
     }
 

@@ -18,6 +18,7 @@ import {
   BookOpen,
   CalendarDays,
   FileBarChart2,
+  Info,
   LayoutDashboard,
   Menu,
   Search,
@@ -26,18 +27,25 @@ import {
   Snowflake,
   Users,
   Waves,
-  X,
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+  SheetTrigger,
+} from "@/components/ui/sheet"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { getCurrentUser, logout, subscribeAuth, type AuthUser } from "@/lib/auth"
 import HeaderNotifications from "@/components/admin/header-notifications"
+import { useToast } from "@/hooks/use-toast"
+import { resetDemoDataset } from "@/lib/demo-seed"
 
 type NavItem = {
   label: string
@@ -58,9 +66,7 @@ const NAV_GROUPS: NavGroup[] = [
   },
   {
     label: "입주자 & 제재",
-    items: [
-      { label: "입주자·제재", href: "/admin/users", icon: Users },
-    ],
+    items: [{ label: "입주자·제재", href: "/admin/users", icon: Users }],
   },
   {
     label: "시설 모듈",
@@ -79,6 +85,13 @@ const NAV_GROUPS: NavGroup[] = [
       { label: "감사 로그 & 리포트", href: "/admin/audit", icon: FileBarChart2 },
     ],
   },
+]
+
+const MOBILE_NAV_ITEMS: NavItem[] = [
+  { label: "대시보드", href: "/admin", icon: LayoutDashboard },
+  { label: "냉장고", href: "/admin/fridge", icon: Snowflake },
+  { label: "사용자", href: "/admin/users", icon: Users },
+  { label: "알림", href: "/admin/notifications", icon: BellDot },
 ]
 
 function useAuthUser() {
@@ -149,8 +162,11 @@ export default function AdminShell({ children }: AdminShellProps) {
   const user = useAuthUser()
   const [searchKeyword, setSearchKeyword] = useState("")
   const [mobileNavOpen, setMobileNavOpen] = useState(false)
+  const [railSheetOpen, setRailSheetOpen] = useState(false)
   const desktopSearchRef = useRef<HTMLInputElement | null>(null)
   const mobileSearchRef = useRef<HTMLInputElement | null>(null)
+  const [isResettingDemo, setIsResettingDemo] = useState(false)
+  const { toast } = useToast()
 
   const { mainContent, railContent } = useMemo(() => {
     const nodes = Children.toArray(children)
@@ -200,13 +216,53 @@ export default function AdminShell({ children }: AdminShellProps) {
     return () => window.removeEventListener("keydown", handler)
   }, [])
 
+  const handleDemoReset = async () => {
+    if (isResettingDemo) {
+      return
+    }
+    const confirmed = typeof window === "undefined" ? false : window.confirm("데모 데이터를 초기화하면 현재까지의 모든 시연 데이터가 삭제되고 기본 상태로 되돌아갑니다. 계속 진행할까요?")
+    if (!confirmed) {
+      return
+    }
+
+    setIsResettingDemo(true)
+    try {
+      await resetDemoDataset()
+      toast({
+        title: "데모 데이터가 초기화되었습니다.",
+        description: "재접속하거나 목록을 새로고침하면 최신 상태를 확인할 수 있습니다.",
+      })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "데모 데이터를 초기화하지 못했습니다."
+      toast({
+        variant: "destructive",
+        title: "초기화 실패",
+        description: message,
+      })
+    } finally {
+      setIsResettingDemo(false)
+    }
+  }
+
   const userInitials = useMemo(() => {
     if (!user?.name) return "A"
-    const parts = user.name.trim().split(" ")
+    const raw = user.name.trim()
+    if (raw.length === 0) return "A"
+
+    const KOREAN_CHAR_REGEX = /[\uac00-\ud7a3]/
+    const parts = raw.split(/\s+/)
+    const lastPart = parts[parts.length - 1] ?? raw
+
+    if (KOREAN_CHAR_REGEX.test(lastPart)) {
+      return lastPart.slice(0, 1)
+    }
+
     if (parts.length === 1) {
       return parts[0].slice(0, 2).toUpperCase()
     }
-    return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase()
+
+    const initials = `${parts[0][0] ?? ""}${lastPart[0] ?? ""}`
+    return initials.toUpperCase()
   }, [user?.name])
 
   const handleLogout = async () => {
@@ -223,7 +279,7 @@ export default function AdminShell({ children }: AdminShellProps) {
         본문으로 건너뛰기
       </a>
       <div className="flex min-h-screen w-full">
-        <aside className="hidden w-[260px] flex-col border-r border-slate-200 bg-white lg:flex">
+        <aside className="hidden w-[260px] flex-col border-r border-slate-200 bg-white lg:flex lg:sticky lg:top-0 lg:h-screen lg:shrink-0">
           <div className="flex items-center gap-3 border-b border-slate-200 px-5 py-4">
             <span className="rounded-full bg-emerald-100 p-2">
               <ShieldCheck className="size-5 text-emerald-600" aria-hidden />
@@ -233,48 +289,52 @@ export default function AdminShell({ children }: AdminShellProps) {
               <p className="text-xs text-slate-500">운영 허브</p>
             </div>
           </div>
-          <NavList />
+          <div className="flex-1 overflow-y-auto pb-8">
+            <NavList />
+          </div>
         </aside>
-
-        <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-          <SheetTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="absolute left-3 top-3 z-40 rounded-full bg-white shadow lg:hidden"
-              aria-label="관리자 내비게이션 열기"
-            >
-              <Menu className="size-5" aria-hidden />
-            </Button>
-          </SheetTrigger>
-          <SheetContent side="left" className="w-[260px] p-0">
-            <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
-              <div className="flex items-center gap-3">
-                <span className="rounded-full bg-emerald-100 p-2">
-                  <ShieldCheck className="size-5 text-emerald-600" aria-hidden />
-                </span>
-                <p className="text-sm font-semibold text-slate-900">DormMate Admin</p>
-              </div>
-              <Button variant="ghost" size="icon" onClick={() => setMobileNavOpen(false)} aria-label="내비게이션 닫기">
-                <X className="size-5" aria-hidden />
-              </Button>
-            </div>
-            <NavList onNavigate={() => setMobileNavOpen(false)} />
-          </SheetContent>
-        </Sheet>
 
         <div className="flex flex-1 flex-col">
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
             <div className="flex items-center justify-between gap-4 px-6 py-4">
-              <div className="flex items-center gap-3 lg:hidden">
-                <div className="h-10 w-10 rounded-full bg-emerald-100 flex items-center justify-center">
-                  <ShieldCheck className="size-5 text-emerald-600" aria-hidden />
+              <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
+                <div className="flex items-center gap-2 lg:hidden">
+                  <SheetTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="관리자 내비게이션 열기"
+                      className="rounded-full border border-slate-200 bg-white shadow-sm"
+                    >
+                      <Menu className="size-5" aria-hidden />
+                    </Button>
+                  </SheetTrigger>
+                  <div className="flex items-center gap-2">
+                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
+                      <ShieldCheck className="size-5 text-emerald-600" aria-hidden />
+                    </span>
+                    <div>
+                      <p className="text-sm font-semibold text-slate-900">DormMate Admin</p>
+                      <p className="text-xs text-slate-500">운영 허브</p>
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-slate-900">DormMate Admin</p>
-                  <p className="text-xs text-slate-500">운영 허브</p>
-                </div>
-              </div>
+                <SheetContent side="left" className="w-[280px] p-0">
+                  <SheetHeader className="sr-only">
+                    <SheetTitle>모바일 관리자 내비게이션</SheetTitle>
+                    <SheetDescription>관리자 페이지 간 이동 메뉴</SheetDescription>
+                  </SheetHeader>
+                  <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 pr-9">
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-full bg-emerald-100 p-2">
+                        <ShieldCheck className="size-5 text-emerald-600" aria-hidden />
+                      </span>
+                      <p className="text-sm font-semibold text-slate-900">DormMate Admin</p>
+                    </div>
+                  </div>
+                  <NavList onNavigate={() => setMobileNavOpen(false)} />
+                </SheetContent>
+              </Sheet>
               <form
                 onSubmit={handleSearchSubmit}
                 className="relative hidden w-full max-w-xl items-center lg:flex"
@@ -326,6 +386,15 @@ export default function AdminShell({ children }: AdminShellProps) {
                     <DropdownMenuItem asChild>
                       <Link href="/admin/notifications">알림 정책</Link>
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                      onSelect={(event) => {
+                        event.preventDefault()
+                        void handleDemoReset()
+                      }}
+                      disabled={isResettingDemo}
+                    >
+                      {isResettingDemo ? "데모 초기화 중..." : "데모 데이터 초기화"}
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem onClick={handleLogout}>로그아웃</DropdownMenuItem>
                   </DropdownMenuContent>
@@ -348,22 +417,71 @@ export default function AdminShell({ children }: AdminShellProps) {
 
           <div className="flex flex-1">
             <main id="admin-main-content" className="flex-1 overflow-y-auto" role="main">
-              <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-6 py-8 lg:px-10">
+              <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 pb-28 pt-8 sm:px-6 lg:px-10 lg:pb-12">
                 {mainContent}
               </div>
             </main>
             {railContent ? (
-              <aside
-                className="hidden w-72 border-l border-slate-200 bg-white/80 px-6 py-8 xl:block"
-                role="complementary"
-                aria-label="관리자 보조 패널"
-              >
-                {railContent}
-              </aside>
+              <>
+                <aside
+                  className="hidden w-72 border-l border-slate-200 bg-white/80 px-6 py-8 xl:block"
+                  role="complementary"
+                  aria-label="관리자 보조 패널"
+                >
+                  {railContent}
+                </aside>
+                <Sheet open={railSheetOpen} onOpenChange={setRailSheetOpen}>
+                  <SheetTrigger asChild>
+                    <Button
+                      type="button"
+                      size="icon"
+                      aria-label="운영 런북 열기"
+                      className="fixed bottom-20 right-4 z-40 rounded-full bg-emerald-600 text-white shadow-lg transition hover:bg-emerald-500 lg:hidden"
+                    >
+                      <Info className="size-5" aria-hidden />
+                    </Button>
+                  </SheetTrigger>
+                  <SheetContent
+                    side="bottom"
+                    className="h-[80vh] overflow-y-auto px-4 py-6"
+                    aria-label="운영 보조 정보"
+                  >
+                    <SheetHeader className="sr-only">
+                      <SheetTitle>운영 보조 정보</SheetTitle>
+                      <SheetDescription>운영 런북과 참고 정보를 확인하세요</SheetDescription>
+                    </SheetHeader>
+                    <div className="mx-auto max-w-xl space-y-6">{railContent}</div>
+                  </SheetContent>
+                </Sheet>
+              </>
             ) : null}
           </div>
         </div>
       </div>
+      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden">
+        <ul className="grid grid-cols-4">
+          {MOBILE_NAV_ITEMS.map((item) => {
+            const Icon = item.icon
+            const isActive =
+              pathname === item.href ||
+              (item.href !== "/admin" && pathname.startsWith(`${item.href}/`))
+            return (
+              <li key={item.href}>
+                <Link
+                  href={item.href}
+                  className={cn(
+                    "flex flex-col items-center justify-center gap-1 py-3 text-xs font-medium transition",
+                    isActive ? "text-emerald-600" : "text-slate-500 hover:text-emerald-600",
+                  )}
+                >
+                  <Icon className={cn("size-5", isActive ? "text-emerald-600" : "text-slate-400")} aria-hidden />
+                  <span>{item.label}</span>
+                </Link>
+              </li>
+            )
+          })}
+        </ul>
+      </nav>
     </div>
   )
 }

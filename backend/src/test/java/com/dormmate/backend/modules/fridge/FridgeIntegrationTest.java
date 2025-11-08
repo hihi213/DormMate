@@ -1,5 +1,10 @@
 package com.dormmate.backend.modules.fridge;
 
+import static com.dormmate.backend.support.TestResidentAccounts.DEFAULT_PASSWORD;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT1;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT3;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM17_SLOT2;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR3_ROOM05_SLOT1;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -17,7 +22,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Timestamp;
 import java.sql.Types;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -26,6 +30,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
+import java.util.HashMap;
+import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
@@ -35,6 +41,7 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -72,17 +79,28 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     private FridgeItemRepository fridgeItemRepository;
 
     private final List<UUID> bundlesToCleanup = new ArrayList<>();
+    private final Map<String, String> tokenOwners = new HashMap<>();
+
+    @BeforeEach
+    void ensureDefaultAccess() {
+        UUID slot2A = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+        ensureResidentHasAccess(FLOOR2_ROOM05_SLOT1, slot2A);
+        ensureResidentHasAccess(FLOOR2_ROOM05_SLOT3, slot2A);
+        UUID slot3A = fetchSlotId(FLOOR_3, SLOT_INDEX_A);
+        ensureResidentHasAccess(FLOOR3_ROOM05_SLOT1, slot3A);
+    }
 
     @AfterEach
     void tearDown() {
         bundlesToCleanup.forEach(id -> fridgeBundleRepository.findById(id)
                 .ifPresent(fridgeBundleRepository::delete));
         bundlesToCleanup.clear();
+        tokenOwners.clear();
     }
 
     @Test
     void residentCannotCreateBundleOutsideAssignedSlot() throws Exception {
-        String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        String accessToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID otherFloorSlotId = fetchSlotId(FLOOR_3, SLOT_INDEX_A);
 
         String expiresOn = LocalDate.now(ZoneOffset.UTC).plusDays(3).toString();
@@ -109,7 +127,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void capacityExceededReturnsUnprocessableEntity() throws Exception {
-        String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        String accessToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         Integer originalCapacity = jdbcTemplate.queryForObject(
@@ -128,14 +146,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 slotId
         );
 
-        jdbcTemplate.update(
-                "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
-                slotId
-        );
-        jdbcTemplate.update(
-                "DELETE FROM fridge_bundle WHERE fridge_compartment_id = ?",
-                slotId
-        );
+        clearSlotBundles(slotId);
         jdbcTemplate.update(
                 "UPDATE fridge_compartment SET max_bundle_count = ? WHERE id = ?",
                 1,
@@ -198,7 +209,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void concurrentBundleCreationReturnsCapacityExceededForSecondRequest() throws Exception {
-        String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        String accessToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         Integer originalCapacity = jdbcTemplate.queryForObject(
@@ -217,14 +228,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 slotId
         );
 
-        jdbcTemplate.update(
-                "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
-                slotId
-        );
-        jdbcTemplate.update(
-                "DELETE FROM fridge_bundle WHERE fridge_compartment_id = ?",
-                slotId
-        );
+        clearSlotBundles(slotId);
         jdbcTemplate.update(
                 "UPDATE fridge_compartment SET max_bundle_count = ? WHERE id = ?",
                 1,
@@ -294,14 +298,14 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                     .filter(res -> res.getStatus() == HttpStatus.CREATED.value())
                     .findFirst()
                     .orElseThrow();
-            JsonNode successJson = objectMapper.readTree(successResponse.getContentAsString());
+            JsonNode successJson = readJson(successResponse);
             bundlesToCleanup.add(UUID.fromString(successJson.path("bundle").path("bundleId").asText()));
 
             MockHttpServletResponse failureResponse = responses.stream()
                     .filter(res -> res.getStatus() == HttpStatus.UNPROCESSABLE_ENTITY.value())
                     .findFirst()
                     .orElseThrow();
-            JsonNode failureJson = objectMapper.readTree(failureResponse.getContentAsString());
+            JsonNode failureJson = readJson(failureResponse);
             assertThat(failureJson.path("code").asText()).isEqualTo("CAPACITY_EXCEEDED");
             assertThat(failureJson.path("detail").asText()).isEqualTo("CAPACITY_EXCEEDED");
         } finally {
@@ -319,7 +323,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void ownerCanUpdateBundleNameAndMemo() throws Exception {
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -340,7 +344,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode updatedBundle = objectMapper.readTree(updateResult.getResponse().getContentAsString());
+        JsonNode updatedBundle = readJson(updateResult);
         assertThat(updatedBundle.path("bundleName").asText()).isEqualTo("updated bundle");
         assertThat(updatedBundle.path("memo").asText()).isEqualTo("updated memo");
 
@@ -352,14 +356,14 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode summaries = objectMapper.readTree(listResult.getResponse().getContentAsString()).path("items");
+        JsonNode summaries = readJson(listResult).path("items");
         JsonNode summary = findBundleSummaryById(summaries, bundleId);
         assertThat(summary.path("bundleName").asText()).isEqualTo("updated bundle");
     }
 
     @Test
     void bundleUpdateFailsWhenLocked() throws Exception {
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -386,7 +390,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void ownerCanUpdateItem() throws Exception {
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -411,7 +415,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andReturn();
 
         assertThat(updateItemResult.getResponse().getStatus()).isEqualTo(HttpStatus.OK.value());
-        JsonNode updatedItem = objectMapper.readTree(updateItemResult.getResponse().getContentAsString());
+        JsonNode updatedItem = readJson(updateItemResult);
         assertThat(updatedItem.path("name").asText()).isEqualTo("updated item");
         assertThat(updatedItem.path("quantity").asInt()).isEqualTo(3);
         assertThat(updatedItem.path("expiryDate").asText()).isEqualTo(newExpiry);
@@ -419,8 +423,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void itemUpdateFailsForUnauthorizedUser() throws Exception {
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
-        String otherResidentToken = loginAndGetAccessToken("dylan", "dylan123!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+        String otherResidentToken = loginAndGetAccessToken(FLOOR2_ROOM17_SLOT2, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -441,13 +445,13 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andReturn();
 
         assertThat(unauthorizedResult.getResponse().getStatus()).isEqualTo(HttpStatus.FORBIDDEN.value());
-        JsonNode unauthorizedBody = objectMapper.readTree(unauthorizedResult.getResponse().getContentAsString());
+        JsonNode unauthorizedBody = readJson(unauthorizedResult);
         assertThat(unauthorizedBody.path("code").asText()).isEqualTo("FORBIDDEN_SLOT");
     }
 
     @Test
     void itemUpdateFailsWhenLocked() throws Exception {
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -476,8 +480,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
     @Test
     void adminCanUpdateCompartmentConfigViaApi() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         int originalCapacity = jdbcTemplate.queryForObject(
@@ -526,7 +530,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void cannotCreateBundleWhenCompartmentLocked() throws Exception {
-        String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        String accessToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         LockState originalLockState = fetchLockState(slotId);
@@ -562,8 +566,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void cannotCreateBundleDuringActiveInspection() throws Exception {
-        String managerToken = loginAndGetAccessToken("bob", "bob123!");
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String managerToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD);
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         LockState originalLockState = fetchLockState(slotId);
@@ -584,7 +588,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                     .andExpect(status().isCreated())
                     .andReturn();
 
-            JsonNode session = objectMapper.readTree(startResult.getResponse().getContentAsString());
+            JsonNode session = readJson(startResult);
             sessionId = UUID.fromString(session.path("sessionId").asText());
 
             applyLockState(slotId, false, null);
@@ -624,8 +628,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminCannotLowerCapacityBelowActiveBundles() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -646,7 +650,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void slotViewReflectsCapacityAndStatusChanges() throws Exception {
-        String managerToken = loginAndGetAccessToken("bob", "bob123!");
+        String managerToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         Integer originalCapacity = jdbcTemplate.queryForObject(
@@ -679,7 +683,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                     .andExpect(status().isOk())
                     .andReturn();
 
-            JsonNode slots = objectMapper.readTree(result.getResponse().getContentAsString());
+            JsonNode slots = readJson(result);
             JsonNode slot = findSlot(slots, FLOOR_2, SLOT_INDEX_A);
 
             assertThat(slot.path("capacity").asInt()).isEqualTo(updatedCapacity);
@@ -698,9 +702,9 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void bundleListAndDetailIncludeOwnerAndCounts() throws Exception {
-        String aliceToken = loginAndGetAccessToken("alice", "alice123!");
-        String managerToken = loginAndGetAccessToken("bob", "bob123!");
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String aliceToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+        String managerToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD);
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -723,15 +727,17 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode bundleList = objectMapper.readTree(listResult.getResponse().getContentAsString());
+        JsonNode bundleList = readJson(listResult);
         JsonNode summaries = bundleList.path("items");
 
         JsonNode aliceSummary = findBundleSummaryById(summaries, aliceBundleId);
         JsonNode bobSummary = findBundleSummaryById(summaries, bobBundleId);
+        String aliceName = fetchResidentFullName(FLOOR2_ROOM05_SLOT1);
+        String bobName = fetchResidentFullName(FLOOR2_ROOM05_SLOT3);
 
-        assertThat(aliceSummary.path("ownerDisplayName").asText()).isEqualTo("Alice Kim");
+        assertThat(aliceSummary.path("ownerDisplayName").asText()).isEqualTo(aliceName);
         assertThat(aliceSummary.path("itemCount").asInt()).isEqualTo(1);
-        assertThat(bobSummary.path("ownerDisplayName").asText()).isEqualTo("Bob Lee");
+        assertThat(bobSummary.path("ownerDisplayName").asText()).isEqualTo(bobName);
         assertThat(bobSummary.path("itemCount").asInt()).isEqualTo(1);
 
         MvcResult detailResult = mockMvc.perform(
@@ -741,9 +747,9 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode detail = objectMapper.readTree(detailResult.getResponse().getContentAsString());
+        JsonNode detail = readJson(detailResult);
         assertThat(detail.path("bundleName").asText()).isEqualTo(aliceBundleName);
-        assertThat(detail.path("ownerDisplayName").asText()).isEqualTo("Alice Kim");
+        assertThat(detail.path("ownerDisplayName").asText()).isEqualTo(aliceName);
         assertThat(detail.path("items").isArray()).isTrue();
         assertThat(detail.path("items").size()).isEqualTo(1);
         assertThat(detail.path("items").get(0).path("name").asText()).isNotBlank();
@@ -751,8 +757,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void bundleSearchSupportsMultiLetterSlotCodeAndOwnerRoom() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -778,7 +784,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                     .andExpect(status().isOk())
                     .andReturn();
 
-            JsonNode slotSummaries = objectMapper.readTree(slotTokenResult.getResponse().getContentAsString()).path("items");
+            JsonNode slotSummaries = readJson(slotTokenResult).path("items");
             JsonNode slotSummary = findBundleSummaryById(slotSummaries, bundleId);
             assertThat(slotSummary).isNotNull();
             assertThat(slotSummary.path("slotLabel").asText()).isEqualTo("AA");
@@ -790,7 +796,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                       JOIN room r ON r.id = ra.room_id
                      WHERE du.login_id = ?
                        AND ra.released_at IS NULL
-                    """, String.class, "alice");
+                    """, String.class, FLOOR2_ROOM05_SLOT1);
 
             MvcResult roomResult = mockMvc.perform(
                             get("/fridge/bundles")
@@ -801,7 +807,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                     .andExpect(status().isOk())
                     .andReturn();
 
-            JsonNode roomSummaries = objectMapper.readTree(roomResult.getResponse().getContentAsString()).path("items");
+            JsonNode roomSummaries = readJson(roomResult).path("items");
             JsonNode roomSummary = findBundleSummaryById(roomSummaries, bundleId);
             assertThat(roomSummary).isNotNull();
             assertThat(roomSummary.path("ownerRoomNumber").asText()).isEqualTo(roomSearchToken);
@@ -814,9 +820,9 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void deletedBundleListingCanFilterBySlotId() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
-        String aliceToken = loginAndGetAccessToken("alice", "alice123!");
-        String dianaToken = loginAndGetAccessToken("diana", "diana123!");
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String aliceToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+        String dianaToken = loginAndGetAccessToken(FLOOR3_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotFloor2 = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
         UUID slotFloor3 = fetchSlotId(FLOOR_3, SLOT_INDEX_A);
 
@@ -852,7 +858,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode filteredBody = objectMapper.readTree(filteredResult.getResponse().getContentAsString());
+        JsonNode filteredBody = readJson(filteredResult);
         JsonNode filteredItems = filteredBody.path("items");
         assertThat(filteredItems.isArray()).isTrue();
         assertThat(filteredItems.size()).isGreaterThanOrEqualTo(1);
@@ -866,7 +872,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode unfilteredItems = objectMapper.readTree(unfilteredResult.getResponse().getContentAsString()).path("items");
+        JsonNode unfilteredItems = readJson(unfilteredResult).path("items");
         assertThat(unfilteredItems.isArray()).isTrue();
         assertThat(unfilteredItems.size()).isGreaterThanOrEqualTo(filteredItems.size());
         unfilteredItems.forEach(item -> {
@@ -877,8 +883,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void floorManagerCanViewBundlesWithoutMemo() throws Exception {
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
-        String managerToken = loginAndGetAccessToken("bob", "bob123!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+        String managerToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -907,7 +913,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
 
-        JsonNode created = objectMapper.readTree(createResult.getResponse().getContentAsString());
+        JsonNode created = readJson(createResult);
         UUID bundleId = UUID.fromString(created.path("bundle").path("bundleId").asText());
         bundlesToCleanup.add(bundleId);
 
@@ -919,7 +925,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode summaries = objectMapper.readTree(listResult.getResponse().getContentAsString()).path("items");
+        JsonNode summaries = readJson(listResult).path("items");
         JsonNode managerSummary = findBundleSummaryById(summaries, bundleId);
         assertThat(managerSummary.has("memo")).isFalse();
 
@@ -930,7 +936,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode detail = objectMapper.readTree(detailResult.getResponse().getContentAsString());
+        JsonNode detail = readJson(detailResult);
         assertThat(detail.has("memo")).isFalse();
         assertThat(detail.path("bundleName").asText()).isNotBlank();
         assertThat(detail.path("items").isArray()).isTrue();
@@ -938,8 +944,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminCanViewAllBundlesButMemoIsHidden() throws Exception {
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -967,7 +973,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
 
-        JsonNode created = objectMapper.readTree(createResult.getResponse().getContentAsString());
+        JsonNode created = readJson(createResult);
         UUID bundleId = UUID.fromString(created.path("bundle").path("bundleId").asText());
         bundlesToCleanup.add(bundleId);
 
@@ -979,7 +985,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode summaries = objectMapper.readTree(listResult.getResponse().getContentAsString()).path("items");
+        JsonNode summaries = readJson(listResult).path("items");
         JsonNode adminSummary = findBundleSummaryById(summaries, bundleId);
         assertThat(adminSummary.has("memo")).isFalse();
         assertThat(adminSummary.path("itemCount").asInt()).isEqualTo(1);
@@ -991,7 +997,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode detail = objectMapper.readTree(detailResult.getResponse().getContentAsString());
+        JsonNode detail = readJson(detailResult);
         assertThat(detail.has("memo")).isFalse();
         assertThat(detail.path("items").isArray()).isTrue();
         assertThat(detail.path("items").size()).isEqualTo(1);
@@ -999,8 +1005,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminBundleSearchSupportsKeywordAndCaseInsensitiveMatch() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -1022,7 +1028,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        JsonNode body = readJson(result);
         assertThat(body.path("totalCount").asInt()).isEqualTo(1);
         JsonNode items = body.path("items");
         assertThat(items.isArray()).isTrue();
@@ -1032,8 +1038,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminBundleSearchSupportsLabelLookup() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -1053,7 +1059,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        JsonNode body = readJson(result);
         assertThat(body.path("totalCount").asInt()).isEqualTo(1);
         JsonNode item = body.path("items").get(0);
         assertThat(item.path("bundleId").asText()).isEqualTo(secondBundle.path("bundle").path("bundleId").asText());
@@ -1062,8 +1068,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminBundleListWithDeletedFilterReturnsOnlyDeletedBundles() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -1088,7 +1094,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode body = objectMapper.readTree(result.getResponse().getContentAsString());
+        JsonNode body = readJson(result);
         assertThat(body.path("totalCount").asInt()).isEqualTo(1);
         JsonNode item = body.path("items").get(0);
         assertThat(item.path("bundleId").asText()).isEqualTo(deletedBundleId.toString());
@@ -1102,13 +1108,13 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 )
                 .andExpect(status().isOk())
                 .andReturn();
-        JsonNode activeBody = objectMapper.readTree(activeResult.getResponse().getContentAsString());
+        JsonNode activeBody = readJson(activeResult);
         assertThat(activeBody.path("items").findValuesAsText("bundleId"))
                 .contains(activeBundle.path("bundle").path("bundleId").asText());
     }
     @Test
     void residentCannotAccessDeletedBundleHistory() throws Exception {
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
 
         mockMvc.perform(
                         get("/admin/fridge/bundles/deleted")
@@ -1119,8 +1125,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminGetsDeletedBundlesWithinDefaultWindow() throws Exception {
-        String adminToken = loginAndGetAccessToken("admin", "password");
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -1154,7 +1160,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode defaultResponse = objectMapper.readTree(defaultWindowResult.getResponse().getContentAsString());
+        JsonNode defaultResponse = readJson(defaultWindowResult);
         assertThat(defaultResponse.path("totalCount").asInt()).isEqualTo(1);
         JsonNode items = defaultResponse.path("items");
         assertThat(items.isArray()).isTrue();
@@ -1170,7 +1176,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode extendedResponse = objectMapper.readTree(extendedWindowResult.getResponse().getContentAsString());
+        JsonNode extendedResponse = readJson(extendedWindowResult);
         assertThat(extendedResponse.path("totalCount").asInt()).isEqualTo(2);
         List<String> bundleIds = new ArrayList<>();
         extendedResponse.path("items").forEach(node -> bundleIds.add(node.path("bundleId").asText()));
@@ -1179,13 +1185,13 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void residentSeesOnlyAssignedSlots() throws Exception {
-        assertAccessibleSlotsMatch("alice", "alice123!");
+        assertAccessibleSlotsMatch(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
     }
 
     @Test
     void floorManagerSeesAllSlotsOnAssignedFloor() throws Exception {
-        String loginId = "bob";
-        String password = "bob123!";
+        String loginId = FLOOR2_ROOM05_SLOT3;
+        String password = DEFAULT_PASSWORD;
 
         UUID managerId = jdbcTemplate.queryForObject(
                 "SELECT id FROM dorm_user WHERE login_id = ?",
@@ -1225,8 +1231,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void floorManagerCannotAccessOtherFloors() throws Exception {
-        String loginId = "bob";
-        String password = "bob123!";
+        String loginId = FLOOR2_ROOM05_SLOT3;
+        String password = DEFAULT_PASSWORD;
         String accessToken = loginAndGetAccessToken(loginId, password);
 
         UUID managerId = jdbcTemplate.queryForObject(
@@ -1259,7 +1265,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void deletingBundleRecyclesLabelForNextCreation() throws Exception {
-        String managerToken = loginAndGetAccessToken("admin", "password");
+        String managerToken = loginAndGetAccessToken("dormmate", "admin1!");
         UUID slotId = fetchSlotId(4, SLOT_INDEX_A);
 
         LabelSequenceState originalLabelState = jdbcTemplate.query(
@@ -1313,8 +1319,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void deleteBundleFailsForUnauthorizedUser() throws Exception {
-        String ownerToken = loginAndGetAccessToken("alice", "alice123!");
-        String otherResidentToken = loginAndGetAccessToken("dylan", "dylan123!");
+        String ownerToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+        String otherResidentToken = loginAndGetAccessToken(FLOOR2_ROOM17_SLOT2, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -1344,7 +1350,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void deleteBundleFailsWhenLocked() throws Exception {
-        String ownerToken = loginAndGetAccessToken("alice", "alice123!");
+        String ownerToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -1368,8 +1374,10 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void residentCanMarkItemAsRemoved() throws Exception {
-        String accessToken = loginAndGetAccessToken("alice", "alice123!");
+        String accessToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
+
+        clearSlotBundles(slotId);
 
         JsonNode bundleResponse = createBundle(accessToken, slotId, "미등록 처리 테스트");
         UUID itemId = UUID.fromString(bundleResponse.path("bundle").path("items").get(0).path("itemId").asText());
@@ -1416,9 +1424,21 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 )
                 .andExpect(status().isCreated())
                 .andReturn();
-        JsonNode bundle = objectMapper.readTree(result.getResponse().getContentAsString());
+        String ownerLogin = tokenOwners.get(accessToken);
+        if (ownerLogin != null && !"dormmate".equalsIgnoreCase(ownerLogin)) {
+            ensureResidentHasAccess(ownerLogin, slotId);
+        }
+        JsonNode bundle = readJson(result);
         bundlesToCleanup.add(UUID.fromString(bundle.path("bundle").path("bundleId").asText()));
         return bundle;
+    }
+
+    private String fetchResidentFullName(String loginId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT full_name FROM dorm_user WHERE login_id = ?",
+                String.class,
+                loginId
+        );
     }
 
     private String loginAndGetAccessToken(String loginId, String password) throws Exception {
@@ -1434,8 +1454,18 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 )
                 .andExpect(status().isOk())
                 .andReturn();
-        JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
-        return response.path("tokens").path("accessToken").asText();
+        JsonNode response = readJson(result);
+        String token = response.path("tokens").path("accessToken").asText();
+        tokenOwners.put(token, loginId);
+        return token;
+    }
+
+    private JsonNode readJson(MvcResult result) throws Exception {
+        return objectMapper.readTree(result.getResponse().getContentAsByteArray());
+    }
+
+    private JsonNode readJson(MockHttpServletResponse response) throws Exception {
+        return objectMapper.readTree(response.getContentAsByteArray());
     }
 
     private JsonNode findSlot(JsonNode root, int floorNo, int slotIndex) {
@@ -1458,6 +1488,34 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     private void clearSlotBundles(UUID slotId) {
+        jdbcTemplate.update(
+                """
+                        DELETE FROM inspection_action_item
+                        WHERE fridge_item_id IN (
+                            SELECT id FROM fridge_item
+                            WHERE fridge_bundle_id IN (
+                                SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?
+                            )
+                        )
+                        """,
+                slotId
+        );
+        jdbcTemplate.update(
+                """
+                        DELETE FROM inspection_action_item
+                        WHERE inspection_action_id IN (
+                            SELECT id FROM inspection_action
+                            WHERE fridge_bundle_id IN (
+                                SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?
+                            )
+                        )
+                        """,
+                slotId
+        );
+        jdbcTemplate.update(
+                "DELETE FROM inspection_action WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
+                slotId
+        );
         jdbcTemplate.update(
                 "DELETE FROM fridge_item WHERE fridge_bundle_id IN (SELECT id FROM fridge_bundle WHERE fridge_compartment_id = ?)",
                 slotId
@@ -1574,7 +1632,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode body = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode body = readJson(response);
         JsonNode slots = body.path("items");
         assertThat(slots.isArray()).isTrue();
 
@@ -1585,6 +1643,55 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
         }
 
         assertThat(slotIdsFromApi).containsExactlyInAnyOrderElementsOf(Set.copyOf(accessibleSlotIds));
+    }
+
+    private void ensureResidentHasAccess(String loginId, UUID compartmentId) {
+        UUID userId = fetchUserId(loginId);
+        UUID roomId = fetchActiveRoomId(userId);
+        Integer existing = jdbcTemplate.queryForObject(
+                """
+                        SELECT COUNT(*)
+                        FROM compartment_room_access
+                        WHERE room_id = ? AND fridge_compartment_id = ? AND released_at IS NULL
+                        """,
+                Integer.class,
+                roomId,
+                compartmentId
+        );
+        if (existing != null && existing > 0) {
+            return;
+        }
+        jdbcTemplate.update(
+                """
+                        INSERT INTO compartment_room_access (
+                            id, fridge_compartment_id, room_id, assigned_at, released_at, created_at, updated_at
+                        ) VALUES (?, ?, ?, NOW(), NULL, NOW(), NOW())
+                        """,
+                UUID.randomUUID(),
+                compartmentId,
+                roomId
+        );
+    }
+
+    private UUID fetchUserId(String loginId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM dorm_user WHERE login_id = ?",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                loginId
+        );
+    }
+
+    private UUID fetchActiveRoomId(UUID userId) {
+        return jdbcTemplate.queryForObject(
+                """
+                        SELECT room_id
+                        FROM room_assignment
+                        WHERE dorm_user_id = ?
+                          AND released_at IS NULL
+                        """,
+                (rs, rowNum) -> UUID.fromString(rs.getString("room_id")),
+                userId
+        );
     }
 
     private void assertSlotsMatchExpected(String accessToken, Integer floor, List<UUID> expectedSlotIds) throws Exception {
@@ -1598,7 +1705,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andReturn();
 
-        JsonNode body = objectMapper.readTree(response.getResponse().getContentAsString());
+        JsonNode body = readJson(response);
         JsonNode slots = body.path("items");
         assertThat(slots.isArray()).isTrue();
 

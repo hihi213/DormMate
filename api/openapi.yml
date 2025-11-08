@@ -1,389 +1,1571 @@
-openapi: 3.0.3
+openapi: 3.0.1
 info:
-  title: DormMate API (MVP)
-  version: 0.1.0
-  description: |
-    DormMate MVP contract-first specification. 모든 코드는 이 명세와 동기화되어야 하며,
-    CI에서는 런타임 OpenAPI와 본 파일을 비교해 드리프트를 감지한다.
+  title: OpenAPI definition
+  version: v0
 servers:
-  - url: http://localhost:8080
-    description: 로컬 개발 기본 URL
-tags:
-  - name: Auth
-    description: 로그인, 토큰 재발급, 로그아웃
-  - name: Profile
-    description: 현재 사용자 역할/권한 조회
-  - name: Fridge
-    description: 거주자 냉장고 포장/물품 기능
-  - name: Inspections
-    description: 층별장 검사 세션 및 결과 기록
-  - name: FridgeAdmin
-    description: 관리자 냉장고 자원 제어
-  - name: Notifications
-    description: 사용자 알림 조회 및 설정
-  - name: Admin
-    description: 관리자 대시보드 및 계정 관리
+  - url: 'http://localhost:8080'
+    description: Generated server url
+paths:
+  /admin/policies:
+    get:
+      tags:
+        - admin-dashboard-controller
+      operationId: getPolicies
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/AdminPoliciesResponse'
+    put:
+      tags:
+        - admin-dashboard-controller
+      operationId: updatePolicies
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAdminPoliciesRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+  /fridge/inspections:
+    get:
+      tags:
+        - inspection-controller
+      operationId: listSessions
+      parameters:
+        - name: slotId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InspectionSessionResponse'
+    post:
+      tags:
+        - inspection-controller
+      operationId: startSession
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartInspectionRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/InspectionSessionResponse'
+  '/fridge/inspections/{sessionId}/submit':
+    post:
+      tags:
+        - inspection-controller
+      operationId: submitSession
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitInspectionRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/InspectionSessionResponse'
+  '/fridge/inspections/{sessionId}/actions':
+    post:
+      tags:
+        - inspection-controller
+      operationId: recordActions
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InspectionActionRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/InspectionSessionResponse'
+  /fridge/inspection-schedules:
+    get:
+      tags:
+        - inspection-schedule-controller
+      operationId: listSchedules
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/InspectionScheduleResponse'
+    post:
+      tags:
+        - inspection-schedule-controller
+      operationId: createSchedule
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateInspectionScheduleRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/InspectionScheduleResponse'
+  /fridge/bundles:
+    get:
+      tags:
+        - fridge-controller
+      operationId: getBundles
+      parameters:
+        - name: slotId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: owner
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/BundleListResponse'
+    post:
+      tags:
+        - fridge-controller
+      summary: 포장 생성
+      description: |
+        배정된 칸에 새로운 포장을 추가한다. 허용량(`capacity`)을 초과하면 422 `CAPACITY_EXCEEDED`가 반환된다. 데모 시나리오에서는 2층 A칸(`slotIndex` 0)만 설명용으로 허용량이 3으로 제한돼 있다.
+      operationId: createBundle
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateBundleRequest'
+        required: true
+      responses:
+        '201':
+          description: 포장 생성 성공
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/CreateBundleResponse'
+        '422':
+          description: 허용량 초과 – detail 값이 `CAPACITY_EXCEEDED`
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/CreateBundleResponse'
+  '/fridge/bundles/{bundleId}/items':
+    post:
+      tags:
+        - fridge-controller
+      operationId: addItem
+      parameters:
+        - name: bundleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddItemRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/FridgeItemResponse'
+  /auth/refresh:
+    post:
+      tags:
+        - auth-controller
+      operationId: refresh
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+  /auth/logout:
+    post:
+      tags:
+        - auth-controller
+      operationId: logout
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+  /auth/login:
+    post:
+      tags:
+        - auth-controller
+      operationId: login
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/LoginResponse'
+  '/admin/users/{userId}/roles/floor-manager':
+    post:
+      tags:
+        - admin-dashboard-controller
+      operationId: promoteFloorManager
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+    delete:
+      tags:
+        - admin-dashboard-controller
+      operationId: demoteFloorManager
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+  /admin/seed/fridge-demo:
+    post:
+      tags:
+        - demo-seed-controller
+      summary: 데모 데이터 초기화
+      description: 관리자가 냉장고 데모 데이터를 초기화한다.
+      operationId: seedFridgeDemo
+      responses:
+        '200':
+          description: 초기화 성공
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/SeedResponse'
+        '403':
+          description: 관리자 권한 필요
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/SeedResponse'
+  /admin/fridge/reallocations/preview:
+    post:
+      tags:
+        - fridge-admin-reallocation-controller
+      operationId: preview
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReallocationPreviewRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ReallocationPreviewResponse'
+  /admin/fridge/reallocations/apply:
+    post:
+      tags:
+        - fridge-admin-reallocation-controller
+      operationId: apply
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ReallocationApplyRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/ReallocationApplyResponse'
+  '/notifications/{notificationId}/read':
+    patch:
+      tags:
+        - notification-controller
+      operationId: markRead
+      parameters:
+        - name: notificationId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+  /notifications/read-all:
+    patch:
+      tags:
+        - notification-controller
+      operationId: markAllRead
+      responses:
+        '200':
+          description: OK
+  '/notifications/preferences/{kindCode}':
+    patch:
+      tags:
+        - notification-controller
+      operationId: updatePreference
+      parameters:
+        - name: kindCode
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateNotificationPreferenceRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/NotificationPreferenceItemResponse'
+  '/fridge/items/{itemId}':
+    delete:
+      tags:
+        - fridge-controller
+      operationId: deleteItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+    patch:
+      tags:
+        - fridge-controller
+      operationId: updateItem
+      parameters:
+        - name: itemId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateItemRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/FridgeItemResponse'
+  '/fridge/inspections/{sessionId}':
+    get:
+      tags:
+        - inspection-controller
+      operationId: getSession
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/InspectionSessionResponse'
+    delete:
+      tags:
+        - inspection-controller
+      operationId: cancelSession
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+    patch:
+      tags:
+        - inspection-controller
+      operationId: updateSession
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateInspectionSessionRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/InspectionSessionResponse'
+  '/fridge/inspection-schedules/{scheduleId}':
+    delete:
+      tags:
+        - inspection-schedule-controller
+      operationId: deleteSchedule
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+    patch:
+      tags:
+        - inspection-schedule-controller
+      operationId: updateSchedule
+      parameters:
+        - name: scheduleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateInspectionScheduleRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/InspectionScheduleResponse'
+  '/fridge/bundles/{bundleId}':
+    get:
+      tags:
+        - fridge-controller
+      operationId: getBundle
+      parameters:
+        - name: bundleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/FridgeBundleResponse'
+    delete:
+      tags:
+        - fridge-controller
+      operationId: deleteBundle
+      parameters:
+        - name: bundleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+    patch:
+      tags:
+        - fridge-controller
+      operationId: updateBundle
+      parameters:
+        - name: bundleId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateBundleRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/FridgeBundleResponse'
+  '/admin/users/{userId}/status':
+    patch:
+      tags:
+        - admin-dashboard-controller
+      operationId: updateUserStatus
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateUserStatusRequest'
+        required: true
+      responses:
+        '200':
+          description: OK
+  '/admin/fridge/compartments/{compartmentId}':
+    patch:
+      tags:
+        - fridge-admin-controller
+      summary: 냉장고 칸 설정 수정
+      description: 관리자가 특정 칸의 허용량과 상태를 조정한다.
+      operationId: updateCompartment
+      parameters:
+        - name: compartmentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateCompartmentConfigRequest'
+        required: true
+      responses:
+        '200':
+          description: 수정 성공
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/FridgeSlotResponse'
+        '403':
+          description: 관리자 권한 필요
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/FridgeSlotResponse'
+        '404':
+          description: 대상 칸 없음
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/FridgeSlotResponse'
+        '409':
+          description: 검사 세션 진행 중
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/FridgeSlotResponse'
+        '422':
+          description: 현재 활성 포장 수보다 낮은 용량으로 설정 시
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/FridgeSlotResponse'
+  /readyz:
+    get:
+      tags:
+        - health-controller
+      operationId: readyz
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /profile/me:
+    get:
+      tags:
+        - profile-controller
+      operationId: currentUser
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/UserProfileResponse'
+  /notifications:
+    get:
+      tags:
+        - notification-controller
+      operationId: getNotifications
+      parameters:
+        - name: state
+          in: query
+          required: false
+          schema:
+            type: string
+            default: all
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/NotificationListResponse'
+  /notifications/preferences:
+    get:
+      tags:
+        - notification-controller
+      operationId: getPreferences
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/NotificationPreferenceResponse'
+  /healthz:
+    get:
+      tags:
+        - health-controller
+      operationId: healthz
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /health:
+    get:
+      tags:
+        - health-controller
+      operationId: health
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /fridge/slots:
+    get:
+      tags:
+        - fridge-controller
+      operationId: getSlots
+      parameters:
+        - name: floor
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/FridgeSlotListResponse'
+  /fridge/inspections/active:
+    get:
+      tags:
+        - inspection-controller
+      operationId: getActiveSession
+      parameters:
+        - name: floor
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/InspectionSessionResponse'
+  /fridge/inspection-schedules/next:
+    get:
+      tags:
+        - inspection-schedule-controller
+      operationId: getNextSchedule
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/InspectionScheduleResponse'
+  /admin/users:
+    get:
+      tags:
+        - admin-dashboard-controller
+      operationId: getUsers
+      parameters:
+        - name: status
+          in: query
+          required: false
+          schema:
+            type: string
+            default: ACTIVE
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/AdminUsersResponse'
+  /admin/resources:
+    get:
+      tags:
+        - admin-dashboard-controller
+      operationId: getResources
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/AdminResourceResponse'
+  /admin/fridge/compartments:
+    get:
+      tags:
+        - fridge-admin-controller
+      summary: 냉장고 칸 메타데이터 조회
+      description: 관리자가 층별 칸 정보를 확인한다.
+      operationId: listCompartments
+      parameters:
+        - name: floor
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+        - name: view
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: 조회 성공
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FridgeSlotResponse'
+        '403':
+          description: 관리자 권한 필요
+          content:
+            '*/*':
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/FridgeSlotResponse'
+  /admin/fridge/bundles/deleted:
+    get:
+      tags:
+        - fridge-admin-bundle-controller
+      operationId: getDeletedBundles
+      parameters:
+        - name: since
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: slotId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/BundleListResponse'
+  /admin/dashboard:
+    get:
+      tags:
+        - admin-dashboard-controller
+      operationId: getDashboard
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/AdminDashboardResponse'
 components:
-  securitySchemes:
-    BearerAuth:
-      type: http
-      scheme: bearer
-      bearerFormat: JWT
-  responses:
-    BadRequest:
-      description: 잘못된 요청
-      content:
-        application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
-    Unauthorized:
-      description: 인증 실패
-      content:
-        application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
-    Forbidden:
-      description: 권한 부족
-      content:
-        application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
-    NotFound:
-      description: 리소스를 찾을 수 없음
-      content:
-        application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
-    Conflict:
-      description: 처리 충돌
-      content:
-        application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
-    UnprocessableEntity:
-      description: 비즈니스 규칙 위반
-      content:
-        application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
-    TooManyRequests:
-      description: 요청 한도 초과
-      content:
-        application/problem+json:
-          schema: { $ref: '#/components/schemas/Problem' }
   schemas:
-    Problem:
+    NotificationPolicy:
+      required:
+        - batchTime
       type: object
       properties:
-        type: { type: string }
-        title: { type: string }
-        status: { type: integer }
-        detail: { type: string }
-        instance: { type: string }
-        code:
+        batchTime:
+          pattern: '^\d{2}:\d{2}$'
           type: string
-          description: "서비스 정의 오류 코드(예: `CAPACITY_EXCEEDED`)"
-    RoleCode:
-      type: string
-      enum: [RESIDENT, FLOOR_MANAGER, ADMIN]
-    TokenPair:
+        dailyLimit:
+          minimum: 0
+          type: integer
+          format: int32
+        ttlHours:
+          minimum: 1
+          type: integer
+          format: int32
+    PenaltyPolicy:
+      required:
+        - template
+      type: object
+      properties:
+        limit:
+          minimum: 0
+          type: integer
+          format: int32
+        template:
+          type: string
+    UpdateAdminPoliciesRequest:
+      required:
+        - notification
+        - penalty
+      type: object
+      properties:
+        notification:
+          $ref: '#/components/schemas/NotificationPolicy'
+        penalty:
+          $ref: '#/components/schemas/PenaltyPolicy'
+    StartInspectionRequest:
+      required:
+        - slotId
+      type: object
+      properties:
+        slotId:
+          type: string
+          format: uuid
+        scheduleId:
+          type: string
+          format: uuid
+    FridgeBundleResponse:
+      type: object
+      properties:
+        bundleId:
+          type: string
+          format: uuid
+        slotId:
+          type: string
+          format: uuid
+        slotIndex:
+          type: integer
+          format: int32
+        slotLabel:
+          type: string
+        labelNumber:
+          type: integer
+          format: int32
+        labelDisplay:
+          type: string
+        bundleName:
+          type: string
+        memo:
+          type: string
+        ownerUserId:
+          type: string
+          format: uuid
+        ownerDisplayName:
+          type: string
+        ownerRoomNumber:
+          type: string
+        status:
+          type: string
+        freshness:
+          type: string
+        itemCount:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        removedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FridgeItemResponse'
+    FridgeItemResponse:
+      type: object
+      properties:
+        itemId:
+          type: string
+          format: uuid
+        bundleId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        expiryDate:
+          type: string
+          format: date
+        quantity:
+          type: integer
+          format: int32
+        unitCode:
+          type: string
+        freshness:
+          type: string
+        lastInspectedAt:
+          type: string
+          format: date-time
+        updatedAfterInspection:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        removedAt:
+          type: string
+          format: date-time
+    InspectionActionDetailResponse:
+      type: object
+      properties:
+        actionId:
+          type: integer
+          format: int64
+        actionType:
+          type: string
+        bundleId:
+          type: string
+          format: uuid
+        targetUserId:
+          type: string
+          format: uuid
+        recordedAt:
+          type: string
+          format: date-time
+        recordedBy:
+          type: string
+          format: uuid
+        note:
+          type: string
+        correlationId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InspectionActionItemResponse'
+        penalties:
+          type: array
+          items:
+            $ref: '#/components/schemas/PenaltyHistoryResponse'
+    InspectionActionItemResponse:
+      type: object
+      properties:
+        id:
+          type: integer
+          format: int64
+        fridgeItemId:
+          type: string
+          format: uuid
+        snapshotName:
+          type: string
+        snapshotExpiresOn:
+          type: string
+          format: date
+        quantityAtAction:
+          type: integer
+          format: int32
+        correlationId:
+          type: string
+          format: uuid
+    InspectionActionSummaryResponse:
+      type: object
+      properties:
+        action:
+          type: string
+        count:
+          type: integer
+          format: int32
+    InspectionSessionResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+          format: uuid
+        slotId:
+          type: string
+          format: uuid
+        slotIndex:
+          type: integer
+          format: int32
+        slotLabel:
+          type: string
+        floorNo:
+          type: integer
+          format: int32
+        floorCode:
+          type: string
+        status:
+          type: string
+        startedBy:
+          type: string
+          format: uuid
+        startedAt:
+          type: string
+          format: date-time
+        endedAt:
+          type: string
+          format: date-time
+        bundles:
+          type: array
+          items:
+            $ref: '#/components/schemas/FridgeBundleResponse'
+        summary:
+          type: array
+          items:
+            $ref: '#/components/schemas/InspectionActionSummaryResponse'
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/InspectionActionDetailResponse'
+        notes:
+          type: string
+        initialBundleCount:
+          type: integer
+          format: int32
+        totalBundleCount:
+          type: integer
+          format: int32
+    PenaltyHistoryResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        points:
+          type: integer
+          format: int32
+        reason:
+          type: string
+        issuedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        correlationId:
+          type: string
+          format: uuid
+    SubmitInspectionRequest:
+      type: object
+      properties:
+        notes:
+          type: string
+    InspectionActionEntryRequest:
+      required:
+        - action
+      type: object
+      properties:
+        bundleId:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        action:
+          type: string
+        note:
+          type: string
+    InspectionActionRequest:
+      required:
+        - actions
+      type: object
+      properties:
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/InspectionActionEntryRequest'
+    CreateInspectionScheduleRequest:
+      required:
+        - fridgeCompartmentId
+        - scheduledAt
+      type: object
+      properties:
+        scheduledAt:
+          type: string
+          format: date-time
+        title:
+          maxLength: 120
+          minLength: 0
+          type: string
+        notes:
+          type: string
+        fridgeCompartmentId:
+          type: string
+          format: uuid
+    InspectionScheduleResponse:
+      type: object
+      properties:
+        scheduleId:
+          type: string
+          format: uuid
+        scheduledAt:
+          type: string
+          format: date-time
+        title:
+          type: string
+        notes:
+          type: string
+        status:
+          type: string
+        completedAt:
+          type: string
+          format: date-time
+        inspectionSessionId:
+          type: string
+          format: uuid
+        fridgeCompartmentId:
+          type: string
+          format: uuid
+        slotIndex:
+          type: integer
+          format: int32
+        slotLetter:
+          type: string
+        floorNo:
+          type: integer
+          format: int32
+        floorCode:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    CreateBundleItemInput:
+      required:
+        - expiryDate
+        - name
+      type: object
+      properties:
+        name:
+          maxLength: 120
+          minLength: 0
+          type: string
+        expiryDate:
+          type: string
+          format: date
+        quantity:
+          minimum: 1
+          type: integer
+          format: int32
+        unitCode:
+          type: string
+    CreateBundleRequest:
+      required:
+        - bundleName
+        - items
+        - slotId
+      type: object
+      properties:
+        slotId:
+          type: string
+          format: uuid
+        bundleName:
+          maxLength: 120
+          minLength: 0
+          type: string
+        memo:
+          type: string
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CreateBundleItemInput'
+    CreateBundleResponse:
+      type: object
+      properties:
+        bundle:
+          $ref: '#/components/schemas/FridgeBundleResponse'
+    AddItemRequest:
+      required:
+        - expiryDate
+        - name
+      type: object
+      properties:
+        name:
+          type: string
+        expiryDate:
+          type: string
+          format: date
+        quantity:
+          minimum: 1
+          type: integer
+          format: int32
+        unitCode:
+          type: string
+    RefreshRequest:
+      required:
+        - refreshToken
+      type: object
+      properties:
+        refreshToken:
+          type: string
+        deviceId:
+          type: string
+    LoginResponse:
+      type: object
+      properties:
+        tokens:
+          $ref: '#/components/schemas/TokenPairResponse'
+        user:
+          $ref: '#/components/schemas/UserProfileResponse'
+    RoomAssignmentResponse:
+      type: object
+      properties:
+        roomId:
+          type: string
+          format: uuid
+        floor:
+          type: integer
+          format: int32
+        roomNumber:
+          type: string
+        personalNo:
+          type: integer
+          format: int32
+        assignedAt:
+          type: string
+          format: date-time
+        floorCode:
+          type: string
+    TokenPairResponse:
       type: object
       properties:
         accessToken:
           type: string
-          description: 서명된 JWT 액세스 토큰
         tokenType:
           type: string
-          enum: [Bearer]
-          default: Bearer
         expiresIn:
           type: integer
           format: int64
-          description: 액세스 토큰 만료까지 남은 초
         refreshToken:
           type: string
         refreshExpiresIn:
           type: integer
           format: int64
-          description: 리프레시 토큰 만료까지 남은 초
         issuedAt:
           type: string
           format: date-time
-      required: [accessToken, tokenType, expiresIn, refreshToken, refreshExpiresIn, issuedAt]
-    LoginRequest:
+    UserProfileResponse:
       type: object
       properties:
-        loginId: { type: string }
-        password: { type: string, format: password }
-        deviceId:
+        userId:
           type: string
-          nullable: true
-          description: 다중 디바이스 토큰 관리용 식별자
-      required: [loginId, password]
-    LoginResponse:
-      type: object
-      properties:
-        tokens: { $ref: '#/components/schemas/TokenPair' }
-        user: { $ref: '#/components/schemas/UserProfile' }
-      required: [tokens, user]
-    RefreshRequest:
-      type: object
-      properties:
-        refreshToken: { type: string }
-        deviceId:
+          format: uuid
+        loginId:
           type: string
-          nullable: true
-      required: [refreshToken]
-    LogoutRequest:
-      type: object
-      properties:
-        refreshToken: { type: string }
-      required: [refreshToken]
-    RoomAssignment:
-      type: object
-      properties:
-        roomId: { type: string, format: uuid }
-        floor: { type: integer }
-        roomNumber: { type: string }
-        personalNo: { type: integer }
-        assignedAt: { type: string, format: date-time }
-      required: [roomId, floor, roomNumber, personalNo, assignedAt]
-    UserProfile:
-      type: object
-      properties:
-        userId: { type: string, format: uuid }
-        loginId: { type: string }
-        displayName: { type: string }
-        email:
-          type: string
-          format: email
-          nullable: true
-        roles:
-          type: array
-          items: { $ref: '#/components/schemas/RoleCode' }
-        primaryRoom:
-          $ref: '#/components/schemas/RoomAssignment'
-        isFloorManager: { type: boolean }
-        isAdmin: { type: boolean }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-      required: [userId, loginId, displayName, roles, isFloorManager, isAdmin, createdAt, updatedAt]
-    AdminUser:
-      type: object
-      properties:
-        id: { type: string, format: uuid }
-        name: { type: string }
-        room:
-          type: string
-          nullable: true
-        floor:
-          type: integer
-          nullable: true
-        roomCode:
-          type: string
-          nullable: true
-        personalNo:
-          type: integer
-          nullable: true
-        role: { $ref: '#/components/schemas/RoleCode' }
-        roles:
-          type: array
-          items: { $ref: '#/components/schemas/RoleCode' }
-        status:
-          type: string
-          enum: [ACTIVE, INACTIVE]
-        lastLogin: { type: string }
-        penalties:
-          type: integer
-      required: [id, name, role, status, lastLogin, penalties]
-    AdminUsersResponse:
-      type: object
-      properties:
-        items:
-          type: array
-          items: { $ref: '#/components/schemas/AdminUser' }
-      required: [items]
-    AdminPoliciesResponse:
-      type: object
-      properties:
-        notification:
-          type: object
-          properties:
-            batchTime: { type: string }
-            dailyLimit: { type: integer }
-            ttlHours: { type: integer }
-          required: [batchTime, dailyLimit, ttlHours]
-        penalty:
-          type: object
-          properties:
-            limit: { type: integer }
-            template: { type: string }
-          required: [limit, template]
-      required: [notification, penalty]
-    UpdateUserStatusRequest:
-      type: object
-      properties:
-        status:
-          type: string
-          enum: [INACTIVE]
-      required: [status]
-    UpdateAdminPoliciesRequest:
-      type: object
-      properties:
-        notification:
-          $ref: '#/components/schemas/UpdateNotificationPolicy'
-        penalty:
-          $ref: '#/components/schemas/UpdatePenaltyPolicy'
-      required: [notification, penalty]
-    UpdateNotificationPolicy:
-      type: object
-      properties:
-        batchTime:
-          type: string
-          pattern: '^\\d{2}:\\d{2}$'
-        dailyLimit:
-          type: integer
-          minimum: 0
-        ttlHours:
-          type: integer
-          minimum: 1
-      required: [batchTime, dailyLimit, ttlHours]
-    UpdatePenaltyPolicy:
-      type: object
-      properties:
-        limit:
-          type: integer
-          minimum: 0
-        template:
-          type: string
-      required: [limit, template]
-    SlotType:
-      type: string
-      enum: [CHILL, FREEZE]
-    ResourceStatus:
-      type: string
-      enum: [ACTIVE, SUSPENDED, REPORTED, RETIRED]
-    FridgeSlot:
-      type: object
-      properties:
-        slotId: { type: string, format: uuid }
-        slotIndex: { type: integer }
-        slotLetter: { type: string }
-        floorNo: { type: integer }
-        floorCode: { type: string }
-        compartmentType: { $ref: '#/components/schemas/SlotType' }
-        resourceStatus: { $ref: '#/components/schemas/ResourceStatus' }
-        locked: { type: boolean }
-        lockedUntil:
-          type: string
-          format: date-time
-          nullable: true
-        capacity:
-          type: integer
-          nullable: true
         displayName:
           type: string
-          nullable: true
-        occupiedCount:
-          type: integer
-          nullable: true
-      required:
-        [slotId, slotIndex, slotLetter, floorNo, floorCode, compartmentType, resourceStatus, locked]
-    UpdateCompartmentConfigRequest:
-      type: object
-      properties:
-        maxBundleCount:
-          type: integer
-          minimum: 1
-        status:
-          $ref: '#/components/schemas/ResourceStatus'
-      additionalProperties: false
-    ItemFreshness:
-      type: string
-      enum: [ok, expiring, expired]
-    FridgeItem:
-      type: object
-      properties:
-        itemId: { type: string, format: uuid }
-        bundleId: { type: string, format: uuid }
-        name: { type: string }
-        expiryDate: { type: string, format: date }
-        quantity:
-          type: integer
-          nullable: true
-        unitCode:
+        email:
           type: string
-          nullable: true
-        freshness:
-          $ref: '#/components/schemas/ItemFreshness'
-        lastInspectedAt:
-          type: string
-          format: date-time
-          nullable: true
-        updatedAfterInspection: { type: boolean }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-        removedAt:
-          type: string
-          format: date-time
-          nullable: true
-      required:
-        [itemId, bundleId, name, expiryDate, freshness, updatedAfterInspection, createdAt, updatedAt]
-    BundleStatus:
-      type: string
-      enum: [ACTIVE, DELETED]
-    FridgeBundleSummary:
-      type: object
-      properties:
-        bundleId: { type: string, format: uuid }
-        slotId: { type: string, format: uuid }
-        slotIndex: { type: integer }
-        slotLabel: { type: string }
-        labelNumber: { type: integer }
-        labelDisplay: { type: string }
-        bundleName: { type: string }
-        memo:
-          type: string
-          nullable: true
-        ownerUserId: { type: string, format: uuid }
-        ownerDisplayName:
-          type: string
-          nullable: true
-        ownerRoomNumber:
-          type: string
-          nullable: true
-        status: { $ref: '#/components/schemas/BundleStatus' }
-        freshness:
-          type: string
-          enum: [ok, expiring, expired]
-        itemCount: { type: integer }
-        createdAt: { type: string, format: date-time }
-        updatedAt: { type: string, format: date-time }
-        removedAt:
-          type: string
-          format: date-time
-          nullable: true
-      required:
-        [bundleId, slotId, slotIndex, slotLabel, labelNumber, labelDisplay, bundleName, status, freshness, itemCount, createdAt, updatedAt]
-    FridgeBundle:
-      allOf:
-        - $ref: '#/components/schemas/FridgeBundleSummary'
-        - type: object
-          properties:
-            items:
-              type: array
-              items: { $ref: '#/components/schemas/FridgeItem' }
-          required: [items]
-    BundleListResponse:
-      type: object
-      properties:
-        items:
+        roles:
           type: array
-          items: { $ref: '#/components/schemas/FridgeBundleSummary' }
-        totalCount: { type: integer, format: int64 }
-      required: [items, totalCount]
+          items:
+            type: string
+        primaryRoom:
+          $ref: '#/components/schemas/RoomAssignmentResponse'
+        isFloorManager:
+          type: boolean
+        isAdmin:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+    LogoutRequest:
+      required:
+        - refreshToken
+      type: object
+      properties:
+        refreshToken:
+          type: string
+    LoginRequest:
+      required:
+        - loginId
+        - password
+      type: object
+      properties:
+        loginId:
+          type: string
+        password:
+          type: string
+        deviceId:
+          type: string
+    SeedResponse:
+      type: object
+      properties:
+        message:
+          type: string
+        executedAt:
+          type: string
+          format: date-time
     ReallocationPreviewRequest:
       type: object
       properties:
         floor:
+          minimum: 1
           type: integer
           format: int32
-          minimum: 1
-      required: [floor]
+    CompartmentAllocationView:
+      type: object
+      properties:
+        compartmentId:
+          type: string
+          format: uuid
+        fridgeUnitId:
+          type: string
+          format: uuid
+        slotIndex:
+          type: integer
+          format: int32
+        slotLabel:
+          type: string
+        compartmentType:
+          type: string
+          enum:
+            - CHILL
+            - FREEZE
+        status:
+          type: string
+          enum:
+            - ACTIVE
+            - SUSPENDED
+            - REPORTED
+            - RETIRED
+        locked:
+          type: boolean
+        currentRoomIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        recommendedRoomIds:
+          type: array
+          items:
+            type: string
+            format: uuid
+        warnings:
+          type: array
+          items:
+            type: string
     ReallocationPreviewResponse:
       type: object
       properties:
@@ -392,1113 +1574,494 @@ components:
           format: int32
         rooms:
           type: array
-          items: { $ref: '#/components/schemas/ReallocationRoomSummary' }
+          items:
+            $ref: '#/components/schemas/RoomSummary'
         allocations:
           type: array
-          items: { $ref: '#/components/schemas/ReallocationCompartmentAllocation' }
+          items:
+            $ref: '#/components/schemas/CompartmentAllocationView'
         chillCompartmentCount:
           type: integer
           format: int32
-      required: [floor, rooms, allocations, chillCompartmentCount]
-    ReallocationRoomSummary:
+    RoomSummary:
       type: object
       properties:
-        roomId: { type: string, format: uuid }
-        roomNumber: { type: string }
-        roomType: { type: string }
-        floor: { type: integer, format: int32 }
-      required: [roomId, roomNumber, roomType, floor]
-    ReallocationCompartmentAllocation:
-      type: object
-      properties:
-        compartmentId: { type: string, format: uuid }
-        fridgeUnitId: { type: string, format: uuid }
-        slotIndex: { type: integer, format: int32 }
-        slotLabel: { type: string }
-        compartmentType:
+        roomId:
           type: string
-          enum: [CHILL, FREEZE]
-        status:
+          format: uuid
+        roomNumber:
           type: string
-          enum: [ACTIVE, SUSPENDED, REPORTED, RETIRED]
-        locked: { type: boolean }
-        currentRoomIds:
-          type: array
-          items: { type: string, format: uuid }
-        recommendedRoomIds:
-          type: array
-          items: { type: string, format: uuid }
-        warnings:
-          type: array
-          items: { type: string }
+        roomType:
+          type: string
+        floor:
+          type: integer
+          format: int32
+    CompartmentAllocationInput:
       required:
-        [compartmentId, fridgeUnitId, slotIndex, slotLabel, compartmentType, status, locked, currentRoomIds, recommendedRoomIds, warnings]
+        - compartmentId
+        - roomIds
+      type: object
+      properties:
+        compartmentId:
+          type: string
+          format: uuid
+        roomIds:
+          type: array
+          items:
+            type: string
+            format: uuid
     ReallocationApplyRequest:
+      required:
+        - allocations
+      type: object
+      properties:
+        floor:
+          minimum: 1
+          type: integer
+          format: int32
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/CompartmentAllocationInput'
+    ReallocationApplyResponse:
       type: object
       properties:
         floor:
           type: integer
           format: int32
-          minimum: 1
-        allocations:
-          type: array
-          items: { $ref: '#/components/schemas/ReallocationApplyAllocation' }
-      required: [floor, allocations]
-    ReallocationApplyAllocation:
+        affectedCompartments:
+          type: integer
+          format: int32
+        releasedAssignments:
+          type: integer
+          format: int32
+        createdAssignments:
+          type: integer
+          format: int32
+        appliedAt:
+          type: string
+          format: date-time
+    UpdateNotificationPreferenceRequest:
+      required:
+        - allowBackground
+        - enabled
       type: object
       properties:
-        compartmentId: { type: string, format: uuid }
-        roomIds:
-          type: array
-          items: { type: string, format: uuid }
-      required: [compartmentId, roomIds]
-    ReallocationApplyResponse:
+        enabled:
+          type: boolean
+        allowBackground:
+          type: boolean
+    NotificationPreferenceItemResponse:
       type: object
       properties:
-        floor: { type: integer, format: int32 }
-        affectedCompartments: { type: integer, format: int32 }
-        releasedAssignments: { type: integer, format: int32 }
-        createdAssignments: { type: integer, format: int32 }
-        appliedAt: { type: string, format: date-time }
-      required: [floor, affectedCompartments, releasedAssignments, createdAssignments, appliedAt]
-    NotificationState:
-      type: string
-      enum: [UNREAD, READ, EXPIRED]
-    NotificationItem:
-      type: object
-      properties:
-        id: { type: string, format: uuid }
         kindCode:
           type: string
-          description: "알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등)"
-        title: { type: string }
-        body: { type: string }
-        state: { $ref: '#/components/schemas/NotificationState' }
-        createdAt: { type: string, format: date-time }
+        displayName:
+          type: string
+        description:
+          type: string
+        enabled:
+          type: boolean
+        allowBackground:
+          type: boolean
+    UpdateItemRequest:
+      type: object
+      properties:
+        name:
+          maxLength: 120
+          minLength: 1
+          type: string
+        expiryDate:
+          type: string
+          format: date
+        quantity:
+          minimum: 1
+          type: integer
+          format: int32
+        unitCode:
+          type: string
+        removedAt:
+          type: string
+          format: date-time
+    InspectionActionMutationRequest:
+      required:
+        - action
+      type: object
+      properties:
+        actionId:
+          type: integer
+          format: int64
+        bundleId:
+          type: string
+          format: uuid
+        itemId:
+          type: string
+          format: uuid
+        action:
+          type: string
+        note:
+          type: string
+    UpdateInspectionSessionRequest:
+      type: object
+      properties:
+        notes:
+          type: string
+        mutations:
+          type: array
+          items:
+            $ref: '#/components/schemas/InspectionActionMutationRequest'
+        deleteActionIds:
+          type: array
+          items:
+            type: integer
+            format: int64
+    UpdateInspectionScheduleRequest:
+      type: object
+      properties:
+        scheduledAt:
+          type: string
+          format: date-time
+        title:
+          maxLength: 120
+          minLength: 0
+          type: string
+        notes:
+          type: string
+        status:
+          type: string
+        completedAt:
+          type: string
+          format: date-time
+        inspectionSessionId:
+          type: string
+          format: uuid
+        detachInspectionSession:
+          type: boolean
+        fridgeCompartmentId:
+          type: string
+          format: uuid
+    UpdateBundleRequest:
+      type: object
+      properties:
+        bundleName:
+          maxLength: 120
+          minLength: 1
+          type: string
+        memo:
+          type: string
+        removedAt:
+          type: string
+          format: date-time
+    UpdateUserStatusRequest:
+      required:
+        - status
+      type: object
+      properties:
+        status:
+          type: string
+    UpdateCompartmentConfigRequest:
+      type: object
+      properties:
+        maxBundleCount:
+          minimum: 1
+          type: integer
+          format: int32
+        status:
+          type: string
+    FridgeSlotResponse:
+      type: object
+      properties:
+        slotId:
+          type: string
+          format: uuid
+        slotIndex:
+          type: integer
+          format: int32
+        slotLetter:
+          type: string
+        floorNo:
+          type: integer
+          format: int32
+        floorCode:
+          type: string
+        compartmentType:
+          type: string
+        resourceStatus:
+          type: string
+        locked:
+          type: boolean
+        lockedUntil:
+          type: string
+          format: date-time
+        capacity:
+          type: integer
+          format: int32
+        displayName:
+          type: string
+        occupiedCount:
+          type: integer
+          format: int32
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+        timestamp:
+          type: string
+    NotificationItemResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        kindCode:
+          type: string
+        title:
+          type: string
+        body:
+          type: string
+        state:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
         readAt:
           type: string
           format: date-time
-          nullable: true
         ttlAt:
           type: string
           format: date-time
-          nullable: true
         correlationId:
           type: string
           format: uuid
-          nullable: true
         metadata:
           type: object
-          additionalProperties: true
-      required: [id, kindCode, title, body, state, createdAt]
+          additionalProperties:
+            type: object
     NotificationListResponse:
       type: object
       properties:
         items:
           type: array
-          items: { $ref: '#/components/schemas/NotificationItem' }
-        page: { type: integer, format: int32 }
-        size: { type: integer, format: int32 }
-        totalElements: { type: integer, format: int64 }
-        unreadCount: { type: integer, format: int64 }
-      required: [items, page, size, totalElements, unreadCount]
-    NotificationPreferenceItem:
-      type: object
-      properties:
-        kindCode:
-          type: string
-          description: "알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등)"
-        displayName: { type: string }
-        description: { type: string }
-        enabled: { type: boolean }
-        allowBackground: { type: boolean }
-      required: [kindCode, displayName, description, enabled, allowBackground]
+          items:
+            $ref: '#/components/schemas/NotificationItemResponse'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        unreadCount:
+          type: integer
+          format: int64
     NotificationPreferenceResponse:
       type: object
       properties:
         items:
           type: array
-          items: { $ref: '#/components/schemas/NotificationPreferenceItem' }
-      required: [items]
-    UpdateNotificationPreferenceRequest:
+          items:
+            $ref: '#/components/schemas/NotificationPreferenceItemResponse'
+    FridgeSlotListResponse:
       type: object
       properties:
-        enabled: { type: boolean }
-        allowBackground: { type: boolean }
-      required: [enabled, allowBackground]
-    CreateBundleItemInput:
-      type: object
-      properties:
-        name: { type: string }
-        expiryDate: { type: string, format: date }
-        quantity:
-          type: integer
-          nullable: true
-        unitCode:
-          type: string
-          nullable: true
-      required: [name, expiryDate]
-    CreateBundleRequest:
-      type: object
-      properties:
-        slotId: { type: string, format: uuid }
-        bundleName: { type: string }
-        memo:
-          type: string
-          nullable: true
         items:
           type: array
-          items: { $ref: '#/components/schemas/CreateBundleItemInput' }
-      required: [slotId, bundleName, items]
-    CreateBundleResponse:
+          items:
+            $ref: '#/components/schemas/FridgeSlotResponse'
+        totalCount:
+          type: integer
+          format: int64
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalPages:
+          type: integer
+          format: int32
+    BundleListResponse:
       type: object
       properties:
-        bundle: { $ref: '#/components/schemas/FridgeBundle' }
-      required: [bundle]
-    UpdateBundleRequest:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/FridgeBundleSummaryResponse'
+        totalCount:
+          type: integer
+          format: int64
+    FridgeBundleSummaryResponse:
       type: object
       properties:
+        bundleId:
+          type: string
+          format: uuid
+        slotId:
+          type: string
+          format: uuid
+        slotIndex:
+          type: integer
+          format: int32
+        slotLabel:
+          type: string
+        labelNumber:
+          type: integer
+          format: int32
+        labelDisplay:
+          type: string
         bundleName:
           type: string
-          nullable: true
         memo:
           type: string
-          nullable: true
+        ownerUserId:
+          type: string
+          format: uuid
+        ownerDisplayName:
+          type: string
+        ownerRoomNumber:
+          type: string
+        status:
+          type: string
+        freshness:
+          type: string
+        itemCount:
+          type: integer
+          format: int32
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
         removedAt:
           type: string
           format: date-time
-          nullable: true
-    AddItemRequest:
+    AdminUsersResponse:
       type: object
       properties:
-        name: { type: string }
-        expiryDate: { type: string, format: date }
-        quantity:
-          type: integer
-          nullable: true
-        unitCode:
-          type: string
-          nullable: true
-      required: [name, expiryDate]
-    UpdateItemRequest:
-      type: object
-      properties:
-        name:
-          type: string
-          nullable: true
-        expiryDate:
-          type: string
-          format: date
-          nullable: true
-        quantity:
-          type: integer
-          nullable: true
-        unitCode:
-          type: string
-          nullable: true
-        removedAt:
-          type: string
-          format: date-time
-          nullable: true
-    InspectionStatus:
-      type: string
-      enum: [IN_PROGRESS, SUBMITTED, CANCELED]
-    InspectionAction:
-      type: string
-      enum: [WARN_INFO_MISMATCH, WARN_STORAGE_POOR, DISPOSE_EXPIRED, PASS, UNREGISTERED_DISPOSE]
-    InspectionActionSummary:
-      type: object
-      properties:
-        action: { $ref: '#/components/schemas/InspectionAction' }
-        count: { type: integer }
-      required: [action, count]
-    InspectionActionItem:
-      type: object
-      properties:
-        id: { type: integer, format: int64 }
-        fridgeItemId:
-          type: string
-          format: uuid
-          nullable: true
-        snapshotName:
-          type: string
-          nullable: true
-        snapshotExpiresOn:
-          type: string
-          format: date
-          nullable: true
-        quantityAtAction:
-          type: integer
-          nullable: true
-    PenaltyHistory:
-      type: object
-      properties:
-        id: { type: string, format: uuid }
-        points: { type: integer }
-        reason:
-          type: string
-          nullable: true
-        issuedAt: { type: string, format: date-time }
-        expiresAt:
-          type: string
-          format: date-time
-          nullable: true
-    InspectionActionDetail:
-      type: object
-      properties:
-        actionId: { type: integer, format: int64 }
-        actionType: { $ref: '#/components/schemas/InspectionAction' }
-        bundleId:
-          type: string
-          format: uuid
-          nullable: true
-        targetUserId:
-          type: string
-          format: uuid
-          nullable: true
-        recordedAt: { type: string, format: date-time }
-        recordedBy:
-          type: string
-          format: uuid
-          nullable: true
-        note:
-          type: string
-          nullable: true
         items:
           type: array
-          items: { $ref: '#/components/schemas/InspectionActionItem' }
-        penalties:
-          type: array
-          items: { $ref: '#/components/schemas/PenaltyHistory' }
-    InspectionSession:
+          items:
+            $ref: '#/components/schemas/User'
+    User:
       type: object
       properties:
-        sessionId: { type: string, format: uuid }
-        slotId: { type: string, format: uuid }
-        slotIndex: { type: integer }
-        slotLabel: { type: string }
-        floorNo: { type: integer }
-        floorCode:
+        id:
           type: string
-          nullable: true
-        status: { $ref: '#/components/schemas/InspectionStatus' }
-        startedBy: { type: string, format: uuid }
-        startedAt: { type: string, format: date-time }
-        endedAt:
+        name:
           type: string
-          format: date-time
-          nullable: true
-        bundles:
+        room:
+          type: string
+        floor:
+          type: integer
+          format: int32
+        roomCode:
+          type: string
+        personalNo:
+          type: integer
+          format: int32
+        role:
+          type: string
+        roles:
           type: array
-          items: { $ref: '#/components/schemas/FridgeBundle' }
+          items:
+            type: string
+        status:
+          type: string
+        lastLogin:
+          type: string
+        penalties:
+          type: integer
+          format: int32
+    AdminResourceResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Resource'
+    Resource:
+      type: object
+      properties:
+        id:
+          type: string
+        facility:
+          type: string
+        name:
+          type: string
+        location:
+          type: string
+        status:
+          type: string
+        capacity:
+          type: string
+        manager:
+          type: string
+        rooms:
+          type: string
+        labelRange:
+          type: string
+        issue:
+          type: string
+        lastInspection:
+          type: string
+    AdminPoliciesResponse:
+      type: object
+      properties:
+        notification:
+          $ref: '#/components/schemas/NotificationPolicy'
+        penalty:
+          $ref: '#/components/schemas/PenaltyPolicy'
+    AdminDashboardResponse:
+      type: object
+      properties:
         summary:
           type: array
-          items: { $ref: '#/components/schemas/InspectionActionSummary' }
-        actions:
+          items:
+            $ref: '#/components/schemas/SummaryCard'
+        timeline:
           type: array
-          items: { $ref: '#/components/schemas/InspectionActionDetail' }
-        notes:
-          type: string
-          nullable: true
-      required: [sessionId, slotId, slotIndex, slotLabel, floorNo, status, startedBy, startedAt, bundles, summary]
-    InspectionActionEntry:
-      type: object
-      properties:
-        bundleId:
-          type: string
-          format: uuid
-          nullable: true
-        itemId:
-          type: string
-          format: uuid
-          nullable: true
-        action: { $ref: '#/components/schemas/InspectionAction' }
-        note:
-          type: string
-          nullable: true
-      required: [action]
-    InspectionActionRequest:
-      type: object
-      properties:
-        actions:
+          items:
+            $ref: '#/components/schemas/TimelineEvent'
+        quickActions:
           type: array
-          minItems: 1
-          items: { $ref: '#/components/schemas/InspectionActionEntry' }
-      required: [actions]
-    SubmitInspectionRequest:
+          items:
+            $ref: '#/components/schemas/QuickAction'
+    QuickAction:
       type: object
       properties:
-        notes:
+        id:
           type: string
-          nullable: true
-paths:
-  /auth/login:
-    post:
-      tags: [Auth]
-      summary: DormMate 로그인
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/LoginRequest' }
-      responses:
-        '200':
-          description: 로그인 성공
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/LoginResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-  /auth/refresh:
-    post:
-      tags: [Auth]
-      summary: 리프레시 토큰으로 세션 갱신
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/RefreshRequest' }
-      responses:
-        '200':
-          description: 갱신 성공
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/LoginResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '429': { $ref: '#/components/responses/TooManyRequests' }
-  /auth/logout:
-    post:
-      tags: [Auth]
-      summary: 리프레시 토큰 폐기
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/LogoutRequest' }
-      responses:
-        '204':
-          description: 로그아웃 완료
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-  /profile/me:
-    get:
-      tags: [Profile]
-      summary: 현재 로그인 사용자 정보
-      security: [{ BearerAuth: [] }]
-      responses:
-        '200':
-          description: 사용자 프로필
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/UserProfile' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-  /fridge/slots:
-    get:
-      tags: [Fridge]
-      summary: 냉장고 슬롯 목록 조회
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: query
-          name: floor
-          schema:
-            type: integer
-            minimum: 2
-            maximum: 5
-          description: 조회할 층 (지정하지 않으면 전체)
-        - in: query
-          name: view
-          schema:
-            type: string
-            enum: [basic, full]
-          description: full 지정 시 용량·표시 이름·점유 수 등 상세 정보를 포함
-      responses:
-        '200':
-          description: 슬롯 목록
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/FridgeSlot' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /admin/users:
-    get:
-      tags: [Admin]
-      summary: 관리자 사용자 목록 조회
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [ACTIVE, INACTIVE, ALL]
-            default: ACTIVE
-          description: 조회할 사용자 상태 필터 (기본 ACTIVE)
-      responses:
-        '200':
-          description: 사용자 목록
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminUsersResponse'
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /admin/users/{userId}/roles/floor-manager:
-    post:
-      tags: [Admin]
-      summary: 층별장 임명
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: userId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '204': { description: 임명 성공 }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-    delete:
-      tags: [Admin]
-      summary: 층별장 해제
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: userId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      responses:
-        '204': { description: 해제 성공 }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-
-  /admin/users/{userId}/status:
-    patch:
-      tags: [Admin]
-      summary: 사용자 상태 변경
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: userId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateUserStatusRequest'
-      responses:
-        '204': { description: 상태 변경 성공 }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-
-  /admin/policies:
-    get:
-      tags: [Admin]
-      summary: 관리자 정책 조회
-      security: [{ BearerAuth: [] }]
-      responses:
-        '200':
-          description: 정책 정보
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminPoliciesResponse'
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-    put:
-      tags: [Admin]
-      summary: 관리자 정책 저장
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateAdminPoliciesRequest'
-      responses:
-        '204': { description: 저장 성공 }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-
-  /admin/fridge/compartments/{compartmentId}:
-    patch:
-      tags: [FridgeAdmin]
-      summary: 냉장고 칸 설정 수정
-      operationId: updateFridgeCompartment
-      security:
-        - BearerAuth: []
-      parameters:
-        - in: path
-          name: compartmentId
-          required: true
-          schema:
-            type: string
-            format: uuid
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UpdateCompartmentConfigRequest'
-      responses:
-        '200':
-          description: 수정 성공
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/FridgeSlot'
-        '403':
-          description: 관리자 권한 필요
-        '404':
-          description: 대상 칸을 찾을 수 없음
-        '409':
-          description: 검사 세션이 진행 중인 칸은 상태를 변경할 수 없음
-        '422':
-          description: 현재 활성 포장 수보다 낮게 용량을 설정할 수 없음
-  /admin/fridge/compartments:
-    get:
-      tags: [FridgeAdmin]
-      summary: 냉장고 칸 메타데이터 조회
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: query
-          name: floor
-          schema: { type: integer, minimum: 2, maximum: 5 }
-          description: 조회할 층 (기본 2층)
-        - in: query
-          name: view
-          schema:
-            type: string
-            enum: [basic, full]
-          description: full 시 displayName, label 범위, 용량 정보 포함
-      responses:
-        '200':
-          description: 칸 목록
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/FridgeSlot' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-  /fridge/bundles:
-    get:
-      tags: [Fridge]
-      summary: 포장 목록 조회
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: query
-          name: slotId
-          schema: { type: string, format: uuid }
-          description: 특정 칸(슬롯)만 필터링
-        - in: query
-          name: owner
-          schema:
-            type: string
-            enum: [me, all]
-          description: me 지정 시 내 포장만 반환
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [active, deleted]
-          description: deleted 지정 시 소프트 삭제 포함
-        - in: query
-          name: search
-          schema: { type: string }
-          description: 포장명/물품명/라벨(A123) 검색
-        - in: query
-          name: page
-          schema: { type: integer, minimum: 0, default: 0 }
-          description: 페이지 인덱스 (0부터 시작)
-        - in: query
-          name: size
-          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
-          description: 페이지 당 항목 수
-      responses:
-        '200':
-          description: 포장 목록
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/BundleListResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-    post:
-      tags: [Fridge]
-      summary: 새 포장 생성
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/CreateBundleRequest' }
-      responses:
-        '201':
-          description: 생성 완료
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/CreateBundleResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/UnprocessableEntity' }
-  /admin/fridge/bundles/deleted:
-    get:
-      tags: [FridgeAdmin]
-      summary: 삭제된 포장 이력 조회
-      description: 기본적으로 최근 3개월 이내 삭제된 포장을 반환하며, `since` 파라미터로 기간을 확장할 수 있습니다.
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: query
-          name: since
-          schema: { type: string, format: date-time }
-          description: 조회 기준 시각(UTC). 지정하지 않으면 현재 시각 기준 3개월 전으로 자동 설정됩니다.
-        - in: query
-          name: page
-          schema: { type: integer, minimum: 0, default: 0 }
-        - in: query
-          name: size
-          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
-      responses:
-        '200':
-          description: 삭제된 포장 목록
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/BundleListResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-  /admin/fridge/reallocations/preview:
-    post:
-      tags: [FridgeAdmin]
-      summary: 층별 칸-호실 재배분 추천안 조회
-      description: 현재 배정 현황을 바탕으로 균등 분배한 추천안을 생성합니다. 실제 반영 전 검토용으로 사용하세요.
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ReallocationPreviewRequest' }
-      responses:
-        '200':
-          description: 추천안 생성 성공
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ReallocationPreviewResponse' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-  /admin/fridge/reallocations/apply:
-    post:
-      tags: [FridgeAdmin]
-      summary: 층별 칸-호실 재배분 확정 반영
-      description: 검토·수정한 배정안을 저장하고 기존 배정을 종료합니다.
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/ReallocationApplyRequest' }
-      responses:
-        '200':
-          description: 재배분 적용 성공
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/ReallocationApplyResponse' }
-        '400':
-          description: "잘못된 재배분 요청 (예: ROOM_NOT_ON_FLOOR, ROOM_DISTRIBUTION_IMBALANCED, SHARED_COMPARTMENT_MUST_INCLUDE_ALL_ROOMS)"
-          content:
-            application/problem+json:
-              schema: { $ref: '#/components/schemas/Problem' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-  /notifications:
-    get:
-      tags: [Notifications]
-      summary: 내 알림 목록 조회
-      description: 미읽음 우선 정렬로 알림을 반환합니다. TTL이 지난 알림은 자동으로 만료 처리됩니다.
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: query
-          name: state
-          schema:
-            type: string
-            enum: [all, unread, read]
-            default: all
-          description: 조회할 알림 상태
-        - in: query
-          name: page
-          schema: { type: integer, format: int32, minimum: 0, default: 0 }
-        - in: query
-          name: size
-          schema: { type: integer, format: int32, minimum: 1, maximum: 50, default: 20 }
-      responses:
-        '200':
-          description: 알림 목록
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/NotificationListResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-  /notifications/{notificationId}/read:
-    patch:
-      tags: [Notifications]
-      summary: 특정 알림 읽음 처리
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: notificationId
-          required: true
-          schema: { type: string, format: uuid }
-      responses:
-        '204':
-          description: 읽음 처리 완료
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-  /notifications/read-all:
-    patch:
-      tags: [Notifications]
-      summary: 모든 미읽음 알림 읽음 처리
-      security: [{ BearerAuth: [] }]
-      responses:
-        '204':
-          description: 처리 완료
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-  /notifications/preferences:
-    get:
-      tags: [Notifications]
-      summary: 알림 수신 설정 조회
-      security: [{ BearerAuth: [] }]
-      responses:
-        '200':
-          description: 알림 선호 설정
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/NotificationPreferenceResponse' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-  /notifications/preferences/{kindCode}:
-    patch:
-      tags: [Notifications]
-      summary: 알림 수신 설정 변경
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: kindCode
-          description: "알림 종류 코드 (FRIDGE_RESULT, FRIDGE_EXPIRY, FRIDGE_EXPIRED 등)"
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/UpdateNotificationPreferenceRequest' }
-      responses:
-        '200':
-          description: 변경된 설정
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/NotificationPreferenceItem' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-  /fridge/bundles/{bundleId}:
-    parameters:
-      - in: path
-        name: bundleId
-        required: true
-        schema: { type: string, format: uuid }
-    get:
-      tags: [Fridge]
-      summary: 포장 상세 조회
-      security: [{ BearerAuth: [] }]
-      responses:
-        '200':
-          description: 포장 상세
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FridgeBundle' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    patch:
-      tags: [Fridge]
-      summary: 포장 정보 수정
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/UpdateBundleRequest' }
-      responses:
-        '200':
-          description: 수정된 포장
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FridgeBundle' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/UnprocessableEntity' }
-    delete:
-      tags: [Fridge]
-      summary: 포장 삭제(소프트 삭제)
-      security: [{ BearerAuth: [] }]
-      responses:
-        '204':
-          description: 삭제 완료
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-  /fridge/bundles/{bundleId}/items:
-    parameters:
-      - in: path
-        name: bundleId
-        required: true
-        schema: { type: string, format: uuid }
-    post:
-      tags: [Fridge]
-      summary: 포장에 물품 추가
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/AddItemRequest' }
-      responses:
-        '201':
-          description: 추가된 물품
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FridgeItem' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/UnprocessableEntity' }
-  /fridge/items/{itemId}:
-    parameters:
-      - in: path
-        name: itemId
-        required: true
-        schema: { type: string, format: uuid }
-    patch:
-      tags: [Fridge]
-      summary: 물품 수정
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/UpdateItemRequest' }
-      responses:
-        '200':
-          description: 수정된 물품
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/FridgeItem' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/UnprocessableEntity' }
-    delete:
-      tags: [Fridge]
-      summary: 물품 삭제(소프트)
-      security: [{ BearerAuth: [] }]
-      responses:
-        '204':
-          description: 삭제 완료
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-  /fridge/inspections:
-    get:
-      tags: [Inspections]
-      summary: 검사 세션 목록 조회
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: query
-          name: slotId
-          schema: { type: string, format: uuid }
-          description: 특정 칸의 세션만 조회
-        - in: query
-          name: status
-          schema:
-            type: string
-            enum: [IN_PROGRESS, SUBMITTED, CANCELLED]
-          description: 세션 상태 필터
-        - in: query
-          name: limit
-          schema: { type: integer, minimum: 1, maximum: 100 }
-          description: 반환할 최대 세션 수
-      responses:
-        '200':
-          description: 검사 세션 목록
-          content:
-            application/json:
-              schema:
-                type: array
-                items: { $ref: '#/components/schemas/InspectionSession' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-    post:
-      tags: [Inspections]
-      summary: 검사 세션 시작
-      security: [{ BearerAuth: [] }]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                slotId: { type: string, format: uuid }
-              required: [slotId]
-      responses:
-        '201':
-          description: 생성된 검사 세션
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InspectionSession' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '409': { $ref: '#/components/responses/Conflict' }
-  /fridge/inspections/active:
-    get:
-      tags: [Inspections]
-      summary: 현재 검사 세션 조회
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: query
-          name: floor
-          schema: { type: integer, minimum: 2, maximum: 5 }
-          description: 특정 층 기준으로 필터링
-      responses:
-        '200':
-          description: 진행 중인 세션
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InspectionSession' }
-        '204':
-          description: 진행 중인 세션 없음
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-  /fridge/inspections/{sessionId}:
-    parameters:
-      - in: path
-        name: sessionId
-        required: true
-        schema: { type: string, format: uuid }
-    get:
-      tags: [Inspections]
-      summary: 검사 세션 상세
-      security: [{ BearerAuth: [] }]
-      responses:
-        '200':
-          description: 검사 세션
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InspectionSession' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-    delete:
-      tags: [Inspections]
-      summary: 검사 세션 취소
-      security: [{ BearerAuth: [] }]
-      responses:
-        '204':
-          description: 취소 완료
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-  /fridge/inspections/{sessionId}/actions:
-    post:
-      tags: [Inspections]
-      summary: 검사 조치 기록
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema: { type: integer, format: int64 }
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/InspectionActionRequest' }
-      responses:
-        '200':
-          description: 갱신된 세션
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InspectionSession' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/UnprocessableEntity' }
-  /fridge/inspections/{sessionId}/submit:
-    post:
-      tags: [Inspections]
-      summary: 검사 결과 제출
-      security: [{ BearerAuth: [] }]
-      parameters:
-        - in: path
-          name: sessionId
-          required: true
-          schema: { type: integer, format: int64 }
-      requestBody:
-        required: false
-        content:
-          application/json:
-            schema: { $ref: '#/components/schemas/SubmitInspectionRequest' }
-      responses:
-        '200':
-          description: 제출 완료된 세션
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/InspectionSession' }
-        '400': { $ref: '#/components/responses/BadRequest' }
-        '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
-        '404': { $ref: '#/components/responses/NotFound' }
-        '409': { $ref: '#/components/responses/Conflict' }
-        '422': { $ref: '#/components/responses/UnprocessableEntity' }
+        title:
+          type: string
+        description:
+          type: string
+        href:
+          type: string
+        icon:
+          type: string
+    SummaryCard:
+      type: object
+      properties:
+        id:
+          type: string
+        label:
+          type: string
+        value:
+          type: string
+        description:
+          type: string
+    TimelineEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        time:
+          type: string
+        title:
+          type: string
+        detail:
+          type: string

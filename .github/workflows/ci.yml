@@ -8,12 +8,13 @@ on:
   pull_request:
 
 env:
-  POSTGRES_DB: dormmate_local
-  POSTGRES_USER: dormmate_user
+  POSTGRES_DB: ${{ secrets.POSTGRES_DB != '' && secrets.POSTGRES_DB || 'dormmate_local' }}
+  POSTGRES_USER: ${{ secrets.POSTGRES_USER != '' && secrets.POSTGRES_USER || 'dormmate_user' }}
   POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-  DB_USERNAME: dormmate_user
+  DB_USERNAME: ${{ secrets.POSTGRES_USER != '' && secrets.POSTGRES_USER || 'dormmate_user' }}
   DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-  DB_URL: jdbc:postgresql://localhost:5432/dormmate_local
+  DB_URL: jdbc:postgresql://localhost:5432/${{ secrets.POSTGRES_DB != '' && secrets.POSTGRES_DB || 'dormmate_local' }}
+  JWT_SECRET: ${{ secrets.JWT_SECRET != '' && secrets.JWT_SECRET || 'ci-jwt-secret-please-override-0123456789abcdef' }}
   NEXT_TELEMETRY_DISABLED: "1"
   PYTHONUNBUFFERED: "1"
   GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-cache
@@ -37,7 +38,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: "22.11.0"
+          node-version: "22.12.0"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
 
@@ -148,8 +149,9 @@ jobs:
           fi
 
       - name: Compare runtime OpenAPI with spec
+        working-directory: backend
         run: |
-          LOGIN_PAYLOAD='{"loginId":"admin","password":"password","deviceId":"ci-runner"}'
+          LOGIN_PAYLOAD='{"loginId":"dormmate","password":"admin1!","deviceId":"ci-runner"}'
           curl -fsS -H "Content-Type: application/json" -d "$LOGIN_PAYLOAD" http://localhost:8080/auth/login > login-response.json
           ACCESS_TOKEN=$(jq -r '.tokens.accessToken' login-response.json)
           if [ -z "$ACCESS_TOKEN" ] || [ "$ACCESS_TOKEN" = "null" ]; then
@@ -158,8 +160,13 @@ jobs:
             exit 1
           fi
           curl -fsS -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/v3/api-docs > runtime-openapi.json
-          npx @redocly/openapi-cli bundle api/openapi.yml --output spec-openapi.json --ext json
-          npx @redocly/openapi-cli diff spec-openapi.json runtime-openapi.json
+          SPEC_PATH="$GITHUB_WORKSPACE/api/openapi.yml"
+          if [ ! -f "$SPEC_PATH" ]; then
+            echo "Spec file not found: $SPEC_PATH" >&2
+            exit 1
+          fi
+          npx --yes @redocly/cli@latest bundle "$SPEC_PATH" --output spec-openapi.json --ext json
+          npx --yes openapi-diff@latest spec-openapi.json runtime-openapi.json
 
       - name: Stop backend after OpenAPI check
         if: always()

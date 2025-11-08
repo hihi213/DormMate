@@ -44,6 +44,7 @@ export type PaginatedTableProps<TData> = {
   getRowId?: (row: TData, index: number) => React.Key
   onRowClick?: (row: TData, index: number) => void
   className?: string
+  getRowClassName?: (row: TData, index: number) => string | undefined
 }
 
 /**
@@ -58,6 +59,7 @@ export function PaginatedTable<TData>({
   getRowId,
   onRowClick,
   className,
+  getRowClassName,
 }: PaginatedTableProps<TData>) {
   const totalPages = React.useMemo(() => {
     if (!pagination) return 1
@@ -119,72 +121,78 @@ export function PaginatedTable<TData>({
       data-component="admin-paginated-table"
       className={cn("flex flex-col gap-4", className)}
     >
-      <Table>
-        <TableHeader>
-          <TableRow>
-            {columns.map((column) => (
-              <TableHead
-                key={String(column.key)}
-                style={column.width ? { width: column.width } : undefined}
-                className={cn({
-                  "text-right": column.align === "right",
-                  "text-center": column.align === "center",
-                })}
-              >
-                {column.header}
-              </TableHead>
-            ))}
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {data.length === 0 ? (
+      <div className="w-full overflow-x-auto">
+        <Table className="min-w-[720px] md:min-w-0">
+          <TableHeader>
             <TableRow>
-              <TableCell colSpan={columns.length}>
-                <div className="text-muted-foreground text-center text-sm py-6">
-                  {emptyMessage}
-                </div>
-              </TableCell>
-            </TableRow>
-          ) : (
-            data.map((row, index) => {
-              const clickable = Boolean(onRowClick)
-              return (
-                <TableRow
-                  key={getRowId ? getRowId(row, index) : index}
-                  data-row-index={index}
-                  className={cn(clickable && "cursor-pointer transition hover:bg-muted/40")}
-                  onClick={() => onRowClick?.(row, index)}
-                  onKeyDown={(event) => {
-                    if (!onRowClick) return
-                    if (event.key === "Enter" || event.key === " ") {
-                      event.preventDefault()
-                      onRowClick(row, index)
-                    }
-                  }}
-                  tabIndex={clickable ? 0 : undefined}
-                  role={clickable ? "button" : undefined}
+              {columns.map((column) => (
+                <TableHead
+                  key={String(column.key)}
+                  style={column.width ? { width: column.width } : undefined}
+                  className={cn({
+                    "text-right": column.align === "right",
+                    "text-center": column.align === "center",
+                  })}
                 >
-                {columns.map((column) => (
-                  <TableCell
-                    key={String(column.key)}
-                    className={cn({
-                      "text-right": column.align === "right",
-                      "text-center": column.align === "center",
-                    })}
+                  {column.header}
+                </TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {data.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={columns.length}>
+                  <div className="text-muted-foreground text-center text-sm py-6">
+                    {emptyMessage}
+                  </div>
+                </TableCell>
+              </TableRow>
+            ) : (
+              data.map((row, index) => {
+                const clickable = Boolean(onRowClick)
+                return (
+                  <TableRow
+                    key={getRowId ? getRowId(row, index) : index}
+                    data-row-index={index}
+                    className={cn(
+                      clickable && "cursor-pointer transition hover:bg-muted/40",
+                      getRowClassName?.(row, index),
+                    )}
+                    onClick={() => onRowClick?.(row, index)}
+                    onKeyDown={(event) => {
+                      if (!onRowClick) return
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault()
+                        onRowClick(row, index)
+                      }
+                    }}
+                    tabIndex={clickable ? 0 : undefined}
+                    role={clickable ? "button" : undefined}
                   >
-                    {column.render
-                      ? column.render(row, index)
-                      : (row as Record<string, unknown>)[
-                          column.key as string
-                        ] ?? "—"}
-                  </TableCell>
-                ))}
-                </TableRow>
-              )
-            })
-          )}
-        </TableBody>
-      </Table>
+                    {columns.map((column) => {
+                      const cellValue = column.render
+                        ? column.render(row, index)
+                        : ((row as Record<string, unknown>)[column.key as string] ?? "—")
+                      return (
+                        <TableCell
+                          key={String(column.key)}
+                          className={cn({
+                            "text-right": column.align === "right",
+                            "text-center": column.align === "center",
+                          })}
+                        >
+                          {cellValue as React.ReactNode}
+                        </TableCell>
+                      )
+                    })}
+                  </TableRow>
+                )
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
       {pagination ? (
         <Pagination className="sm:justify-end">
           <PaginationContent>

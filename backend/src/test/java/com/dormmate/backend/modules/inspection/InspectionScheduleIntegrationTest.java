@@ -1,5 +1,8 @@
 package com.dormmate.backend.modules.inspection;
 
+import static com.dormmate.backend.support.TestResidentAccounts.DEFAULT_PASSWORD;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT1;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT3;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.hamcrest.Matchers.hasSize;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -34,6 +37,7 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
 
     private static final int FLOOR_2 = 2;
     private static final int SLOT_INDEX_A = 0;
+    private static final String TARGET_RESIDENT_LOGIN = FLOOR2_ROOM05_SLOT1;
 
     @Autowired
     private MockMvc mockMvc;
@@ -53,9 +57,9 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
     void setUp() throws Exception {
         jdbcTemplate.update("DELETE FROM notification");
         jdbcTemplate.update("DELETE FROM inspection_schedule");
-        managerToken = login("bob", "bob123!");
-        residentToken = login("alice", "alice123!");
-        adminToken = login("admin", "password");
+        managerToken = login(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD);
+        residentToken = login(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+        adminToken = login("dormmate", "admin1!");
         slot2FAId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
     }
 
@@ -253,11 +257,8 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
         assertThat(notificationCount).isNotNull();
         assertThat(notificationCount).isGreaterThan(0);
 
-        UUID aliceId = jdbcTemplate.queryForObject(
-                "SELECT id FROM dorm_user WHERE login_id = 'alice'",
-                (rs, rowNum) -> UUID.fromString(rs.getString("id"))
-        );
-        Integer aliceNotifications = jdbcTemplate.queryForObject(
+        UUID residentId = fetchUserId(TARGET_RESIDENT_LOGIN);
+        Integer residentNotifications = jdbcTemplate.queryForObject(
                 """
                         SELECT COUNT(*)
                         FROM notification
@@ -266,11 +267,11 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
                           AND dedupe_key = ?
                         """,
                 Integer.class,
-                aliceId,
-                "FRIDGE_SCHEDULE:" + scheduleId + ":" + aliceId
+                residentId,
+                "FRIDGE_SCHEDULE:" + scheduleId + ":" + residentId
         );
-        assertThat(aliceNotifications).isNotNull();
-        assertThat(aliceNotifications).isGreaterThan(0);
+        assertThat(residentNotifications).isNotNull();
+        assertThat(residentNotifications).isGreaterThan(0);
     }
 
     private String login(String loginId, String password) throws Exception {
@@ -281,10 +282,18 @@ class InspectionScheduleIntegrationTest extends AbstractPostgresIntegrationTest 
                                   "loginId": "%s",
                                   "password": "%s"
                                 }
-                                """.formatted(loginId, password)))
+                """.formatted(loginId, password)))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
         return response.path("tokens").path("accessToken").asText();
+    }
+
+    private UUID fetchUserId(String loginId) {
+        return jdbcTemplate.queryForObject(
+                "SELECT id FROM dorm_user WHERE login_id = ?",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                loginId
+        );
     }
 }

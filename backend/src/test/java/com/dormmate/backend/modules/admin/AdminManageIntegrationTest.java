@@ -1,6 +1,9 @@
 package com.dormmate.backend.modules.admin;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT3;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM17_SLOT2;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR3_ROOM05_SLOT1;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -49,12 +52,12 @@ class AdminManageIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @BeforeEach
     void setUp() throws Exception {
-        adminToken = loginAndGetAccessToken("admin", "password");
+        adminToken = loginAndGetAccessToken("dormmate", "admin1!");
     }
 
     @Test
     void adminCanPromoteAndDemoteFloorManager() throws Exception {
-        DormUser target = findUserByLogin("diana");
+        DormUser target = findUserByLogin(FLOOR3_ROOM05_SLOT1);
         UUID targetId = target.getId();
 
         mockMvc.perform(post("/admin/users/{id}/roles/floor-manager", targetId)
@@ -76,7 +79,7 @@ class AdminManageIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminCanDeactivateUser() throws Exception {
-        DormUser target = findUserByLogin("dylan");
+        DormUser target = findUserByLogin(FLOOR2_ROOM17_SLOT2);
         UUID targetId = target.getId();
 
         try {

@@ -130,3 +130,7 @@ export async function updateAdminPolicies(payload: UpdateAdminPoliciesPayload) {
   })
   if (error) throw error
 }
+
+export * from "./fridge"
+
+export * from "./fridge"

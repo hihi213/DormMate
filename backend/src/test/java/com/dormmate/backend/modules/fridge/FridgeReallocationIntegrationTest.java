@@ -1,5 +1,7 @@
 package com.dormmate.backend.modules.fridge;
 
+import static com.dormmate.backend.support.TestResidentAccounts.DEFAULT_PASSWORD;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT1;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -48,8 +50,8 @@ class FridgeReallocationIntegrationTest extends AbstractPostgresIntegrationTest 
 
     @BeforeEach
     void setUp() throws Exception {
-        adminToken = loginAndGetAccessToken("admin", "password");
-        residentToken = loginAndGetAccessToken("alice", "alice123!");
+        adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
     }
 
     @Test
@@ -146,7 +148,7 @@ class FridgeReallocationIntegrationTest extends AbstractPostgresIntegrationTest 
         JsonNode chillAllocation = findFirstChillAllocation(allocations);
         UUID compartmentId = UUID.fromString(chillAllocation.path("compartmentId").asText());
         UUID adminId = jdbcTemplate.queryForObject(
-                "SELECT id FROM dorm_user WHERE login_id = 'admin'",
+                "SELECT id FROM dorm_user WHERE login_id = 'dormmate'",
                 (rs, rowNum) -> UUID.fromString(rs.getString("id"))
         );
 

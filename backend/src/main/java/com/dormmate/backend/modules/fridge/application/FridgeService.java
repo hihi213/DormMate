@@ -1,21 +1,13 @@
 package com.dormmate.backend.modules.fridge.application;
 
+import static com.dormmate.backend.modules.auth.application.RoomAssignmentSupport.isFloorManagerOnFloor;
+import static com.dormmate.backend.modules.auth.application.RoomAssignmentSupport.requireRoom;
+import static com.dormmate.backend.modules.auth.application.RoomAssignmentSupport.requireRoomId;
+
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Objects;
-import java.util.EnumSet;
-import java.util.Locale;
-import java.util.Optional;
-import java.util.Set;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -126,16 +118,17 @@ public class FridgeService {
         if (!isAdmin) {
             RoomAssignment assignment = roomAssignmentRepository.findActiveAssignment(currentUserId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED"));
+            Room assignedRoom = requireRoom(assignment);
             if (isFloorManager) {
-                short managedFloor = assignment.getRoom().getFloor();
+                short managedFloor = assignedRoom.getFloor();
                 if (floorFilter != null && !Objects.equals(floorFilter, managedFloor)) {
                     throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_SCOPE_VIOLATION");
                 }
                 floorFilter = managedFloor;
             } else {
                 accessibleCompartmentIds = new HashSet<>();
-                List<CompartmentRoomAccess> accesses = compartmentRoomAccessRepository.findByRoomIdAndReleasedAtIsNull(
-                        assignment.getRoom().getId());
+                UUID roomId = requireRoomId(assignment);
+                List<CompartmentRoomAccess> accesses = compartmentRoomAccessRepository.findByRoomIdAndReleasedAtIsNull(roomId);
                 for (CompartmentRoomAccess access : accesses) {
                     accessibleCompartmentIds.add(access.getFridgeCompartment().getId());
                 }
@@ -165,7 +158,7 @@ public class FridgeService {
         int fromIndex = Math.min(safePage * safeSize, total);
         int toIndex = Math.min(fromIndex + safeSize, total);
         List<FridgeSlotResponse> paged = results.subList(fromIndex, toIndex);
-        int totalPages = safeSize == 0 ? 0 : (int) Math.ceil(total / (double) safeSize);
+        int totalPages = (int) Math.ceil(total / (double) safeSize);
         return new FridgeSlotListResponse(paged, total, safePage, safeSize, totalPages);
     }
 
@@ -206,7 +199,7 @@ public class FridgeService {
             verifyBundleReadAccess(currentUser, compartment, isAdmin, true);
             if (finalOwnerFilter != null && isFloorManager) {
                 boolean managesFloor = roomAssignmentRepository.findActiveAssignment(currentUserId)
-                        .map(assignment -> assignment.getRoom().getFloor()
+                .map(assignment -> requireRoom(assignment).getFloor()
                                 == compartment.getFridgeUnit().getFloorNo())
                         .orElse(false);
                 if (managesFloor) {
@@ -214,8 +207,6 @@ public class FridgeService {
                 }
             }
             compartmentId = compartment.getId();
-        } else if (finalOwnerFilter != null) {
-            compartmentId = null;
         }
 
         Set<FridgeBundleStatus> statuses;
@@ -320,7 +311,7 @@ public class FridgeService {
         boolean managerHasAccess = false;
         if (isFloorManager && !isAdmin && !isOwner) {
             managerHasAccess = roomAssignmentRepository.findActiveAssignment(currentUserId)
-                    .map(assignment -> assignment.getRoom().getFloor()
+                    .map(assignment -> requireRoom(assignment).getFloor()
                             == bundle.getFridgeCompartment().getFridgeUnit().getFloorNo())
                     .orElse(false);
         }
@@ -330,8 +321,7 @@ public class FridgeService {
 
         RoomAssignment ownerAssignment = roomAssignmentRepository.findActiveAssignment(bundle.getOwner().getId())
                 .orElse(null);
-        boolean includeMemo = isOwner;
-        return FridgeDtoMapper.toResponse(bundle, ownerAssignment, includeMemo);
+        return FridgeDtoMapper.toResponse(bundle, ownerAssignment, isOwner);
     }
 
     public CreateBundleResponse createBundle(CreateBundleRequest request) {
@@ -342,8 +332,9 @@ public class FridgeService {
         verifyBundleWriteAccess(currentUser, compartment);
         ensureCompartmentNotLocked(compartment);
 
-        int activeBundleCount = (int) fridgeBundleRepository.findByFridgeCompartmentAndStatus(
-                compartment, FridgeBundleStatus.ACTIVE).stream().count();
+        int activeBundleCount = fridgeBundleRepository
+                .findByFridgeCompartmentAndStatus(compartment, FridgeBundleStatus.ACTIVE)
+                .size();
         if (activeBundleCount >= compartment.getMaxBundleCount()) {
             throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "CAPACITY_EXCEEDED");
         }
@@ -584,12 +575,8 @@ public class FridgeService {
         RoomAssignment assignment = roomAssignmentRepository.findActiveAssignment(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED"));
 
-        if (allowFloorManager && SecurityUtils.hasRole("FLOOR_MANAGER")) {
-            short managedFloor = assignment.getRoom().getFloor();
-            short compartmentFloor = compartment.getFridgeUnit().getFloorNo();
-            if (managedFloor == compartmentFloor) {
-                return;
-            }
+        if (allowFloorManager && isFloorManagerOnFloor(assignment, compartment.getFridgeUnit().getFloorNo())) {
+            return;
         }
 
         List<CompartmentRoomAccess> accesses = compartmentRoomAccessRepository
@@ -597,7 +584,7 @@ public class FridgeService {
         boolean accessible = accesses.stream()
                 .map(CompartmentRoomAccess::getRoom)
                 .map(Room::getId)
-                .anyMatch(roomId -> roomId.equals(assignment.getRoom().getId()));
+                .anyMatch(roomId -> roomId.equals(requireRoomId(assignment)));
         if (!accessible) {
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FORBIDDEN_SLOT");
         }
@@ -622,10 +609,10 @@ public class FridgeService {
                     return created;
                 });
 
-        List<Integer> recycled = new ArrayList<>(sequence.getRecycledNumbers());
+        List<Integer> recycled = new LinkedList<>(sequence.getRecycledNumbers());
         if (!recycled.isEmpty()) {
             recycled.sort(Integer::compareTo);
-            int reused = recycled.remove(0);
+            int reused = recycled.removeFirst();
             sequence.setRecycledNumbers(recycled);
             bundleLabelSequenceRepository.save(sequence);
             return reused;
@@ -714,7 +701,7 @@ public class FridgeService {
 
     private boolean isCapacityConstraintViolation(DataIntegrityViolationException ex) {
         Throwable root = NestedExceptionUtils.getMostSpecificCause(ex);
-        String message = root != null ? root.getMessage() : null;
+        String message = root.getMessage();
         if (message == null) {
             return false;
         }
@@ -746,4 +733,5 @@ public class FridgeService {
             throw new ResponseStatusException(HttpStatus.LOCKED, "COMPARTMENT_UNDER_INSPECTION");
         }
     }
+
 }

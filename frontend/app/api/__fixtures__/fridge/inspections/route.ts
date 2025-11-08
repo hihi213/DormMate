@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server"
-import { buildInspectionSchedules } from "../backend/_lib/fixture-auth"
+import { buildInspectionSchedules } from "../../backend/_lib/fixture-auth"
 
 const slotId = "00000000-0000-0000-0000-00000000a001"
 const cancelNote = "자동화 테스트용 취소 세션 메모"

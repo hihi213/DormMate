@@ -1,5 +1,7 @@
 package com.dormmate.backend.modules.admin;
 
+import static com.dormmate.backend.support.TestResidentAccounts.DEFAULT_PASSWORD;
+import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT1;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -33,55 +35,71 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminCanTriggerFridgeDemoSeed() throws Exception {
-        jdbcTemplate.update("DELETE FROM fridge_item WHERE item_name LIKE '전시 데모:%'");
+        jdbcTemplate.update("DELETE FROM penalty_history");
+        jdbcTemplate.update("DELETE FROM inspection_action_item");
+        jdbcTemplate.update("DELETE FROM inspection_action");
+        jdbcTemplate.update("DELETE FROM fridge_item");
+        jdbcTemplate.update("DELETE FROM fridge_bundle");
+        jdbcTemplate.update("DELETE FROM bundle_label_sequence");
 
-        String adminToken = loginAndGetAccessToken("admin", "password");
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
 
         mockMvc.perform(post("/admin/seed/fridge-demo")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("FRIDGE_DEMO_DATA_REFRESHED"));
 
+        Integer bundleCount = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM fridge_bundle",
+                Integer.class
+        );
         Integer itemCount = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM fridge_item WHERE item_name LIKE '전시 데모:%'",
+                "SELECT COUNT(*) FROM fridge_item",
                 Integer.class
         );
-        assertThat(itemCount)
-                .withFailMessage("expected 7 demo items but found %s", itemCount)
+        Integer labelReady = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM bundle_label_sequence WHERE next_number = 11",
+                Integer.class
+        );
+        assertThat(bundleCount)
+                .withFailMessage("expected 160 bundles but found %s", bundleCount)
                 .isNotNull()
-                .isEqualTo(7);
-
-        Integer aliceItems = jdbcTemplate.queryForObject(
-                """
-                        SELECT COUNT(*)
-                        FROM fridge_item fi
-                        JOIN fridge_bundle fb ON fb.id = fi.fridge_bundle_id
-                        JOIN dorm_user du ON du.id = fb.owner_user_id
-                        WHERE du.login_id = 'alice'
-                          AND fi.item_name LIKE '전시 데모:%'
-                        """,
-                Integer.class
-        );
-        assertThat(aliceItems).isNotNull().isGreaterThanOrEqualTo(1);
+                .isEqualTo(160);
+        assertThat(itemCount)
+                .withFailMessage("expected 160 items but found %s", itemCount)
+                .isNotNull()
+                .isEqualTo(160);
+        assertThat(labelReady)
+                .withFailMessage("expected label sequences per compartment but found %s", labelReady)
+                .isNotNull()
+                .isEqualTo(16);
 
         mockMvc.perform(post("/admin/seed/fridge-demo")
                         .header("Authorization", "Bearer " + adminToken))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.message").value("FRIDGE_DEMO_DATA_REFRESHED"));
 
-        Integer itemCountAfterSecondCall = jdbcTemplate.queryForObject(
-                "SELECT COUNT(*) FROM fridge_item WHERE item_name LIKE '전시 데모:%'",
+        Integer bundleCountAfterSecondCall = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM fridge_bundle",
                 Integer.class
         );
-        assertThat(itemCountAfterSecondCall)
-                .withFailMessage("expected 7 demo items after second call but found %s", itemCountAfterSecondCall)
+        Integer itemCountAfterSecondCall = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM fridge_item",
+                Integer.class
+        );
+        assertThat(bundleCountAfterSecondCall)
+                .withFailMessage("expected bundle count to remain 160 but found %s", bundleCountAfterSecondCall)
                 .isNotNull()
-                .isEqualTo(7);
+                .isEqualTo(160);
+        assertThat(itemCountAfterSecondCall)
+                .withFailMessage("expected item count to remain 160 but found %s", itemCountAfterSecondCall)
+                .isNotNull()
+                .isEqualTo(160);
     }
 
     @Test
     void nonAdminCannotTriggerDemoSeed() throws Exception {
-        String residentToken = loginAndGetAccessToken("alice", "alice123!");
+        String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
 
         mockMvc.perform(post("/admin/seed/fridge-demo")
                         .header("Authorization", "Bearer " + residentToken))

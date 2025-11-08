@@ -6,10 +6,11 @@
 ## 주요 문서
 - `docs/feature-inventory.md`: DormMate 기능·정책 카탈로그(무엇/왜)
 - `docs/mvp-scenario.md`: MVP 범위와 시연 흐름(어떻게)
-- `docs/mvp-implementation-plan.md`: 역할별 구현 단계와 체크리스트
+- `docs/mvp-plan.md`: 역할별 구현 단계와 체크리스트
 - `docs/data-model.md`: 데이터 모델 및 엔터티 관계 정리
 - `docs/ops/security-checklist.md`: 보안 음성 흐름 API 호출 순서 및 로그 검증 가이드
-- `docs/ai-impl/README.md`: 프론트엔드·백엔드·Playground AI 협업 지침 인덱스
+- `docs/ops/batch-notifications.md`: 임박/만료 알림 배치 운영 지침
+- `docs/ai-impl/README.md`: 프런트엔드·백엔드·Playground AI 협업 지침 인덱스
 
 ## 사용 지침
 1. 새로운 세션을 시작할 때는 위 핵심 문서(MVP 시나리오·구현 계획·기능 정의)를 먼저 검토하고, 역할별 세부 지침은 `docs/ai-impl/README.md`에서 확인합니다.
@@ -42,12 +43,15 @@
 | 실행 절차 | 1. 관리자 계정으로 API 인증 토큰 발급<br>2. `POST /admin/seed/fridge-demo` 호출<br>3. 백엔드 로그에서 \"FRIDGE_DEMO_DATA_REFRESHED\" 응답과 함께 `inserted_count`가 7로 기록됐는지 확인 |
 | 실행 후 점검 | ① `/fridge/bundles` 또는 프런트 목록에서 `전시 데모:`로 시작하는 물품이 추가됐는지 확인 ② 필요한 경우 동일 API를 다시 호출해도 총 7건으로 유지되는지 검증 ③ 데모 시나리오에 맞는 임박/만료 일정(11/11~11/20)이 노출되는지 확인 |
 
+> **주의**: API 대신 수동 SQL로 초기화해야 한다면 FK 참조를 거꾸로 타지 않도록 `inspection_action_item → inspection_action → penalty_history` 순으로 먼저 삭제한 뒤 `fridge_item`, `fridge_bundle`, `bundle_label_sequence`를 정리한다. 이 순서는 `AdminSeedIntegrationTest`에서도 검증되므로, 동일하게 따르면 `/admin/seed/fridge-demo` 실행 전 FK 오류를 예방할 수 있다.
+
 ### 비상/경고 문구 표기 위치
 - 본 섹션 외에도 `docs/mvp-scenario.md §2 사전 준비` 및 `docs/ops/status-board.md`에 동일 경고를 반복 노출한다.
 - 운영 절차 문서, 배포 체크리스트, 페이지 데크 등에 “/admin/seed/fridge-demo는 데모 전용”이라는 문구를 추가하고, 자동화나 예약 작업에 포함시키지 않는다.
 
 ## 운영 점검 루틴
 - **검사 → 알림 연동**: `inspection_action`에서 `correlation_id`가 채워진 알림을 `notification`에서 확인하고, 거주자 알림을 통해 조치 상세로 이동하는 흐름을 주기적으로 리허설한다.
+- **검사 정정 감사**: ADMIN 정정(PATCH `/fridge/inspections/{id}`) 실행 후 `penalty_history`와 `audit_log (INSPECTION_ADJUST)`가 기대대로 갱신됐는지 확인한다.
 - **알림 설정 이력**: `notification_preference`의 `updated_at`을 기준으로 ON/OFF 변경 이력을 살펴보고, 동일 계정이 여러 기기에서 설정을 변경했을 때 즉시 일관되게 반영되는지 확인한다.
 - **발송 실패 로그**: `notification_dispatch_log`에서 최근 알림 실패 건을 조회하고, `error_code`·`error_message`를 기반으로 재시도 또는 장애 전파가 가능한지 점검한다.
 - **검사 조치 감사**: `inspection_action_item`의 스냅샷 데이터를 점검해 폐기·경고 근거가 남아 있는지 확인하고, `unregistered_item_event`가 누락되지 않았는지 주기적으로 모니터링한다.

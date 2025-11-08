@@ -1,31 +1,39 @@
 package com.dormmate.backend.modules.inspection.application;
 
+import static com.dormmate.backend.modules.auth.application.RoomAssignmentSupport.isFloorManagerOnFloor;
+import static com.dormmate.backend.modules.auth.application.RoomAssignmentSupport.requireRoom;
+import static com.dormmate.backend.modules.auth.application.RoomAssignmentSupport.requireRoomId;
+
 import java.time.Clock;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import java.util.Objects;
 
+import com.dormmate.backend.modules.audit.application.AuditLogService;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeBundleResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeDtoMapper;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionDetailResponse;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionEntryRequest;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionItemResponse;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionRequest;
+import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionMutationRequest;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionActionSummaryResponse;
 import com.dormmate.backend.modules.inspection.presentation.dto.InspectionSessionResponse;
 import com.dormmate.backend.modules.inspection.presentation.dto.StartInspectionRequest;
 import com.dormmate.backend.modules.inspection.presentation.dto.SubmitInspectionRequest;
+import com.dormmate.backend.modules.inspection.presentation.dto.UpdateInspectionSessionRequest;
 import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.auth.domain.RoomAssignment;
-import com.dormmate.backend.modules.fridge.domain.CompartmentRoomAccess;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundle;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundleStatus;
 import com.dormmate.backend.modules.fridge.domain.FridgeCompartment;
@@ -58,6 +66,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.util.CollectionUtils;
+import org.springframework.util.StringUtils;
 
 @Service
 @Transactional
@@ -75,6 +85,7 @@ public class InspectionService {
     private final CompartmentRoomAccessRepository compartmentRoomAccessRepository;
     private final InspectionScheduleRepository inspectionScheduleRepository;
     private final NotificationService notificationService;
+    private final AuditLogService auditLogService;
     private final Clock clock;
 
     public InspectionService(
@@ -87,6 +98,7 @@ public class InspectionService {
             CompartmentRoomAccessRepository compartmentRoomAccessRepository,
             InspectionScheduleRepository inspectionScheduleRepository,
             NotificationService notificationService,
+            AuditLogService auditLogService,
             Clock clock
     ) {
         this.inspectionSessionRepository = inspectionSessionRepository;
@@ -98,6 +110,7 @@ public class InspectionService {
         this.compartmentRoomAccessRepository = compartmentRoomAccessRepository;
         this.inspectionScheduleRepository = inspectionScheduleRepository;
         this.notificationService = notificationService;
+        this.auditLogService = auditLogService;
         this.clock = clock;
     }
 
@@ -253,6 +266,7 @@ public class InspectionService {
         if (session.getStatus() != InspectionStatus.IN_PROGRESS) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "SESSION_NOT_ACTIVE");
         }
+        DormUser actor = loadCurrentUser();
         OffsetDateTime now = OffsetDateTime.now(clock);
         session.setStatus(InspectionStatus.CANCELLED);
         session.setEndedAt(now);
@@ -266,6 +280,19 @@ public class InspectionService {
             schedule.setCompletedAt(null);
             inspectionScheduleRepository.save(schedule);
         });
+
+        auditLogService.record(new AuditLogService.AuditLogCommand(
+                "INSPECTION_CANCEL",
+                "INSPECTION_SESSION",
+                session.getId().toString(),
+                actor.getId(),
+                null,
+                Map.of(
+                        "floor", session.getFridgeCompartment().getFridgeUnit().getFloorNo(),
+                        "slotIndex", session.getFridgeCompartment().getSlotIndex(),
+                        "reason", "MANUAL_CANCEL"
+                )
+        ));
     }
 
     public InspectionSessionResponse recordActions(UUID sessionId, InspectionActionRequest request) {
@@ -289,14 +316,22 @@ public class InspectionService {
                 ensureBundleBelongsToSession(session, bundle);
             }
 
-            FridgeItem item = null;
-            if (entry.itemId() != null) {
-                item = fridgeItemRepository.findById(entry.itemId())
-                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "ITEM_NOT_FOUND"));
-                if (bundle != null && !item.getBundle().getId().equals(bundle.getId())) {
-                    throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "ITEM_NOT_IN_BUNDLE");
-                }
+        FridgeItem item = null;
+        if (entry.itemId() != null) {
+            item = fridgeItemRepository.findById(entry.itemId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "ITEM_NOT_FOUND"));
+            FridgeBundle itemBundle = item.getBundle();
+            if (itemBundle == null) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "ITEM_NOT_IN_BUNDLE");
             }
+            ensureBundleBelongsToSession(session, itemBundle);
+            if (bundle != null && !itemBundle.getId().equals(bundle.getId())) {
+                throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, "ITEM_NOT_IN_BUNDLE");
+            }
+            if (bundle == null) {
+                bundle = itemBundle;
+            }
+        }
 
             InspectionAction action = new InspectionAction();
             action.setInspectionSession(session);
@@ -378,6 +413,146 @@ public class InspectionService {
             }
         });
         notificationService.sendInspectionResultNotifications(saved);
+
+        auditLogService.record(new AuditLogService.AuditLogCommand(
+                "INSPECTION_SUBMIT",
+                "INSPECTION_SESSION",
+                saved.getId().toString(),
+                currentUser.getId(),
+                null,
+                Map.of(
+                        "floor", saved.getFridgeCompartment().getFridgeUnit().getFloorNo(),
+                        "slotIndex", saved.getFridgeCompartment().getSlotIndex(),
+                        "status", saved.getStatus().name(),
+                        "totalBundles", saved.getTotalBundleCount()
+                )
+        ));
+
+        return mapSession(saved, currentUser);
+    }
+
+    public InspectionSessionResponse updateSession(UUID sessionId, UpdateInspectionSessionRequest request) {
+        ensureAdminRole();
+        if (request == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "NO_CHANGES");
+        }
+
+        InspectionSession session = inspectionSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND"));
+
+        if (session.getStatus() != InspectionStatus.SUBMITTED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "INSPECTION_NOT_SUBMITTED");
+        }
+
+        DormUser currentUser = loadCurrentUser();
+        OffsetDateTime now = OffsetDateTime.now(clock);
+        boolean changed = false;
+        boolean noteChanged = false;
+
+        if (request.notes() != null) {
+            String normalized = normalizeNote(request.notes());
+            if (!Objects.equals(normalized, session.getNotes())) {
+                session.setNotes(normalized);
+                noteChanged = true;
+                changed = true;
+            }
+        }
+
+        Map<Long, InspectionAction> actionsById = session.getActions().stream()
+                .filter(action -> action.getId() != null)
+                .collect(Collectors.toMap(InspectionAction::getId, action -> action));
+
+        Set<Long> deleteIds = request.deleteActionIds() == null
+                ? Set.of()
+                : request.deleteActionIds().stream()
+                .filter(Objects::nonNull)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+
+        for (Long actionId : deleteIds) {
+            InspectionAction action = actionsById.get(actionId);
+            if (action == null) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "ACTION_NOT_FOUND");
+            }
+            session.getActions().remove(action);
+            changed = true;
+        }
+
+        List<InspectionActionMutationRequest> mutations = request.mutations();
+        if (!CollectionUtils.isEmpty(mutations)) {
+            for (InspectionActionMutationRequest mutation : mutations) {
+                if (mutation.actionId() != null && deleteIds.contains(mutation.actionId())) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ACTION_MUTATION_CONFLICT");
+                }
+                if (mutation.itemId() != null) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ITEM_MUTATION_UNSUPPORTED");
+                }
+
+                InspectionActionType actionType = parseAction(mutation.action());
+                FridgeBundle bundle = null;
+                if (mutation.bundleId() != null) {
+                    bundle = fridgeBundleRepository.findById(mutation.bundleId())
+                            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "BUNDLE_NOT_FOUND"));
+                    ensureBundleBelongsToSession(session, bundle);
+                }
+
+                String note = normalizeNote(mutation.note());
+
+                if (mutation.actionId() == null) {
+                    InspectionAction action = new InspectionAction();
+                    action.setInspectionSession(session);
+                    action.setFridgeBundle(bundle);
+                    action.setTargetUser(bundle != null ? bundle.getOwner() : null);
+                    action.setActionType(actionType);
+                    action.setReasonCode(actionType.name());
+                    action.setFreeNote(note);
+                    action.setRecordedAt(now);
+                    action.setRecordedBy(currentUser);
+                    action.setCorrelationId(UUID.randomUUID());
+                    maybeAttachPenalty(action, actionType, currentUser, now);
+                    session.getActions().add(action);
+                } else {
+                    InspectionAction action = actionsById.get(mutation.actionId());
+                    if (action == null) {
+                        throw new ResponseStatusException(HttpStatus.NOT_FOUND, "ACTION_NOT_FOUND");
+                    }
+                    action.setActionType(actionType);
+                    action.setReasonCode(actionType.name());
+                    action.setFreeNote(note);
+                    if (mutation.bundleId() != null) {
+                        action.setFridgeBundle(bundle);
+                        action.setTargetUser(bundle != null ? bundle.getOwner() : null);
+                    }
+                    action.getPenalties().clear();
+                    DormUser issuer = action.getRecordedBy() != null ? action.getRecordedBy() : currentUser;
+                    OffsetDateTime issuedAt = action.getRecordedAt() != null ? action.getRecordedAt() : now;
+                    maybeAttachPenalty(action, actionType, issuer, issuedAt);
+                }
+            }
+            changed = true;
+        }
+
+        if (!changed) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "NO_CHANGES");
+        }
+
+        InspectionSession saved = inspectionSessionRepository.save(session);
+
+        FridgeCompartment compartment = saved.getFridgeCompartment();
+        auditLogService.record(new AuditLogService.AuditLogCommand(
+                "INSPECTION_ADJUST",
+                "INSPECTION_SESSION",
+                saved.getId().toString(),
+                currentUser.getId(),
+                null,
+                Map.of(
+                        "floor", compartment.getFridgeUnit().getFloorNo(),
+                        "slotIndex", compartment.getSlotIndex(),
+                        "notesChanged", noteChanged,
+                        "mutations", CollectionUtils.isEmpty(mutations) ? 0 : mutations.size(),
+                        "deletedActions", deleteIds.size()
+                )
+        ));
+
         return mapSession(saved, currentUser);
     }
 
@@ -423,6 +598,13 @@ public class InspectionService {
         throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_MANAGER_OR_ADMIN_ONLY");
     }
 
+    private void ensureAdminRole() {
+        if (SecurityUtils.hasRole("ADMIN")) {
+            return;
+        }
+        throw new ResponseStatusException(HttpStatus.FORBIDDEN, "ADMIN_ONLY");
+    }
+
     private DormUser loadCurrentUser() {
         UUID userId = SecurityUtils.getCurrentUserId();
         return dormUserRepository.findById(userId)
@@ -442,6 +624,10 @@ public class InspectionService {
         } catch (IllegalArgumentException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "INVALID_ACTION");
         }
+    }
+
+    private String normalizeNote(String value) {
+        return StringUtils.hasText(value) ? value.trim() : null;
     }
 
     private InspectionSessionResponse mapSession(InspectionSession session, DormUser viewer) {
@@ -569,14 +755,14 @@ public class InspectionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.FORBIDDEN, "ROOM_ASSIGNMENT_REQUIRED"));
 
         short sessionFloor = session.getFridgeCompartment().getFridgeUnit().getFloorNo();
-        if (SecurityUtils.hasRole("FLOOR_MANAGER")) {
-            if (assignment.getRoom().getFloor() != sessionFloor) {
-                throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_SCOPE_VIOLATION");
-            }
+        if (isFloorManagerOnFloor(assignment, sessionFloor)) {
             return;
         }
+        if (SecurityUtils.hasRole("FLOOR_MANAGER")) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "FLOOR_SCOPE_VIOLATION");
+        }
 
-        UUID viewerRoomId = assignment.getRoom().getId();
+        UUID viewerRoomId = requireRoomId(assignment);
         boolean accessible = compartmentRoomAccessRepository
                 .findByFridgeCompartmentIdAndReleasedAtIsNullOrderByAssignedAtAsc(session.getFridgeCompartment().getId())
                 .stream()
@@ -597,4 +783,5 @@ public class InspectionService {
         }
         return result;
     }
+
 }

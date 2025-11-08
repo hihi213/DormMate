@@ -1,0 +1,2 @@
+ALTER TABLE notification
+    ADD COLUMN IF NOT EXISTS allow_background BOOLEAN NOT NULL DEFAULT TRUE;

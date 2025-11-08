@@ -6,6 +6,8 @@ type FridgeSlotDto = components["schemas"]["FridgeSlot"]
 type BundleSummaryDto = components["schemas"]["FridgeBundleSummary"]
 type BundleListResponseDto = components["schemas"]["BundleListResponse"]
 type InspectionSessionDto = components["schemas"]["InspectionSession"]
+type UpdateInspectionSessionRequestDto = components["schemas"]["UpdateInspectionSessionRequest"]
+type InspectionScheduleDto = components["schemas"]["InspectionSchedule"]
 type ReallocationPreviewResponseDto = components["schemas"]["ReallocationPreviewResponse"]
 type ReallocationApplyRequestDto = components["schemas"]["ReallocationApplyRequest"]
 type ReallocationApplyResponseDto = components["schemas"]["ReallocationApplyResponse"]
@@ -53,6 +55,7 @@ export async function fetchAdminCompartments(
 export type BundleSearchParams = {
   slotId?: string
   owner?: "me" | "all"
+  ownerUserId?: string
   status?: "active" | "deleted"
   search?: string
   page?: number
@@ -66,6 +69,9 @@ export async function fetchAdminBundleList(
 
   if (params.slotId) {
     search.set("slotId", params.slotId)
+  }
+  if (params.ownerUserId) {
+    search.set("ownerUserId", params.ownerUserId)
   }
   search.set("owner", params.owner ?? "all")
   search.set("status", params.status ?? "active")
@@ -98,12 +104,18 @@ export type FetchDeletedBundlesParams = {
   since?: string
   page?: number
   size?: number
+  search?: string
 }
 
 export async function fetchAdminDeletedBundles(
   params: FetchDeletedBundlesParams = {},
 ): Promise<BundleListResponseDto> {
   const search = new URLSearchParams()
+
+  const trimmedSearch = params.search?.trim()
+  if (trimmedSearch) {
+    search.set("search", trimmedSearch)
+  }
 
   const trimmedSince = params.since?.trim()
   if (trimmedSince) {
@@ -169,6 +181,39 @@ export async function fetchAdminInspectionSessions(
   return data
 }
 
+export async function updateAdminInspectionSession(
+  sessionId: string,
+  payload: UpdateInspectionSessionRequestDto,
+): Promise<InspectionSessionDto> {
+  const { data, error } = await safeApiCall<InspectionSessionDto>(`/fridge/inspections/${sessionId}`, {
+    method: "PATCH",
+    body: payload,
+  })
+
+  if (error || !data) {
+    raiseAdminFridgeError(error, "검사 정정에 실패했습니다.")
+  }
+
+  return data
+}
+
+export async function resendInspectionNotification(
+  sessionId: string,
+): Promise<InspectionSessionDto> {
+  const { data, error } = await safeApiCall<InspectionSessionDto>(
+    `/fridge/inspections/${sessionId}/notifications/resend`,
+    {
+      method: "POST",
+    },
+  )
+
+  if (error || !data) {
+    raiseAdminFridgeError(error, "검사 결과 알림을 재발송하지 못했습니다.")
+  }
+
+  return data
+}
+
 export async function previewReallocation(
   floor: number,
 ): Promise<ReallocationPreviewResponseDto> {
@@ -210,6 +255,8 @@ export type {
   BundleListResponseDto as AdminBundleListResponseDto,
   FridgeSlotDto as AdminFridgeSlotDto,
   InspectionSessionDto as AdminInspectionSessionDto,
+  UpdateInspectionSessionRequestDto as AdminUpdateInspectionSessionRequestDto,
+  InspectionScheduleDto as AdminInspectionScheduleDto,
   ReallocationPreviewResponseDto as AdminReallocationPreviewDto,
   ReallocationApplyRequestDto as AdminReallocationApplyRequestDto,
   ReallocationApplyResponseDto as AdminReallocationApplyResponseDto,

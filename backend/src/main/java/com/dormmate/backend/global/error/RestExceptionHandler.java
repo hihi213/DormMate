@@ -1,8 +1,5 @@
 package com.dormmate.backend.global.error;
 
-import com.dormmate.backend.global.error.ProblemException;
-import com.dormmate.backend.global.error.ProblemResponse;
-
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
