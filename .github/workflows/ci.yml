@@ -165,8 +165,8 @@ jobs:
             echo "Spec file not found: $SPEC_PATH" >&2
             exit 1
           fi
-          npx --yes @redocly/openapi-cli@latest bundle "$SPEC_PATH" --output spec-openapi.json --ext json
-          npx --yes @redocly/openapi-cli@latest diff spec-openapi.json runtime-openapi.json
+          npx --yes @redocly/cli@latest bundle "$SPEC_PATH" --output spec-openapi.json --ext json
+          npx --yes openapi-diff@latest spec-openapi.json runtime-openapi.json
 
       - name: Stop backend after OpenAPI check
         if: always()
