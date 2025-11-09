@@ -21,7 +21,18 @@ public final class FridgeDtoMapper {
     private FridgeDtoMapper() {
     }
 
-    public static FridgeSlotResponse toSlotResponse(FridgeCompartment compartment, boolean includeCapacity) {
+    public static FridgeSlotResponse toSlotResponse(
+            FridgeCompartment compartment,
+            boolean includeCapacity
+    ) {
+        return toSlotResponse(compartment, includeCapacity, null);
+    }
+
+    public static FridgeSlotResponse toSlotResponse(
+            FridgeCompartment compartment,
+            boolean includeCapacity,
+            FridgeSlotStatus slotStatus
+    ) {
         int slotIndex = compartment.getSlotIndex();
         String slotLetter = LabelFormatter.toSlotLetter(slotIndex);
         int floorNo = compartment.getFridgeUnit().getFloorNo();
@@ -44,6 +55,7 @@ public final class FridgeDtoMapper {
                 floorCode,
                 compartment.getCompartmentType().name(),
                 compartment.getStatus().name(),
+                slotStatus,
                 compartment.isLocked(),
                 compartment.getLockedUntil(),
                 capacity,

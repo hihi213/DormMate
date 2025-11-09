@@ -7,10 +7,11 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { DangerZoneModal } from "@/components/admin"
 
 export default function AdminToolsPage() {
   const [seedRange, setSeedRange] = useState("2024-11-20")
+  const demoResetGuide =
+    "관리자 헤더 우측 프로필 드롭다운의 “데모 데이터 초기화” 메뉴에서 실행하세요. Danger Zone UI는 프로필 메뉴로 통합되었습니다."
 
   return (
     <section className="space-y-6">
@@ -42,15 +43,7 @@ export default function AdminToolsPage() {
               onChange={(event) => setSeedRange(event.target.value)}
             />
           </div>
-          <DangerZoneModal
-            title="데모 데이터를 초기화하시겠습니까?"
-            description="현재 저장된 포장·물품 데이터가 모두 삭제되고 전시용 예시 데이터로 덮어씌워집니다. 이 작업은 되돌릴 수 없습니다."
-            confirmLabel="데모 데이터 초기화"
-            cancelLabel="취소"
-            triggerLabel="데모 데이터 초기화"
-            onConfirm={async () => undefined}
-            destructive
-          />
+          <p className="text-xs text-muted-foreground leading-relaxed">{demoResetGuide}</p>
         </CardContent>
       </Card>
 

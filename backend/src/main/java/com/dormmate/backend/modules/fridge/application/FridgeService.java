@@ -25,6 +25,7 @@ import com.dormmate.backend.modules.fridge.presentation.dto.FridgeDtoMapper;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeItemResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeSlotListResponse;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeSlotResponse;
+import com.dormmate.backend.modules.fridge.presentation.dto.FridgeSlotStatus;
 import com.dormmate.backend.modules.fridge.presentation.dto.UpdateBundleRequest;
 import com.dormmate.backend.modules.fridge.presentation.dto.AddItemRequest;
 import com.dormmate.backend.modules.fridge.presentation.dto.UpdateItemRequest;
@@ -77,6 +78,7 @@ public class FridgeService {
     private final RoomAssignmentRepository roomAssignmentRepository;
     private final DormUserRepository dormUserRepository;
     private final InspectionSessionRepository inspectionSessionRepository;
+    private final FridgeSlotStatusResolver fridgeSlotStatusResolver;
     private final Clock clock;
 
     public FridgeService(
@@ -89,6 +91,7 @@ public class FridgeService {
             RoomAssignmentRepository roomAssignmentRepository,
             DormUserRepository dormUserRepository,
             InspectionSessionRepository inspectionSessionRepository,
+            FridgeSlotStatusResolver fridgeSlotStatusResolver,
             Clock clock
     ) {
         this.fridgeUnitRepository = fridgeUnitRepository;
@@ -100,6 +103,7 @@ public class FridgeService {
         this.roomAssignmentRepository = roomAssignmentRepository;
         this.dormUserRepository = dormUserRepository;
         this.inspectionSessionRepository = inspectionSessionRepository;
+        this.fridgeSlotStatusResolver = fridgeSlotStatusResolver;
         this.clock = clock;
     }
 
@@ -139,7 +143,7 @@ public class FridgeService {
                 ? fridgeUnitRepository.findByFloorNo(floorFilter)
                 : fridgeUnitRepository.findAll();
 
-        List<FridgeSlotResponse> results = new ArrayList<>();
+        List<FridgeCompartment> visibleCompartments = new ArrayList<>();
         for (FridgeUnit unit : units) {
             List<FridgeCompartment> compartments = fridgeCompartmentRepository
                     .findByFridgeUnitOrderBySlotIndexAsc(unit);
@@ -147,9 +151,18 @@ public class FridgeService {
                 if (accessibleCompartmentIds != null && !accessibleCompartmentIds.contains(compartment.getId())) {
                     continue;
                 }
-                results.add(FridgeDtoMapper.toSlotResponse(compartment, fullView));
+                visibleCompartments.add(compartment);
             }
         }
+
+        Map<UUID, FridgeSlotStatus> slotStatuses = fridgeSlotStatusResolver.resolve(visibleCompartments);
+
+        List<FridgeSlotResponse> results = visibleCompartments.stream()
+                .map(compartment -> FridgeDtoMapper.toSlotResponse(
+                        compartment,
+                        fullView,
+                        slotStatuses.getOrDefault(compartment.getId(), FridgeSlotStatus.ACTIVE)))
+                .collect(Collectors.toList());
 
         results.sort(Comparator
                 .comparingInt(FridgeSlotResponse::floorNo)

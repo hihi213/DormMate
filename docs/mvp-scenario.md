@@ -8,93 +8,152 @@
 
 ## 2. 사전 준비
 
-### 2.1 환경
-- 발표용 서버에 최신 이미지를 배포하고 `docker-compose.prod.yml`(app + PostgreSQL + Redis)로 기동한다.
-- `deploy/.env.prod`를 최신 비밀 값으로 채워 두고, 로컬 백업본은 즉시 폐기한다.
+### 2.1 환경 체크리스트
+- [ ] 발표 서버에서 `./auto deploy up --build` 실행 (문제 시 `./auto deploy reset --build`로 한 번에 초기화)
+- [ ] `deploy/.env.prod` 최신 비밀 값 적용, 필요 시 `ENABLE_TLS=true`+도메인 설정 후 certbot 발급
+- [ ] 로컬 환경에서 직접 백엔드를 띄울 경우 `set -a && source deploy/.env.prod && set +a` 후 `./gradlew bootRun` 실행(CORS 등 env 동기화)
+- [ ] `./auto deploy status`, `curl /healthz`, `curl /frontend-healthz`로 백엔드/프런트 헬스 확인
 
-### 2.2 계정·데이터
-- **계정**: 거주자 `313-1`, 보조 거주자 `313-2`, 층별장 `floor_mgr_3f`, 관리자 `admin`.
-- **칸 배정표**: 냉장 1~3번(01~08/09~16/17~24호), 냉동 1칸(전체 공용) 자료를 인쇄물/슬라이드로 준비한다.
-- **데모 초기화**  
-  1. 관리자 화면에서 `데모 데이터 초기화` 버튼을 눌러 `/admin/seed/fridge-demo`를 실행한다. `전시 데모:` 접두사가 붙은 포장 7건과 기본 층별장 계정이 재주입된다. (운영 DB에서는 절대 실행 금지)  
-     > 수동 SQL로 데이터를 지울 경우 `inspection_action_item → inspection_action → penalty_history` 순으로 FK 참조를 먼저 삭제한 뒤 `fridge_item`/`fridge_bundle`/`bundle_label_sequence`를 정리한다. `AdminSeedIntegrationTest`도 동일 흐름을 사용하므로, 같은 순서를 따르면 데모 API 실행 전에 FK 오류를 피할 수 있다.
-  2. 층별장 계정으로 샘플 검사를 한 번 실행해 **폐기 1건+경고 1건**이 포함된 검사 기록을 만든다. 이 데이터가 이후 정정·알림 재조회 시 사용된다.  
-  3. 필요 시 `POST /fridge/inspections/{id}/actions`를 API 클라이언트로 호출해 폐기/벌점 데이터를 미리 채워 둘 수 있다.
+### 2.2 계정·데이터 체크리스트
+- [ ] 계정 준비: 거주자 `313-1`, 보조 `313-2`, 층별장 `floor_mgr_3f`, 관리자 `admin`
+- [ ] 칸 배정표 인쇄 혹은 슬라이드 준비 (냉장 1~3번 / 냉동 1칸)
+- [ ] `/admin/seed/fridge-demo` 실행 후 `전시 데모:` 데이터 재주입 (운영 DB 금지)
+- [ ] 샘플 검사 1건 실행(폐기 1 + 경고 1) → 알림/정정 테스트용 데이터 확보
+- [ ] 필요 시 `POST /fridge/inspections/{id}/actions`로 벌점/폐기 데이터를 미리 추가
 
-### 2.3 장비·네트워크
-- 노트북 1대(HDMI 출력), 브라우저 3개 창(거주자/층별장/관리자) 준비. 층별장은 시크릿 창으로 실행한다.
-- 관리자 계정 로그인 → 세션 만료 안내, 다중 로그인 차단 메시지가 정상 동작하는지 사전 점검.
+### 2.3 장비·네트워크 체크리스트
+- [ ] 노트북 1대 + HDMI, 듀얼 모니터(선택) 준비
+- [ ] 관리자/층별장/거주자 3개 브라우저 창(층별장은 시크릿 모드) 로그인 상태 유지
+- [ ] 멀티 로그인/세션 만료 안내 메시지 사전 점검
+- [ ] 네트워크 Failover 대비 로컬 Docker Compose Up 여부 확인
 
-### 2.4 비상 플랜
-- 네트워크 장애 시 로컬 Docker Compose 환경으로 전환할 수 있도록 동일 이미지를 사전 빌드.
-- DB 스냅샷을 백업해 두고, 문제가 생기면 `psql < backup.sql`로 복구한다.
+### 2.4 자동화 명령 요약
+- `./auto db migrate` : Flyway 마이그레이션 적용 (필요 시 `--repair`)
+- `./auto deploy up --build` : 최신 컨테이너 빌드·기동
+- `./auto deploy reset --build` : down --volumes → db/redis → migrate → up 순으로 초기화
+- `./auto deploy tls issue|renew` : HTTPS 인증서 발급/갱신 (도메인 사용 시)
 
 ## 3. 시연 흐름
 
-### 3.1 거주자 포장 등록·관리
-1. 거주자 `313-1` 로그인 → `내 냉장고`. 다른 브라우저에서 동시에 로그인하면 `deviceId` 불일치로 기존 세션이 해제되는지 보여 준다.
-2. `view=full` 토글로 층별 슬롯을 펼쳐 `occupiedCount`와 잔여 용량을 확인한다.
-3. 배정된 칸 선택 → 포장 이름/수량/유통기한 입력 → `등록`. 자동 발급 라벨(`A123`)과 완료 토스트를 보여 준다.
-4. 검색창에 포장명을 입력해 즉시 필터링한 뒤, 페이지네이션(`page`,`size`)이 정상 동작하는지 확인한다.
-5. 임박/만료 배지 색상(노랑/빨강)을 예시 포장으로 강조하고, 물품 수정으로 배지 상태가 즉시 바뀌는 모습을 시연한다.
-6. 메모 필드는 작성자만 확인 가능함을 보여 주고, 물품 하나를 삭제해 **라벨 재사용** 배지(관리자 화면)와 연결될 데이터를 마련한다.
-7. 보조 거주자 `313-2`가 동일 칸에 포장을 추가 → 최초 계정 화면으로 돌아가 `occupiedCount`가 증가한 것을 확인한다.
-8. 검사 이후 수정된 포장에는 `updatedAfterInspection` 배지가 붙는다는 점을 언급하고, 나중에 관리자 뷰에서 다시 확인할 것임을 예고한다.
+### 🚀 Dormmate: 최종 시연 시나리오 (A+B)
 
-### 3.2 층별장 검사 세션
-1. 층별장 계정 로그인 → `검사 관리`. 대상 칸 선택 후 `검사 시작` → 칸이 `검사 중`으로 잠기고 거주자 수정 버튼이 비활성화된 것을 확인한다.
-2. 조치 입력: 정상 포장은 `통과`, 임박 포장은 `경고`, 만료 포장은 `폐기`, 미등록 발견 시 `간편 등록 → 즉시 폐기`. Draft 자동 저장을 확인하고, 새로고침 후 동일 상태가 복원되는지 보여 준다.
-3. 활동이 있을 때마다 잠금이 30분씩 연장되고, 무활동 시 자동 해제된다는 정책을 소개한다. 관리자만 강제 종료 가능함을 짚는다.
-4. `검사 제출` → 요약 카드(경고/폐기 수) 확인, 칸 잠금 해제, Draft 삭제.
-5. 제출 직후 `조치 내역` 패널에서 폐기 사유, 경고 메모, 미등록 폐기 기록을 확인하고 `inspection_action_item` 스냅샷이 벌점/알림과 연결된다는 점을 설명한다.
+#### 1단계: 멀티 로그인 (편의성 + 보안)
+> 목표: 사용자 편의성 유지 + `deviceId` 기반 세션 보안.  
+> 핵심 API/검증: `POST /auth/login`, `POST /auth/refresh` → `DEVICE_MISMATCH`.
 
-### 3.3 검사 정정 & 벌점/알림 검증
-1. 관리자 `/admin/fridge` → 하단 `최근 검사`에서 방금 세션 선택.
-2. `정정` 버튼으로 조치 하나를 수정(폐기→경고)하고 메모를 갱신한다. 저장 시 토스트(`INSPECTION_ADJUST`)와 감사 로그 기록 문구가 뜨는지 확인.
-3. 정정 결과가 관리자 `삭제 이력`/거주자 포장 상세에 반영되는지 확인한다.
-4. 알림 탭에서 `[냉장고] 점검 결과` 알림을 열어 `sessionId/actionIds/penaltyHistoryIds` 메타데이터가 그대로 전달됐는지 확인한다. (UI는 요약 메시지를 사용하지만, 디버그 모달에서 메타데이터를 확인)  
-5. 벌점 모달을 열어 `PenaltyHistory` 1점이 누적됐는지, 정정 시 벌점이 재계산되는지 보여 준다.
+* [페르소나] 거주자 (A), 층별장 (B)
+* (시연 멘트)
+    "두 사용자가 있습니다. B는 원칙을 중시하는 FM 층별장, A는 규칙을 잘 잊는 거주자입니다. 두 사용자 모두 PC와 모바일에서 로그인합니다."
 
-### 3.4 알림 · 일정 · 배치
-1. 거주자 알림 목록에서 방금 검사 알림을 읽고, `알림 설정` 화면에서 냉장고 알림 ON/OFF·백그라운드 허용을 토글한다.
-2. 관리자 화면에서 `notification_dispatch_log`에 발송/실패 로그가 남았는지 확인한다.
-3. 배치 알림: 오전 09:00 스케줄로 생성된 임박/만료 알림(샘플 데이터)을 소개하고, Redis dedupe 키 + 7일 TTL 정책을 설명한다.
-4. 층별장 `검사 일정` 시트에서 일정 생성 → 저장 → 연결된 검사 제출 시 일정이 자동 `COMPLETED`로 바뀌는 모습을 확인한다.
+    *(PC와 모바일(다른 브라우저)로 각각 로그인하는 모습을 보여줌)*
 
-### 3.5 관리자 운영 통제 & 데모 초기화
-1. `/admin/fridge` 상단 도구 모음 소개: 층 필터, 슬롯 검색, `재배분`, `검사 일정`, `데모 데이터 초기화`.
-2. 특정 칸 우측 패널 → `칸 설정`으로 `max_bundle_count` 값을 바꾸고, 거주자 화면에서 잔여 용량이 늘어난 것을 보여 준다.
-3. `재배분` 시트를 열어 권장 배정/현재 배정을 비교하고, 잠금·검사 중 칸에 경고 뱃지가 표시되는지 확인한다.
-4. `삭제 이력` 탭에서 라벨 재사용 배지, 검색·페이지네이션 동작을 시연한다.
-5. Danger Zone에서 `데모 데이터 초기화`를 다시 실행하면 전시용 포장이 즉시 갱신되고 감사 로그가 남는다는 점을 보여 준다. (이때는 mock API 사용 권장)
+    "보시다시피 PC로 로그인해도 모바일 세션이 끊기지 않습니다. 멀티 로그인을 허용해 사용자 편의성을 높였습니다. 하지만 만약 리프레시 토큰이 탈취되어 다른 기기에서 사용되면, 서버가 `deviceId` 불일치를 감지(DEVICE_MISMATCH)하고 즉시 세션을 폐기합니다. 이것이 저희의 '편의와 보안'을 모두 잡은 첫 번째 포인트입니다."
 
-## 4. 마무리 & 안정성 강조
-- 배포 로그: Day6 스테이징 → Smoke 테스트 → Day7 프로덕션 순으로 마쳤음을 스크린샷 또는 CLI 로그로 공유.
-- 운영 지표: `/actuator/health`, API 응답 시간, 오류 로그 0건을 캡처해 신뢰성을 강조.
-- 롤백 플랜: 이전 이미지 재배포, Flyway 백업/복원, 데모 데이터 복구 절차를 한 장으로 정리한다.
+#### 2단계: 거주자 평소 화면 (기능 확인)
+> 목표: 슬롯 메타 정보와 라벨 자동 발급 정책 확인.  
+> 핵심 API/검증: `GET /fridge/slots?view=full`, `POST /fridge/bundles` → `bundle_label_sequence`.
 
-## 5. 향후 작업
-1. **실시간 합류(SSE)**: 현재는 단독 검사 + 폴링이지만, [MVP Plan IN-306](mvp-plan.md#in-306-실시간-검사-합류복구)을 기반으로 2인 합류·자동 복구를 구현할 예정.
-2. **알림 딥링크**: `notification.metadata`에 이미 담긴 `sessionId/actionIds`를 활용해 UI에서 직접 검사 상세 화면으로 이동하도록 개선.
-3. **관리자 일정 확장**: `/admin`에서 다층 검사 일정을 등록하고 층별장에게 알림을 보내는 흐름을 차기 목표로 설정.
-4. **데모 시드 보호 장치**: prod 환경에서 `/admin/seed/fridge-demo`가 실행되지 않도록 `@Profile("!prod")` 또는 feature flag 추가.
+* [페르소나] 거주자 (A)
+* (시연 멘트)
+    "먼저 거주자 A의 화면입니다. `/fridge/slots?view=full` API를 통해 본인에게 배정된 칸을 봅니다. 지금은 'ACTIVE' 상태이고, '최대 5개'(`max_bundle_count`)까지 보관 가능하다고 나옵니다. 여기에 포장을 하나 등록해 보겠습니다."
 
-## 부록 A. 실제 구현 근거
-- **환경/런타임**
-  - `deploy/.env.prod` 단일 전략, `backend/scripts/flyway.sh` 진입점, prod 기본 프로파일이 코드에 반영되어 있다.
-  - `RedisConfig` 토글 및 `application.properties`의 prod 기본값 덕분에 로컬·운영이 동일 구성을 공유한다.
-- **시드·감사 로그**
-  - `DemoSeedService` + `db/demo/fridge_exhibition_items.sql`로 데모 데이터를 완전히 재구성하고, `AuditLogService`가 `FRIDGE_DEMO_SEED_EXECUTED` 이벤트를 기록한다.
-  - `audit_log` 엔티티·마이그레이션(V38, V39)이 존재해 관리자 작업(검사 제출/취소, 재배분, 일정 CRUD)이 JSONB detail과 함께 저장된다.
-- **냉장고 포장/물품**
-  - `FridgeService`가 슬롯 접근 제어, 잠금·용량 검증, 라벨 재사용, CRUD를 모두 처리하고, 관리자 재배분(`FridgeReallocationService`)은 감사 로그까지 남긴다.
-  - 프런트 `FridgeContext`는 같은 정책(422/423)으로 에러 메시지와 상태 동기화를 처리한다.
-- **검사/벌점/알림 파이프라인**
-  - `InspectionService`가 세션 시작→조치→벌점(`PenaltyHistory`)→제출→알림까지 end-to-end 구현한다.
-  - `NotificationService.sendInspectionResultNotifications`가 사용자별 dedupe 키와 메타데이터(session/action/penalty ids)를 세팅하고, `features/notifications` 훅이 그대로 소비한다.
-  - `FridgeExpiryNotificationScheduler`는 임박/만료 배치 알림과 실패 로그를 운영 수준으로 관리한다.
-- **일정 & 감사**
-  - `InspectionScheduleService`가 층별장 권한과 칸/시간 중복을 서버에서 차단하고, 일정 생성/수정/삭제마다 `notifyResidentsOfSchedule` + `recordScheduleAudit`를 호출한다.
-  - 프런트 `frontend/app/fridge/inspections/page.tsx`가 동일 API로 일정 UI와 검사 시작 플로우를 제공한다.
+    *(거주자 A, 포장 1개 등록. 'A-101' 같은 라벨이 자동 발급되는 것을 보여줌)*
 
-이 문서는 데모/운영 모두에서 최신 구현을 근거로 사용해야 하며, 새로운 기능이 추가되면 `사전 준비`, `시연 흐름`, `향후 작업` 순으로 업데이트한다.
+    "이렇게 `bundle_label_sequence`를 통해 라벨이 자동 발급되며, 만약 이 포장을 삭제하면 이 라벨은 재사용 가능한 상태로 돌아갑니다."
+
+#### 3단계: 검사 시작 (층별장)
+> 목표: 검사 세션 생성과 칸 잠금 정책 시연.  
+> 핵심 API/검증: `POST /inspections/start` → 칸 상태 `IN_INSPECTION`, 30분 잠금.
+
+* [페르소나] 층별장 (B)
+* (시연 멘트)
+    "이제 B 층별장이 정기 검사를 시작합니다. '검사 시작' 버튼을 누릅니다. (`POST /inspections/start`)"
+
+    *(층별장 화면에서 '검사 시작' 클릭)*
+
+    "이 순간, `InspectionService`가 호출되어 냉장고 칸이 30분간 'IN_INSPECTION' 상태로 변경됩니다. 이 세션은 등록된 '검사 일정(`InspectionSchedule`)'과 자동으로 연결되며, 만약 30분 내 검사를 못 마치면 스케줄러가 세션을 `CANCELLED` 처리하여 냉장고가 무한정 잠기는 것을 방지합니다."
+
+#### 4단계: 시스템의 견고성 (어-어 패스 1)
+> 목표: 잠금 상태에서 거주자 변경 차단.  
+> 핵심 API/검증: `POST /fridge/bundles` → `ensureCompartmentNotLocked` = 423 Locked / COMPARTMENT_LOCKED.
+
+* [페르소나] 거주자 (A)
+* (시연 멘트)
+    "검사가 시작되자마자 거주자 A의 화면을 다시 보겠습니다. 새로고침을 누르자, API가 `status` 필드를 읽어와 칸에 '검사 중' 배지가 표시되고 '등록' 버튼이 비활성화되었습니다."
+
+    *(거주자 A의 화면을 보여줌. 잠긴 칸에 '등록' 버튼이 비활성화된 것을 강조)*
+
+    "만약 거주자가 이 상태를 무시하고 API로 직접 포장을 등록하려 시도하면, `ensureCompartmentNotLocked` 로직이 `423 Locked + COMPARTMENT_LOCKED` 오류를 반환하며 시스템의 데이터 정합성을 견고하게 지켜줍니다."
+
+#### 5단계: 조치 및 자동화 (층별장)
+> 목표: 조치 → 스냅샷 → 벌점 → 잠금 연장 자동화 설명.  
+> 핵심 API/검증: `POST /inspections/{id}/actions` → `inspection_action_item`, `maybeAttachPenalty`.
+
+* [페르소나] 층별장 (B)
+* (시연 멘트)
+    "다시 층별장 화면입니다. B 층별장이 유통기한이 지난 포장을 발견하고 '폐기(DISPOSE)' 조치를 선택합니다. (`POST /inspections/{id}/actions`)"
+
+    *(층별장 화면에서 '폐기' 버튼 클릭)*
+
+    "이 클릭 한 번으로, 서버에서는 3가지 핵심 로직이 동시에 실행됩니다.
+    1.  모든 조치 내역은 `inspection_action_item` 스냅샷으로 기록됩니다.
+    2.  `maybeAttachPenalty`가 호출되어, '폐기' 조치에 대한 벌점(`PenaltyHistory`)이 자동으로 생성됩니다.
+    3.  조치가 성공했으므로 잠금 시간이 30분 더 연장됩니다."
+
+#### 6단계: 제출 및 알림 (거주자)
+> 목표: 검사 제출과 알림/배지 반영.  
+> 핵심 API/검증: `POST /inspections/{id}/submit` → `NotificationService.sendInspectionResultNotifications` (dedupe `FRIDGE_RESULT:<session>:<user>`), `/notifications` 미읽음 우선.
+
+* [페르소나] 층별장 (B) / 거주자 (A)
+* (시연 멘트)
+    "B 층별장이 검사를 '제출'합니다. (`POST /inspections/{id}/submit`)"
+
+    *(층별장 화면에서 '제출' 클릭, 거주자 화면으로 전환)*
+
+    "제출 즉시, `NotificationService`가 A 거주자에게 벌점 ID와 조치 내역이 포함된 알림을 발송합니다. `dedupe` 키로 중복 알림은 모두 차단됩니다."
+
+    *(거주자 화면의 '알림'(/notifications) 아이콘에 배지가 뜨고, 클릭 시 '검사 결과' 알림이 최상단에 보임. 알림을 읽고, 포장 목록으로 돌아가면 검사 이후 수정된 항목을 구분하기 위해 `updatedAfterInspection` 배지가 표시되는 것을 보여줌)*
+
+#### 7단계: 관리자의 검증 (어-어 패스 2)
+> 목표: 관리자 설정 변경 시 서버 검증 확인.  
+> 핵심 API/검증: `PATCH /admin/fridge/compartments/{id}` → 422 Unprocessable Entity / CAPACITY_BELOW_ACTIVE.
+
+* [페르소나] 관리자 (C)
+* (시연 멘트)
+    "마지막으로 관리자입니다. 관리자는 시스템이 규정대로 작동하는지 검증해야 합니다. 예를 들어, 관리자가 실수로 `max_bundle_count`를 현재 보관된 포장 수보다 적게 설정하려 한다면 어떻게 될까요?"
+
+    *(관리자 화면(`/admin/fridge/compartments`)에서 `max_bundle_count`를 1로 수정 시도)*
+
+    "예상대로 `422 Unprocessable Entity` 오류가 발생합니다. `FridgeAdminService`가 데이터 충돌을 막아 시스템을 보호합니다."
+
+#### 8단계: 관리자의 강력한 운영 도구
+> 목표: 재배분·정정 등 운영 액션과 감사 로그 확인.  
+> 핵심 API/검증: `POST /admin/fridge/reallocations/preview|apply`, `PATCH /inspections/{id}` (정정), AuditLog `FRIDGE_REALLOCATION_APPLY`.
+
+* [페르소나] 관리자 (C)
+* (시연 멘트)
+    "관리자는 시스템을 총괄합니다. 예를 들어, '호실 재배분'(`reallocations/preview`)을 실행하면, 검사 중인 칸은 '경고(warning)'로 표시하며 안전하게 배정안을 시뮬레이션할 수 있습니다."
+
+    *(관리자 화면에서 '호실 재배분' 미리보기와 적용을 시연)*
+
+    "또한, 어제 층별장이 실수로 부과한 벌점을 수정해야 한다면, '검사 내역'에서 `PATCH /inspections/{id}`를 호출하여 조치 내역을 '정정(ADJUST)'할 수도 있습니다."
+
+#### 9단계: 배치 작업 및 최종 추적
+> 목표: 배치 알림과 감사 추적 시연.  
+> 핵심 API/검증: `FridgeExpiryNotificationScheduler` (09:00 cron) → `notification_dispatch_log`, `AuditLog` (`INSPECTION_SUBMIT`, `FRIDGE_REALLOCATION_APPLY` 등).
+
+* [페르소나] 관리자 (C)
+* (시연 멘트)
+    "보이지 않는 영역도 관리됩니다. 매일 아침 9시, `FridgeExpiryNotificationScheduler`가 실행되어 유통기한 임박 알림을 보냅니다. 관리자는 `notification_dispatch_log`에서 이 배치 작업이 'SUCCESS'했는지, 혹은 특정 사용자에게 'FAILED'했는지 모두 추적할 수 있습니다."
+
+    *(관리자 화면에서 'AuditLog' 조회)*
+
+    "그리고 오늘 시연한 모든 핵심 행위들—'층별장의 검사 제출', '자동 벌점 부과', '관리자의 재배분'—이 '감사 로그(AuditLog)'에 `FRIDGE_REALLOCATION_APPLY` 같은 타입과 JSON 상세 내역으로 모두 기록되었습니다. 이것이 수기 관리의 비대칭 문제를 해결하는 Dormmate의 핵심입니다."
+
+#### 10단계: 데모 리셋 (마무리)
+> 목표: 데모 데이터를 초기 상태로 재구성하고 감사 로그 남김.  
+> 핵심 API/검증: `POST /admin/seed/fridge-demo` → `FRIDGE_DEMO_SEED_EXECUTED`.
+
+* [페르소나] 관리자 (C)
+* (시연 멘트)
+    "시연을 마치기 전, 이 모든 데이터를 초기화하고 싶다면 관리자는 `/admin/seed/fridge-demo` API를 호출합니다. 이 API는 SQL 스크립트를 실행하여 지금 보신 모든 데이터를 데모용 초기 상태로 되돌리고, 이 실행 기록 또한 감사 로그에 남깁니다. 감사합니다."

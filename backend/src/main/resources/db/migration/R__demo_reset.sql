@@ -485,6 +485,16 @@ BEGIN
     JOIN tmp_floor_bundles fb ON fb.bundle_id = ia.fridge_bundle_id
     WHERE ia.inspection_session_id IN (SELECT session_id FROM tmp_sessions)
       AND ia.action_type IN ('DISPOSE_EXPIRED', 'UNREGISTERED_DISPOSE');
+
+    -- 정책상 칸-호실 접근권을 즉시 복구한다.
+    PERFORM 1
+    FROM pg_proc
+    WHERE proname = 'fn_rebuild_compartment_room_access'
+      AND pg_function_is_visible(oid);
+
+    IF FOUND THEN
+        PERFORM public.fn_rebuild_compartment_room_access();
+    END IF;
 END;
 $$;
 

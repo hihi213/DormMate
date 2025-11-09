@@ -14,6 +14,7 @@ public record FridgeSlotResponse(
         String floorCode,
         String compartmentType,
         String resourceStatus,
+        FridgeSlotStatus slotStatus,
         boolean locked,
         OffsetDateTime lockedUntil,
         Integer capacity,
