@@ -30,6 +30,16 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Prepare deploy env file
+        run: |
+          mkdir -p deploy
+          if [ -z "${{ secrets.ENV_FILE_CONTENTS }}" ]; then
+            echo "❌ ENV_FILE_CONTENTS secret is missing." >&2
+            exit 1
+          fi
+          printf '%s' "${{ secrets.ENV_FILE_CONTENTS }}" > deploy/.env.prod
+          chmod 600 deploy/.env.prod
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
