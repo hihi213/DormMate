@@ -8,13 +8,6 @@ on:
   pull_request:
 
 env:
-  POSTGRES_DB: ${{ secrets.POSTGRES_DB != '' && secrets.POSTGRES_DB || 'dormmate_local' }}
-  POSTGRES_USER: ${{ secrets.POSTGRES_USER != '' && secrets.POSTGRES_USER || 'dormmate_user' }}
-  POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-  DB_USERNAME: ${{ secrets.POSTGRES_USER != '' && secrets.POSTGRES_USER || 'dormmate_user' }}
-  DB_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-  DB_URL: jdbc:postgresql://localhost:5432/${{ secrets.POSTGRES_DB != '' && secrets.POSTGRES_DB || 'dormmate_local' }}
-  JWT_SECRET: ${{ secrets.JWT_SECRET != '' && secrets.JWT_SECRET || 'ci-jwt-secret-please-override-0123456789abcdef' }}
   NEXT_TELEMETRY_DISABLED: "1"
   PYTHONUNBUFFERED: "1"
   GRADLE_USER_HOME: ${{ github.workspace }}/.gradle-cache
@@ -39,6 +32,22 @@ jobs:
           fi
           printf '%s' "${{ secrets.ENV_FILE_CONTENTS }}" > deploy/.env.prod
           chmod 600 deploy/.env.prod
+
+      - name: Export deploy env values
+        run: |
+          set -a
+          # shellcheck disable=SC1091
+          source deploy/.env.prod
+          set +a
+          {
+            echo "POSTGRES_DB=${POSTGRES_DB}"
+            echo "POSTGRES_USER=${POSTGRES_USER}"
+            echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+            echo "DB_USERNAME=${DB_USERNAME:-$POSTGRES_USER}"
+            echo "DB_PASSWORD=${DB_PASSWORD:-$POSTGRES_PASSWORD}"
+            echo "DB_URL=${DB_URL:-jdbc:postgresql://localhost:5432/${POSTGRES_DB}}"
+            echo "JWT_SECRET=${JWT_SECRET:-ci-jwt-secret-please-override-0123456789abcdef}"
+          } >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v5
