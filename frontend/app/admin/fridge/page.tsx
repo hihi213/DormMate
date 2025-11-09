@@ -350,9 +350,9 @@ export default function AdminFridgePage() {
       if (selectedSlotId) {
         const current = params.get("slot") ?? params.get("slotId")
         if (current === selectedSlotId) return false
-        console.log("[querySync] push slot", { selectedSlotId })
         params.set("slot", selectedSlotId)
         params.delete("slotId")
+        lastSyncedSlotParamRef.current = selectedSlotId
         return true
       }
       let changed = false
@@ -408,7 +408,12 @@ export default function AdminFridgePage() {
         lastSynced: lastSyncedSlotParamRef.current,
       })
       lastSyncedSlotParamRef.current = slotParam
-      if (slotParam && slotParam !== selectedSlotId && slotParam !== pendingSlotId) {
+      if (
+        slotParam &&
+        slotParam !== selectedSlotId &&
+        slotParam !== pendingSlotId &&
+        slotParam !== lastSyncedSlotParamRef.current
+      ) {
         setPendingSlotId(slotParam)
       }
     }
@@ -462,9 +467,10 @@ export default function AdminFridgePage() {
       setSelectedSlotId(null)
       setPendingSlotId(null)
       lastSyncedSlotParamRef.current = null
+      clearQueryKeys(["slot", "slotId", "bundle", "bundleId", "inspection", "inspectionId"])
       setSelectedFloor(floor)
     },
-    [resetBundleFilters, selectedFloor],
+    [resetBundleFilters, selectedFloor, clearQueryKeys],
   )
 
   const [inspectionState, setInspectionState] = useState<InspectionState>({

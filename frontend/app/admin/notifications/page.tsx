@@ -235,17 +235,22 @@ export default function AdminNotificationsPage() {
       <div data-admin-slot="main" className="space-y-6">
         <header className="rounded-3xl border border-emerald-100 bg-white/95 p-6 shadow-sm">
           <div className="flex flex-col gap-3">
-            <Badge variant="outline" className="w-fit border-emerald-200 bg-emerald-50 text-emerald-700">
+            <Badge
+              variant="outline"
+              className="w-fit border-emerald-200 bg-emerald-50 text-emerald-700"
+            >
               알림 센터
             </Badge>
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <h1 className="text-2xl font-semibold text-slate-900">DormMate 알림 관리</h1>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div className="min-w-0 space-y-1">
+                <h1 className="break-words text-2xl font-semibold text-slate-900">
+                  DormMate 알림 관리
+                </h1>
                 <p className="text-sm text-slate-600">
                   모듈별 알림 현황을 확인하고, 미읽음 처리·알림 설정·배치 정책을 중앙에서 제어합니다.
                 </p>
               </div>
-              <Badge className="gap-2 bg-emerald-100 text-emerald-700">
+              <Badge className="gap-2 bg-emerald-100 text-center text-emerald-700 sm:w-fit">
                 <BellRing className="size-4" aria-hidden />
                 미확인 {unreadCount}건
               </Badge>
