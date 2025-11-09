@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useRef, useState, useTransition, useMemo } from "react"
+import { useEffect, useRef, useState, useTransition, useMemo, useCallback } from "react"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
 import { useRouter, useSearchParams } from "next/navigation"
 
@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
 import { getCurrentUser, loginWithCredentials } from "@/lib/auth"
+import type { AuthUser } from "@/lib/auth"
 
 type LoginPanelProps = {
   redirectTo: string
@@ -23,7 +24,8 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
   const { toast } = useToast()
 
   // redirect query 우선 사용
-  const finalRedirect = useMemo(() => params.get("redirect") ?? redirectTo ?? "/", [params, redirectTo])
+  const explicitRedirect = useMemo(() => params.get("redirect"), [params])
+  const finalRedirect = useMemo(() => explicitRedirect ?? redirectTo ?? "/", [explicitRedirect, redirectTo])
   const reason = params.get("reason")
   const sessionMessage = useMemo(() => {
     switch (reason) {
@@ -43,12 +45,24 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
 
   const idInputRef = useRef<HTMLInputElement | null>(null)
 
+  const resolveTarget = useCallback(
+    (current: AuthUser | null) => {
+      if (current?.isAdmin) {
+        if (!explicitRedirect || explicitRedirect === "/" || explicitRedirect === null) {
+          return "/admin"
+        }
+      }
+      return finalRedirect || "/"
+    },
+    [explicitRedirect, finalRedirect],
+  )
+
   useEffect(() => {
     const current = getCurrentUser()
     if (current) {
-      router.replace(finalRedirect)
+      router.replace(resolveTarget(current))
     }
-  }, [router, finalRedirect])
+  }, [router, resolveTarget])
 
   useEffect(() => {
     idInputRef.current?.focus()
@@ -72,12 +86,12 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
     setError("")
     startTransition(async () => {
       try {
-        await loginWithCredentials({ id: loginId.trim(), password: password.trim() })
+        const current = await loginWithCredentials({ id: loginId.trim(), password: password.trim() })
         toast({
           title: "로그인 완료",
           description: "DormMate에 오신 것을 환영합니다.",
         })
-        router.replace(finalRedirect || "/")
+        router.replace(resolveTarget(current ?? null))
       } catch (err) {
         setError(err instanceof Error ? err.message : "로그인에 실패했습니다. 다시 시도해 주세요.")
       }
