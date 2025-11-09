@@ -215,7 +215,7 @@ export const useAddItemWorkflow = ({
     if (!applied) return
 
     setNameFlash(true)
-    resetForm({ keepExpiry: true })
+    resetForm()
   }, [template, toast, editingEntryId, resetForm])
 
   const handleRemoveEntry = useCallback(
