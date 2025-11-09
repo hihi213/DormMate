@@ -26,7 +26,7 @@ COPY src/ src/
 RUN ./gradlew build -x test -x generateGitProperties --no-daemon
 
 # 실행 스테이지
-FROM eclipse-temurin:21.0.5_8-jre-jammy
+FROM eclipse-temurin:21-jre-jammy
 
 # 작업 디렉토리 설정
 WORKDIR /app

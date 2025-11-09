@@ -9,8 +9,8 @@ services:
   app:
     build: ./backend # './backend' 디렉토리의 Dockerfile을 사용하여 애플리케이션 이미지를 빌드합니다.
     container_name: dorm_app # 컨테이너에 고정 이름을 부여합니다.
-    ports:
-      - "8080:8080" # 호스트 머신의 8080 포트를 컨테이너의 8080 포트로 연결(매핑)합니다. 이를 통해 외부에서 애플리케이션에 접근할 수 있습니다.
+    expose:
+      - "8080" # 동일 네트워크(proxy, frontend)에서 접근할 수 있도록 내부 포트만 노출합니다.
     depends_on:
       # 서비스 시작 순서를 제어합니다.
       db:
@@ -41,6 +41,61 @@ services:
       timeout: 5s # 5초 내 응답이 없으면 실패
       retries: 3 # 3번 연속 실패 시 'unhealthy' 상태가 됨
       start_period: 10s # 컨테이너 시작 후 10초만 유예합니다. 빠른 상태 전이를 위해 축소된 값입니다.
+
+  # Next.js Frontend - 운영용
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8080/api}
+        NEXT_PUBLIC_FIXTURE: ${NEXT_PUBLIC_FIXTURE:-0}
+    container_name: dorm_frontend
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_BASE: ${NEXT_PUBLIC_API_BASE:-http://localhost:8080/api}
+      NEXT_PUBLIC_FIXTURE: ${NEXT_PUBLIC_FIXTURE:-0}
+      NEXT_TELEMETRY_DISABLED: "1"
+    depends_on:
+      app:
+        condition: service_healthy
+    expose:
+      - "3000"
+    restart: unless-stopped
+
+  # HTTP Reverse Proxy - 프런트/백엔드 통합 진입점
+  proxy:
+    image: nginx:1.27-alpine
+    container_name: dorm_proxy
+    depends_on:
+      app:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    ports:
+      - "${PROXY_HTTP_PORT:-8080}:80" # HTTP 기본 8080(로컬)/80(운영)
+      - "${PROXY_HTTPS_PORT:-8443}:443" # HTTPS 기본 8443(로컬)/443(운영)
+    environment:
+      SERVER_NAME: ${SERVER_NAME:-_}
+      ENABLE_TLS: ${ENABLE_TLS:-false}
+      TLS_DOMAIN: ${TLS_DOMAIN:-}
+      TLS_SELF_SIGNED: ${TLS_SELF_SIGNED:-true}
+    command: ["/bin/sh", "/etc/nginx/entrypoint.sh"]
+    volumes:
+      - ./deploy/nginx/templates:/etc/nginx/templates:ro
+      - ./deploy/nginx/entrypoint.sh:/etc/nginx/entrypoint.sh:ro
+      - certbot-www:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
+    restart: unless-stopped
+
+  certbot:
+    image: certbot/certbot:latest
+    container_name: dorm_certbot
+    profiles:
+      - certbot
+    volumes:
+      - certbot-www:/var/www/certbot
+      - letsencrypt:/etc/letsencrypt
 
   # PostgreSQL - 운영용 보안 강화
   # 기본 yml의 'db' 서비스 설정을 '덮어씁니다'.
