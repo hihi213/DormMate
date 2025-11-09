@@ -321,6 +321,7 @@ export default function AdminFridgePage() {
     initialInspectionIdRef.current,
   )
   const [syncQueryEnabled, setSyncQueryEnabled] = useState(false)
+  const syncResumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [inspectionEditOpen, setInspectionEditOpen] = useState(false)
   const [inspectionDraftActions, setInspectionDraftActions] = useState<InspectionActionDraft[]>([])
   const [inspectionDraftNotes, setInspectionDraftNotes] = useState("")
@@ -330,6 +331,22 @@ export default function AdminFridgePage() {
 
   useEffect(() => {
     setSyncQueryEnabled(true)
+    return () => {
+      if (syncResumeTimeoutRef.current) {
+        clearTimeout(syncResumeTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const temporarilyDisableQuerySync = useCallback(() => {
+    setSyncQueryEnabled(false)
+    if (syncResumeTimeoutRef.current) {
+      clearTimeout(syncResumeTimeoutRef.current)
+    }
+    syncResumeTimeoutRef.current = setTimeout(() => {
+      setSyncQueryEnabled(true)
+      syncResumeTimeoutRef.current = null
+    }, 0)
   }, [])
 
   const updateQueryParams = useCallback(
@@ -459,6 +476,7 @@ export default function AdminFridgePage() {
   const handleFloorChange = useCallback(
     (floor: number) => {
       if (floor === selectedFloor) return
+      temporarilyDisableQuerySync()
       resetBundleFilters()
       setSelectedSlotId(null)
       setPendingSlotId(null)
@@ -466,7 +484,7 @@ export default function AdminFridgePage() {
       clearQueryKeys(["slot", "slotId", "bundle", "bundleId", "inspection", "inspectionId"])
       setSelectedFloor(floor)
     },
-    [resetBundleFilters, selectedFloor, clearQueryKeys],
+    [resetBundleFilters, selectedFloor, clearQueryKeys, temporarilyDisableQuerySync],
   )
 
   const [inspectionState, setInspectionState] = useState<InspectionState>({
@@ -1705,15 +1723,8 @@ export default function AdminFridgePage() {
                             )}
                             onClick={() => {
                               setHighlightedBundleId(bundle.bundleId)
-                              setDetailTab("inspections")
-                              if (bundle.lastInspectionId) {
-                                setPendingInspectionFocusId(bundle.lastInspectionId)
-                              } else {
-                                toast({
-                                  title: "검사 기록 없음",
-                                  description: "이 포장에 대한 검사 기록이 아직 없습니다.",
-                                })
-                              }
+                              setDetailTab("bundles")
+                              setPendingBundleFocusId(bundle.bundleId)
                             }}
                           >
                             <TableCell className="px-2 py-2 align-top">
