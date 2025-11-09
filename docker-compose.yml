@@ -80,3 +80,5 @@ volumes:
   # 이 docker-compose 파일 내에서 사용할 명명된 볼륨(named volume)을 정의합니다.
   # 명명된 볼륨은 Docker가 관리하는 특정 경로에 데이터를 저장하며, 호스트 경로를 직접 지정하는 것보다 이식성이 높습니다.
   pgadmin-data:
+  certbot-www:
+  letsencrypt:

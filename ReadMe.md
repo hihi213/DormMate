@@ -29,8 +29,19 @@ DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위�
 ## 빠른 시작
 
 ```bash
-# 개발용 인프라 기동 (Docker Compose)
-docker compose --env-file deploy/.env.prod up -d
+# 개발용 DB/Redis 기동 (애플리케이션은 로컬에서 직접 실행)
+docker compose --env-file deploy/.env.prod up -d db redis
+
+# 운영과 동일한 전체 스택(prod 파일 포함) 기동
+docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d proxy
+# proxy 서비스만 명시하면 depends_on에 의해 app/frontend도 함께 기동됩니다.
+
+# 동일 작업을 자동화 스크립트로 실행하려면:
+./auto deploy up --build [--push]
+
+# (DB 초기화 포함) 전체 스택을 재기동하려면:
+./auto deploy reset --build [--push]
+
 # 또는 자동화 스크립트 사용
 ./auto dev up
 
@@ -47,6 +58,12 @@ docker compose --env-file deploy/.env.prod up -d
 cd frontend && npm install && npm run dev
 ```
 
+> proxy 컨테이너는 기본적으로 호스트 8080 포트를 사용합니다. 운영 서버에서는 `deploy/.env.prod`에서 `PROXY_HTTP_PORT=80`, `PROXY_HTTPS_PORT=443`으로 바꿔두면 됩니다.
+>
+> HTTPS를 활성화하려면 `ENABLE_TLS=true`, `SERVER_NAME=<도메인>`, `TLS_DOMAIN=<도메인>`, `TLS_EMAIL=<연락 이메일>`, `PROXY_HTTPS_PORT=443`을 지정한 뒤 한 번만 `./auto deploy tls issue --domain <도메인> --email <이메일>`을 실행해 인증서를 발급하세요. 이후에는 `certbot` 볼륨이 유지되므로 `./auto deploy tls renew`만 주기적으로 실행하면 됩니다(예: cron). 운영 환경에서는 `TLS_SELF_SIGNED=false`로 설정해 Let's Encrypt 인증서가 없으면 배포가 중단되도록 만드는 것이 좋습니다.
+>
+> 헬스체크는 `/healthz`(백엔드)와 `/frontend-healthz`(프런트) 두 엔드포인트를 통해 분리 확인할 수 있습니다. proxy 컨테이너도 동일 경로를 그대로 노출합니다.
+
 > DB 컨테이너는 5432 포트를 호스트에 노출합니다. 로컬 툴(IDE, psql)에서는 `localhost:5432`로 접속하고, 다른 컨테이너에서 접근할 때는 `db:5432` 호스트명을 사용하세요. 필요한 환경 변수 목록은 `backend/ENV_SETUP.md`를 참고해 `deploy/.env.prod`를 작성하세요.
 
 > CI 런너(예: GitHub Actions)는 Java 21, Node.js 22, Docker(Compose), PostgreSQL 16, Redis 7.2 이미지를 사용할 수 있는 환경이어야 합니다. 기본 워크플로(`.github/workflows/ci.yml`)는 이러한 런타임을 기준으로 구성되어 있습니다.
@@ -61,7 +78,9 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 - `./auto dev kill-ports [--ports 3000 8080 …]`: 지정한 포트(미지정 시 3000~3003, 8080)를 점유한 프로세스를 정리
 - `./auto tests core [--skip-backend --skip-frontend --skip-playwright --full-playwright]`: Step6 테스트 번들(Gradle은 오프라인 우선, 실패 시 의존성 갱신)
 - `./auto tests backend|frontend|playwright`: 개별 계층 테스트(`backend`는 오프라인 → 리프레시 순으로 자동 시도, `frontend`는 `npm run lint` 실행)
-- `./auto db migrate`: Flyway 마이그레이션 적용
+- `./auto db migrate [--repair] [--env-file deploy/.env.prod]`: Flyway 마이그레이션 / 필요 시 `flywayRepair`
+- `./auto deploy up|down|status|reset`: 운영용 docker-compose(prod) 스택 제어 (프론트·프록시 포함)
+- `./auto deploy tls issue|renew`: Let's Encrypt 인증서 발급/갱신 헬퍼(`certbot` webroot 방식)
 - `./auto cleanup`: 빌드 산출물 정리
 - `./auto state show` / `./auto state update --notes "..."`
   : Codex 상태 기록 및 Verify & Record 단계 메모 업데이트
@@ -95,12 +114,14 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 ```
 3. 배포/업데이트  
    ```bash
-   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d proxy
+   # proxy 기동 시 backend/frontend 컨테이너가 함께 올라갑니다.
+   # 또는 ./auto deploy up --build
    ```
 4. 실패 시 롤백  
    ```bash
    docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml down
-   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d db redis app --build --no-cache  # 안정 버전으로 재배포
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d proxy --build --no-cache  # 안정 버전으로 재배포
    ```
 
 > 운영 배포 전에는 `./auto tests core --full-playwright` 결과를 확인하세요.

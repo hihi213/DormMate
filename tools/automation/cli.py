@@ -31,6 +31,8 @@ JAVA_HOME_DEFAULT = Path.home() / "Library/Java/JavaVirtualMachines/ms-21.0.8/Co
 GRADLE_CACHE_DIR = PROJECT_ROOT / ".gradle-cache"
 NODE_CACHE_ROOT = PROJECT_ROOT / ".cache" / "node"
 DEFAULT_DEV_PORTS = (3000, 3001, 3002, 3003, 8080)
+DEFAULT_ENV_FILE = PROJECT_ROOT / "deploy" / ".env.prod"
+DEFAULT_COMPOSE_FILES = ("-f", "docker-compose.yml", "-f", "docker-compose.prod.yml")
 
 
 @dataclass
@@ -135,6 +137,7 @@ _ENV_CACHE: Optional[dict[str, str]] = None
 _ENV_WARNING_EMITTED = False
 _JAVA_WARNING_EMITTED = False
 _NODE_WARNING_EMITTED = False
+_ENV_FILE_WARNED: set[Path] = set()
 
 
 def _detect_node_bin() -> Optional[Path]:
@@ -147,27 +150,70 @@ def _detect_node_bin() -> Optional[Path]:
     return None
 
 
+def _iter_env_files() -> list[Path]:
+    env_files: list[Path] = []
+    override = os.environ.get("DM_ENV_FILE")
+    if override:
+        override_path = Path(override)
+        if not override_path.is_absolute():
+            override_path = (PROJECT_ROOT / override_path).resolve()
+        env_files.append(override_path)
+    env_files.extend(
+        [
+            DEFAULT_ENV_FILE,
+            PROJECT_ROOT / ".env",
+        ]
+    )
+    seen: set[Path] = set()
+    ordered: list[Path] = []
+    for path in env_files:
+        if path in seen:
+            continue
+        seen.add(path)
+        ordered.append(path)
+    return ordered
+
+
+def _apply_env_file(path: Path, env: dict[str, str]) -> None:
+    if not path.exists():
+        if path not in _ENV_FILE_WARNED:
+            try:
+                rel = path.relative_to(PROJECT_ROOT)
+            except ValueError:
+                rel = path
+            print(f"ℹ️  {rel} 파일이 없어 건너뜁니다.")
+            _ENV_FILE_WARNED.add(path)
+        return
+    for raw_line in path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].strip()
+        if "=" not in line:
+            continue
+            key, value = line.split("=", 1)
+            env[key.strip()] = value.strip()
+
+
+def _load_env_from_file(path: Path) -> dict[str, str]:
+    data: dict[str, str] = {}
+    _apply_env_file(path, data)
+    return data
+
+
 def load_env_cache() -> dict[str, str]:
-    """Load .env (if present) once and reuse for all subprocess calls."""
+    """Load deploy/.env.prod (우선)과 .env를 읽어 환경 변수를 통합한다."""
     global _ENV_CACHE, _ENV_WARNING_EMITTED, _JAVA_WARNING_EMITTED, _NODE_WARNING_EMITTED
     if _ENV_CACHE is not None:
         return _ENV_CACHE
 
     env = os.environ.copy()
-    env_path = PROJECT_ROOT / ".env"
-    if env_path.exists():
-        for raw_line in env_path.read_text(encoding="utf-8").splitlines():
-            line = raw_line.strip()
-            if not line or line.startswith("#"):
-                continue
-            if line.startswith("export "):
-                line = line[len("export ") :].strip()
-            if "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            env[key.strip()] = value.strip()
-    elif not _ENV_WARNING_EMITTED:
-        print("ℹ️  .env 파일이 없어 기본 시스템 환경 변수를 사용합니다.")
+    env_files = _iter_env_files()
+    for env_path in env_files:
+        _apply_env_file(env_path, env)
+    if not _ENV_WARNING_EMITTED and not any(path.exists() for path in env_files):
+        print("ℹ️  적용 가능한 env 파일이 없어 시스템 환경 변수를 사용합니다.")
         _ENV_WARNING_EMITTED = True
 
     path_entries = env.get("PATH", "").split(os.pathsep) if env.get("PATH") else []
@@ -202,6 +248,26 @@ def load_env_cache() -> dict[str, str]:
 
     _ENV_CACHE = env
     return _ENV_CACHE
+
+
+def resolve_env_file_argument(value: Optional[str]) -> Path:
+    if value:
+        candidate = Path(value).expanduser()
+        if not candidate.is_absolute():
+            candidate = (PROJECT_ROOT / candidate).resolve()
+    else:
+        candidate = DEFAULT_ENV_FILE
+    if not candidate.exists():
+        raise FileNotFoundError(f"env 파일을 찾을 수 없습니다: {candidate}")
+    return candidate
+
+
+def compose_base_args(env_file: Path) -> list[str]:
+    return ["docker", "compose", "--env-file", str(env_file), *DEFAULT_COMPOSE_FILES]
+
+
+def run_compose(env_file: Path, *extra: str) -> CommandResult:
+    return run_command([*compose_base_args(env_file), *extra], cwd=PROJECT_ROOT)
 
 
 # ---------------------------------------------------------------------------
@@ -324,9 +390,16 @@ def cmd_tests_playwright(args: argparse.Namespace) -> None:
     persist_state(last_tests=label)
 
 
-def cmd_db_migrate(_: argparse.Namespace) -> None:
-    print("ℹ️  Gradle Flyway 마이그레이션을 실행합니다.")
-    run_gradle_task("flywayMigrate")
+def cmd_db_migrate(args: argparse.Namespace) -> None:
+    env_file = resolve_env_file_argument(args.env_file)
+    script = BACKEND_DIR / "scripts" / "flyway.sh"
+    if args.info:
+        run_command([str(script), str(env_file), "flywayInfo"], cwd=PROJECT_ROOT)
+        return
+    if args.repair:
+        print("ℹ️  flywayRepair를 먼저 실행합니다.")
+        run_command([str(script), str(env_file), "flywayRepair"], cwd=PROJECT_ROOT)
+    run_command([str(script), str(env_file)], cwd=PROJECT_ROOT)
 
 
 def cmd_dev_up(args: argparse.Namespace) -> None:
@@ -473,6 +546,146 @@ def cmd_dev_kill_ports(args: argparse.Namespace) -> None:
         print(f"⚠️  다음 PID는 권한 부족으로 종료하지 못했습니다: {denied_str}")
 
 
+def _deploy_up(
+    env_file: Path,
+    *,
+    services: list[str],
+    build: bool,
+    pull: bool,
+    force_recreate: bool,
+    push: bool,
+) -> None:
+    if pull:
+        run_compose(env_file, "pull")
+    if build:
+        run_compose(env_file, "build", "app", "frontend")
+        if push:
+            run_compose(env_file, "push", "app", "frontend")
+    elif push:
+        print("ℹ️  --push 옵션은 --build 없이 사용할 수 없습니다. 이미지를 먼저 빌드합니다.")
+        run_compose(env_file, "build", "app", "frontend")
+        run_compose(env_file, "push", "app", "frontend")
+    up_cmd = ["up", "-d"]
+    if build:
+        up_cmd.append("--build")
+    if force_recreate:
+        up_cmd.append("--force-recreate")
+    up_cmd.extend(services)
+    run_compose(env_file, *up_cmd)
+
+
+def cmd_deploy_up(args: argparse.Namespace) -> None:
+    env_file = resolve_env_file_argument(args.env_file)
+    services = args.services or ["proxy"]
+    _deploy_up(
+        env_file,
+        services=services,
+        build=args.build,
+        pull=args.pull,
+        force_recreate=args.force_recreate,
+        push=args.push,
+    )
+
+
+def cmd_deploy_down(args: argparse.Namespace) -> None:
+    env_file = resolve_env_file_argument(args.env_file)
+    down_cmd = ["down"]
+    if args.volumes:
+        down_cmd.append("--volumes")
+    if args.remove_orphans:
+        down_cmd.append("--remove-orphans")
+    if args.services:
+        down_cmd.extend(args.services)
+    run_compose(env_file, *down_cmd)
+
+
+def cmd_deploy_status(args: argparse.Namespace) -> None:
+    env_file = resolve_env_file_argument(args.env_file)
+    run_compose(env_file, "ps")
+
+
+def cmd_deploy_reset(args: argparse.Namespace) -> None:
+    env_file = resolve_env_file_argument(args.env_file)
+    print("🔁 기존 컨테이너를 중지하고 볼륨을 초기화합니다.")
+    run_compose(env_file, "down", "--volumes", "--remove-orphans")
+    print("🧱 인프라 기반(db, redis)을 재기동합니다.")
+    run_compose(env_file, "up", "-d", "db", "redis")
+    print("🗃  Flyway 마이그레이션을 실행합니다.")
+    run_compose(env_file, "run", "--rm", "migrate")
+    print("🚀 애플리케이션 스택을 재기동합니다.")
+    services = args.services or ["proxy"]
+    _deploy_up(
+        env_file,
+        services=services,
+        build=args.build,
+        pull=args.pull,
+        force_recreate=args.force_recreate,
+        push=args.push,
+    )
+
+
+def cmd_deploy_logs(args: argparse.Namespace) -> None:
+    env_file = resolve_env_file_argument(args.env_file)
+    services = args.services or ["proxy"]
+    run_compose(env_file, "logs", "-f", *services)
+
+
+def _resolve_tls_inputs(args: argparse.Namespace, env_file: Path) -> tuple[str, str]:
+    env_values = _load_env_from_file(env_file)
+    domain = args.domain or env_values.get("TLS_DOMAIN") or os.environ.get("TLS_DOMAIN")
+    email = args.email or env_values.get("TLS_EMAIL") or os.environ.get("TLS_EMAIL")
+    if not domain:
+        raise ValueError("TLS_DOMAIN 값을 찾을 수 없습니다. --domain 옵션이나 env 파일을 확인하세요.")
+    if not email:
+        raise ValueError("TLS_EMAIL 값을 찾을 수 없습니다. --email 옵션이나 env 파일을 확인하세요.")
+    return domain, email
+
+
+def cmd_deploy_tls_issue(args: argparse.Namespace) -> None:
+    env_file = resolve_env_file_argument(args.env_file)
+    domain, email = _resolve_tls_inputs(args, env_file)
+    cmd = [
+        "run",
+        "--rm",
+        "certbot",
+        "certonly",
+        "--webroot",
+        "-w",
+        "/var/www/certbot",
+        "-d",
+        domain,
+        "--email",
+        email,
+        "--agree-tos",
+        "--no-eff-email",
+        "--keep-until-expiring",
+    ]
+    if args.staging:
+        cmd.append("--staging")
+    run_compose(env_file, *cmd)
+
+
+def cmd_deploy_tls_renew(args: argparse.Namespace) -> None:
+    env_file = resolve_env_file_argument(args.env_file)
+    cmd = [
+        "run",
+        "--rm",
+        "certbot",
+        "renew",
+        "--webroot",
+        "-w",
+        "/var/www/certbot",
+        "--no-random-sleep-on-renew",
+    ]
+    if args.staging:
+        cmd.append("--staging")
+    run_compose(env_file, *cmd)
+    try:
+        run_compose(env_file, "exec", "-T", "proxy", "nginx", "-s", "reload")
+    except subprocess.CalledProcessError:
+        print("⚠️  proxy 컨테이너에 연결하지 못해 nginx reload를 건너뜁니다. 수동으로 proxy를 재기동하세요.")
+
+
 def cmd_cleanup(_: argparse.Namespace) -> None:
     targets = [
         PROJECT_ROOT / "backend" / "build",
@@ -525,7 +738,9 @@ def print_top_level_summary(parser: argparse.ArgumentParser) -> None:
   ./auto tests backend               백엔드 테스트만 실행
   ./auto tests frontend              프론트엔드 Lint 실행
   ./auto tests playwright [--full]   Playwright 스모크/전체 실행
-  ./auto db migrate                  Flyway 마이그레이션
+  ./auto db migrate [--repair]       Flyway 마이그레이션 (필요 시 repair)
+  ./auto deploy up [--build --push]   docker-compose.prod 스택 기동 / 이미지 빌드·푸시
+  ./auto deploy reset                down --volumes → migrate → up proxy
   ./auto cleanup                     빌드 산출물 정리
 
 세부 옵션은 각 명령 뒤에 `--help`를 붙여 확인하세요. 예) `./auto dev --help`, `./auto tests core --help`
@@ -575,6 +790,9 @@ def build_parser() -> argparse.ArgumentParser:
     db_sub = db.add_subparsers(dest="db_command")
 
     db_migrate = db_sub.add_parser("migrate", help="Flyway 마이그레이션 실행")
+    db_migrate.add_argument("--env-file", help="기본: deploy/.env.prod")
+    db_migrate.add_argument("--repair", action="store_true", help="flywayRepair 실행 후 migrate")
+    db_migrate.add_argument("--info", action="store_true", help="flywayInfo만 실행")
     db_migrate.set_defaults(func=cmd_db_migrate)
 
     # dev
@@ -610,6 +828,59 @@ def build_parser() -> argparse.ArgumentParser:
     )
     dev_kill_ports.set_defaults(func=cmd_dev_kill_ports)
 
+    # deploy
+    deploy = subparsers.add_parser("deploy", help="배포(docker compose prod) 제어")
+    deploy_sub = deploy.add_subparsers(dest="deploy_command", metavar="deploy-command")
+
+    deploy_up = deploy_sub.add_parser("up", help="배포 스택 기동 (기본 proxy)")
+    deploy_up.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_up.add_argument("--services", nargs="+", help="기동할 서비스 지정 (기본: proxy)")
+    deploy_up.add_argument("--build", action="store_true", help="app/frontend 이미지를 빌드 후 up --build")
+    deploy_up.add_argument("--pull", action="store_true", help="up 전에 docker compose pull 실행")
+    deploy_up.add_argument("--force-recreate", action="store_true", help="up --force-recreate 옵션 전달")
+    deploy_up.add_argument("--push", action="store_true", help="빌드 후 docker compose push app/frontend 실행")
+    deploy_up.set_defaults(func=cmd_deploy_up)
+
+    deploy_down = deploy_sub.add_parser("down", help="배포 스택 중지")
+    deploy_down.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_down.add_argument("--services", nargs="+", help="중지할 서비스 목록 (미지정 시 전체)")
+    deploy_down.add_argument("--volumes", action="store_true", help="볼륨까지 함께 제거")
+    deploy_down.add_argument("--remove-orphans", action="store_true", help="불필요한 컨테이너 제거")
+    deploy_down.set_defaults(func=cmd_deploy_down)
+
+    deploy_status = deploy_sub.add_parser("status", help="배포 스택 상태 조회")
+    deploy_status.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_status.set_defaults(func=cmd_deploy_status)
+
+    deploy_reset = deploy_sub.add_parser("reset", help="down --volumes → migrate → up proxy 순으로 재기동")
+    deploy_reset.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_reset.add_argument("--services", nargs="+", help="최종 up 대상 (기본: proxy)")
+    deploy_reset.add_argument("--build", action="store_true", help="app/frontend 이미지를 빌드 후 up --build")
+    deploy_reset.add_argument("--pull", action="store_true", help="up 전에 docker compose pull 실행")
+    deploy_reset.add_argument("--force-recreate", action="store_true", help="up --force-recreate 옵션 전달")
+    deploy_reset.add_argument("--push", action="store_true", help="빌드 후 docker compose push app/frontend 실행")
+    deploy_reset.set_defaults(func=cmd_deploy_reset)
+
+    deploy_logs = deploy_sub.add_parser("logs", help="배포 스택 로그 스트리밍")
+    deploy_logs.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_logs.add_argument("--services", nargs="+", help="로그를 확인할 서비스 (기본: proxy)")
+    deploy_logs.set_defaults(func=cmd_deploy_logs)
+
+    deploy_tls = deploy_sub.add_parser("tls", help="TLS/Certbot 헬퍼 명령")
+    deploy_tls_sub = deploy_tls.add_subparsers(dest="deploy_tls_command", metavar="tls-command")
+
+    deploy_tls_issue = deploy_tls_sub.add_parser("issue", help="Let's Encrypt 인증서 발급")
+    deploy_tls_issue.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_tls_issue.add_argument("--domain", help="발급 대상 도메인 (기본: TLS_DOMAIN)")
+    deploy_tls_issue.add_argument("--email", help="연락 이메일 (기본: TLS_EMAIL)")
+    deploy_tls_issue.add_argument("--staging", action="store_true", help="Let's Encrypt 스테이징 서버 사용")
+    deploy_tls_issue.set_defaults(func=cmd_deploy_tls_issue)
+
+    deploy_tls_renew = deploy_tls_sub.add_parser("renew", help="기존 인증서 갱신")
+    deploy_tls_renew.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_tls_renew.add_argument("--staging", action="store_true", help="Let's Encrypt 스테이징 서버 사용")
+    deploy_tls_renew.set_defaults(func=cmd_deploy_tls_renew)
+
     # 기타
     cleanup = subparsers.add_parser("cleanup", help="빌드 산출물 정리")
     cleanup.set_defaults(func=cmd_cleanup)
@@ -642,6 +913,9 @@ def main(argv: Optional[list[str]] = None) -> int:
         func(args)
     except subprocess.CalledProcessError as exc:
         return exc.returncode
+    except ValueError as exc:
+        print(f"❌ {exc}")
+        return 1
     except KeyboardInterrupt:
         print("\n⏹ 작업이 사용자의 요청으로 중단되었습니다.")
         return 130
