@@ -140,14 +140,20 @@ BEGIN
 
     CREATE TEMP TABLE tmp_occupant_pool (
         owner_id uuid,
+        room_id uuid,
         floor_no integer,
+        room_number text,
+        personal_no integer,
         slot_index integer
     ) ON COMMIT DROP;
 
     INSERT INTO tmp_occupant_pool
     SELECT
         du.id,
+        r.id,
         r.floor,
+        r.room_number,
+        ra.personal_no,
         ROW_NUMBER() OVER (
             PARTITION BY r.floor
             ORDER BY r.room_number::INTEGER, ra.personal_no
@@ -158,27 +164,23 @@ BEGIN
     WHERE ra.released_at IS NULL
       AND r.floor BETWEEN 2 AND 5;
 
-    CREATE TEMP TABLE tmp_compartment_pool (
-        compartment_id uuid,
-        floor_no integer,
-        compartment_group integer,
-        slot_index integer
+    CREATE TEMP TABLE tmp_room_chill_access (
+        room_id uuid,
+        fridge_compartment_id uuid,
+        floor_no integer
     ) ON COMMIT DROP;
 
-    INSERT INTO tmp_compartment_pool
+    INSERT INTO tmp_room_chill_access
     SELECT
-        fc.id,
-        fu.floor_no,
-        ROW_NUMBER() OVER (
-            PARTITION BY fu.floor_no
-            ORDER BY fc.slot_index
-        ) - 1,
-        fc.slot_index
-    FROM fridge_compartment fc
-    JOIN fridge_unit fu ON fu.id = fc.fridge_unit_id
-    WHERE fc.status = 'ACTIVE'
-      AND fu.status = 'ACTIVE'
-      AND fu.floor_no BETWEEN 2 AND 5;
+        cra.room_id,
+        cra.fridge_compartment_id,
+        r.floor
+    FROM compartment_room_access cra
+    JOIN room r ON r.id = cra.room_id
+    JOIN fridge_compartment fc ON fc.id = cra.fridge_compartment_id
+    WHERE cra.released_at IS NULL
+      AND r.floor BETWEEN 2 AND 5
+      AND fc.compartment_type = 'CHILL';
 
     CREATE TEMP TABLE tmp_bundle_assignments (
         compartment_id uuid,
@@ -189,17 +191,15 @@ BEGIN
 
     INSERT INTO tmp_bundle_assignments (compartment_id, floor_no, owner_id, bundle_rank)
     SELECT
-        cp.compartment_id,
-        cp.floor_no,
+        rca.fridge_compartment_id,
+        rca.floor_no,
         op.owner_id,
         ROW_NUMBER() OVER (
-            PARTITION BY cp.compartment_id
-            ORDER BY op.slot_index
+            PARTITION BY rca.fridge_compartment_id
+            ORDER BY op.floor_no, op.room_number::INTEGER, op.personal_no
         ) AS bundle_rank
-    FROM tmp_compartment_pool cp
-    JOIN tmp_occupant_pool op
-      ON op.floor_no = cp.floor_no
-     AND op.slot_index / 10 = cp.compartment_group;
+    FROM tmp_room_chill_access rca
+    JOIN tmp_occupant_pool op ON op.room_id = rca.room_id;
 
     DELETE FROM tmp_bundle_assignments
     WHERE bundle_rank > 10;
