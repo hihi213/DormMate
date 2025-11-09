@@ -16,6 +16,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { ExpiryInput } from "@/components/shared/expiry-input"
 import { formatStickerLabel } from "@/features/fridge/utils/labels"
 import { formatShortDate } from "@/lib/date-utils"
+import { cn } from "@/lib/utils"
 
 export default function BundleDetailSheet({
   open = false,
@@ -75,6 +76,7 @@ export default function BundleDetailSheet({
   const canEditBundle = isOwner && slotEditable
 
   const sorted = useMemo(() => group.slice().sort((a, b) => daysLeft(a.expiryDate) - daysLeft(b.expiryDate)), [group])
+  const isSingleItem = sorted.length === 1
   const [bundleNameDraft, setBundleNameDraft] = useState(bundleName)
   const [memoDraft, setMemoDraft] = useState(representativeMemo)
   const [infoEditing, setInfoEditing] = useState(false)
@@ -319,6 +321,186 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
   }
 }
 
+const renderItemCard = (
+  it: typeof sorted[number],
+  variant: "single" | "list" = "list"
+) => {
+  const d = daysLeft(it.expiryDate)
+  const dText = ddayLabel(d)
+  const statusColor = d < 0 ? "text-rose-600" : d <= 1 ? "text-amber-600" : "text-emerald-700"
+  const [detailName, suffix] = splitDetail(it.name, bundleName)
+  const isEditing = canEditBundle && editingUnitId === it.unitId
+  const draftName = isEditing && itemDraft ? itemDraft.name : detailName
+  const draftExpiry = isEditing && itemDraft ? itemDraft.expiryDate : it.expiryDate
+  const draftQuantity = isEditing && itemDraft ? itemDraft.quantity : it.quantity ?? 1
+  const displayLabel =
+    it.displayLabel ??
+    `${it.bundleLabelDisplay ?? formatStickerLabel(it.slotIndex, it.labelNumber)}-${String(it.seqNo).padStart(2, "0")}`
+  const showItemMemo = isOwner && it.memo && it.memo !== representativeMemo
+  const wrapperClass = cn(
+    "space-y-3 border",
+    variant === "single"
+      ? "rounded-xl border-emerald-200 bg-emerald-50/50 p-4 shadow-sm"
+      : "rounded-md p-3",
+  )
+  const headerClass = cn("font-semibold truncate", variant === "single" ? "text-lg" : "text-base")
+
+  return (
+    <div key={it.unitId} className={wrapperClass}>
+      <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between", variant === "single" && "gap-4")}>
+        <div className="min-w-0 flex-1 space-y-2">
+          {isEditing ? (
+            <>
+              <div>
+                <Label className="text-xs text-muted-foreground">{"세부명"}</Label>
+                <Input
+                  value={draftName}
+                  onChange={(e) =>
+                    setItemDraft((prev) =>
+                      prev
+                        ? { ...prev, name: e.target.value }
+                        : {
+                            name: e.target.value,
+                            expiryDate: draftExpiry,
+                            quantity: draftQuantity,
+                          },
+                    )
+                  }
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">{"유통기한"}</Label>
+                <ExpiryInput
+                  id={`bundle-edit-expiry-${it.unitId}`}
+                  label={undefined}
+                  value={draftExpiry}
+                  onChange={(next) =>
+                    setItemDraft((prev) =>
+                      prev
+                        ? { ...prev, expiryDate: next }
+                        : { name: draftName, expiryDate: next, quantity: draftQuantity },
+                    )
+                  }
+                  presets={[]}
+                  warningThresholdDays={3}
+                  showStatusBadge={false}
+                />
+              </div>
+              <div>
+                <Label className="text-xs text-muted-foreground">{"수량"}</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  value={draftQuantity}
+                  onChange={(e) => {
+                    const nextValue = Number.parseInt(e.target.value, 10)
+                    const safeValue = Number.isNaN(nextValue) ? 1 : nextValue
+                    setItemDraft((prev) =>
+                      prev
+                        ? { ...prev, quantity: safeValue }
+                        : {
+                            name: draftName,
+                            expiryDate: draftExpiry,
+                            quantity: safeValue,
+                          },
+                    )
+                  }}
+                />
+              </div>
+              {showItemMemo && <p className="text-xs text-muted-foreground">{`메모: ${it.memo}`}</p>}
+            </>
+          ) : (
+            <div className="space-y-1.5">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={headerClass}>{detailName}</span>
+                <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[11px] text-slate-600">
+                  {displayLabel}
+                </span>
+                {it.quantity != null && (
+                  <span className="rounded-full border border-emerald-200 px-2 py-0.5 text-[11px] text-emerald-700">
+                    {`수량 ${it.quantity}`}
+                  </span>
+                )}
+              </div>
+              <div className={`text-sm ${statusColor}`}>{`${formatShortDate(it.expiryDate)} • ${dText}`}</div>
+              {showItemMemo && <p className="text-xs text-muted-foreground">{`메모: ${it.memo}`}</p>}
+            </div>
+          )}
+        </div>
+        {canEditBundle && (
+          <div className="shrink-0 flex items-center gap-1 self-start">
+            {isEditing ? (
+              <>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label="수정 저장"
+                  onClick={() => void handleSaveItem(it.unitId, suffix)}
+                >
+                  <Check className="size-4 text-emerald-600" />
+                </Button>
+                <Button variant="ghost" size="icon" aria-label="수정 취소" onClick={cancelEditItem}>
+                  <X className="size-4" />
+                </Button>
+              </>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="수정"
+                onClick={() => beginEditItem(it.unitId, it.name, it.expiryDate, it.quantity)}
+                disabled={!slotEditable}
+              >
+                <Pencil className="size-4" />
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-rose-600"
+              onClick={async () => {
+                if (deletingId) return
+                if (!slotEditable) {
+                  toast({
+                    title: "삭제할 수 없습니다",
+                    description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
+                    variant: "destructive",
+                  })
+                  return
+                }
+                if (!confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) return
+                setDeletingId(it.unitId)
+                const result = await deleteItem(it.unitId)
+                setDeletingId(null)
+                if (result.success) {
+                  toast({
+                    title: "삭제됨",
+                    description: `${detailName} 항목이 삭제되었습니다.`,
+                  })
+                } else {
+                  if (result.code === "COMPARTMENT_SUSPENDED") {
+                    setSlotEditable(false)
+                  }
+                  toast({
+                    title: "삭제 실패",
+                    description: result.error ?? "세부 물품 삭제 중 오류가 발생했습니다.",
+                    variant: "destructive",
+                  })
+                }
+              }}
+              disabled={deletingId === it.unitId || !slotEditable}
+              aria-label="삭제"
+            >
+              {deletingId === it.unitId ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+            </Button>
+          </div>
+        )}
+      </div>
+      {isEditing && <p className="text-xs text-muted-foreground">{"저장을 누르면 해당 물품의 정보가 변경됩니다."}</p>}
+    </div>
+  )
+}
+
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
@@ -433,191 +615,16 @@ const handleSaveItem = async (unitId: string, useBundlePrefix: boolean) => {
 
               <Card>
                 <CardContent className="py-3 space-y-3">
-                  {sorted.map((it) => {
-                    const d = daysLeft(it.expiryDate)
-                    const dText = ddayLabel(d)
-                    const statusColor = d < 0 ? "text-rose-600" : d <= 1 ? "text-amber-600" : "text-emerald-700"
-                    const [detailName, suffix] = splitDetail(it.name, bundleName)
-                    const isEditing = canEditBundle && editingUnitId === it.unitId
-                    const draftName = isEditing && itemDraft ? itemDraft.name : detailName
-                    const draftExpiry = isEditing && itemDraft ? itemDraft.expiryDate : it.expiryDate
-                    const draftQuantity = isEditing && itemDraft ? itemDraft.quantity : it.quantity ?? 1
-                    const displayLabel =
-                      it.displayLabel ??
-                      `${it.bundleLabelDisplay ?? formatStickerLabel(it.slotIndex, it.labelNumber)}-${String(it.seqNo).padStart(2, "0")}`
-                    const showItemMemo = isOwner && it.memo && it.memo !== representativeMemo
-                    return (
-                      <div key={it.unitId} className="rounded-md border p-3 space-y-3">
-                        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                          <div className="min-w-0 flex-1 space-y-2">
-                            {isEditing ? (
-                              <>
-                                <div>
-                                  <Label className="text-xs text-muted-foreground">{"세부명"}</Label>
-                                  <Input
-                                    value={draftName}
-                                    onChange={(e) =>
-                                      setItemDraft((prev) =>
-                                        prev
-                                          ? { ...prev, name: e.target.value }
-                                          : {
-                                              name: e.target.value,
-                                              expiryDate: draftExpiry,
-                                              quantity: draftQuantity,
-                                            },
-                                      )
-                                    }
-                                  />
-                                </div>
-                                <div>
-                                  <Label className="text-xs text-muted-foreground">{"유통기한"}</Label>
-                                  <ExpiryInput
-                                    id={`bundle-edit-expiry-${it.unitId}`}
-                                    label={undefined}
-                                    value={draftExpiry}
-                                    onChange={(next) =>
-                                      setItemDraft((prev) =>
-                                        prev
-                                          ? { ...prev, expiryDate: next }
-                                          : { name: draftName, expiryDate: next, quantity: draftQuantity },
-                                      )
-                                    }
-                                    presets={[]}
-                                    warningThresholdDays={3}
-                                    showStatusBadge={false}
-                                  />
-                                </div>
-                                <div>
-                                  <Label className="text-xs text-muted-foreground">{"수량"}</Label>
-                                  <Input
-                                    type="number"
-                                    min={1}
-                                    value={draftQuantity}
-                                    onChange={(e) => {
-                                      const nextValue = Number.parseInt(e.target.value, 10)
-                                      const safeValue = Number.isNaN(nextValue) ? 1 : nextValue
-                                      setItemDraft((prev) =>
-                                        prev
-                                          ? { ...prev, quantity: safeValue }
-                                          : {
-                                              name: draftName,
-                                              expiryDate: draftExpiry,
-                                              quantity: safeValue,
-                                            },
-                                      )
-                                    }}
-                                  />
-                                </div>
-                                {showItemMemo && (
-                                  <p className="text-xs text-muted-foreground">{`메모: ${it.memo}`}</p>
-                                )}
-                              </>
-                            ) : (
-                              <div className="space-y-1.5">
-                                <div className="flex flex-wrap items-center gap-2">
-                                  <span className="text-base font-semibold truncate">{detailName}</span>
-                                  <span className="rounded-full border border-slate-200 px-2 py-0.5 text-[11px] text-slate-600">
-                                    {displayLabel}
-                                  </span>
-                                  {it.quantity != null && (
-                                    <span className="rounded-full border border-emerald-200 px-2 py-0.5 text-[11px] text-emerald-700">
-                                      {`수량 ${it.quantity}`}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className={`text-sm ${statusColor}`}>{`${formatShortDate(it.expiryDate)} • ${dText}`}</div>
-                                {showItemMemo && (
-                                  <p className="text-xs text-muted-foreground">{`메모: ${it.memo}`}</p>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                          {canEditBundle && (
-                            <div className="shrink-0 flex items-center gap-1 self-start">
-                              {isEditing ? (
-                                <>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    aria-label="수정 저장"
-                                    onClick={() => void handleSaveItem(it.unitId, suffix)}
-                                  >
-                                    <Check className="size-4 text-emerald-600" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    aria-label="수정 취소"
-                                    onClick={cancelEditItem}
-                                  >
-                                    <X className="size-4" />
-                                  </Button>
-                                </>
-                              ) : (
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  aria-label="수정"
-                                  onClick={() => beginEditItem(it.unitId, it.name, it.expiryDate, it.quantity)}
-                                  disabled={!slotEditable}
-                                >
-                                  <Pencil className="size-4" />
-                                </Button>
-                              )}
-                              <Button
-                                variant="ghost"
-                                size="icon"
-                                className="text-rose-600"
-                                onClick={async () => {
-                                  if (deletingId) return
-                                  if (!slotEditable) {
-                                    toast({
-                                      title: "삭제할 수 없습니다",
-                                      description: "해당 칸이 점검 중이거나 일시 중지되었습니다.",
-                                      variant: "destructive",
-                                    })
-                                    return
-                                  }
-                                  if (!confirm("해당 세부 물품을 삭제할까요? (되돌릴 수 없음)")) return
-                                  setDeletingId(it.unitId)
-                                  const result = await deleteItem(it.unitId)
-                                  setDeletingId(null)
-                                  if (result.success) {
-                                    toast({
-                                      title: "삭제됨",
-                                      description: `${detailName} 항목이 삭제되었습니다.`,
-                                    })
-                                  } else {
-                                    if (result.code === "COMPARTMENT_SUSPENDED") {
-                                      setSlotEditable(false)
-                                    }
-                                    toast({
-                                      title: "삭제 실패",
-                                      description: result.error ?? "세부 물품 삭제 중 오류가 발생했습니다.",
-                                      variant: "destructive",
-                                    })
-                                  }
-                                }}
-                                disabled={deletingId === it.unitId || !slotEditable}
-                                aria-label="삭제"
-                              >
-                                {deletingId === it.unitId ? (
-                                  <Loader2 className="size-4 animate-spin" />
-                                ) : (
-                                  <Trash2 className="size-4" />
-                                )}
-                              </Button>
-                            </div>
-                          )}
-                        </div>
-                        {isEditing && (
-                          <p className="text-xs text-muted-foreground">
-                            {"저장을 누르면 해당 물품의 정보가 변경됩니다."}
-                          </p>
-                        )}
-                      </div>
-                    )
-                  })}
+                  {sorted.length === 0 ? (
+                    <p className="text-sm text-muted-foreground">{"등록된 물품이 없습니다."}</p>
+                  ) : isSingleItem ? (
+                    <div className="space-y-3">
+                      <p className="text-xs text-muted-foreground">{"이 묶음에는 1개의 물품이 있습니다."}</p>
+                      {renderItemCard(sorted[0], "single")}
+                    </div>
+                  ) : (
+                    sorted.map((it) => renderItemCard(it))
+                  )}
                 </CardContent>
               </Card>
             </>

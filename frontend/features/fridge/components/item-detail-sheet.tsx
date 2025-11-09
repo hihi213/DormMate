@@ -15,6 +15,7 @@ import { Input } from "@/components/ui/input"
 import { ExpiryInput } from "@/components/shared/expiry-input"
 import { daysLeft, formatShortDate } from "@/lib/date-utils"
 import { formatStickerLabel } from "@/features/fridge/utils/labels"
+import { WARNING_EXPIRY_DAYS } from "@/features/fridge/components/add-item/constants"
 
 export default function ItemDetailSheet({
   open = false,
@@ -179,7 +180,10 @@ export default function ItemDetailSheet({
                       label="유통기한"
                       value={form.expiryDate}
                       onChange={(next) => setForm((f) => ({ ...f, expiryDate: next }))}
-                      warningThresholdDays={3}
+                      warningThresholdDays={WARNING_EXPIRY_DAYS}
+                      emphasizeToday
+                      className="max-w-xs"
+                      inputClassName="w-28"
                     />
                     <div className="flex justify-end">
                       <Button
