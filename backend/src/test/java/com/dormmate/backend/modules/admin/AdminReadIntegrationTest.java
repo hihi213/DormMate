@@ -65,15 +65,17 @@ class AdminReadIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     private String loginAndGetAccessToken(String loginId, String password) throws Exception {
+        String deviceId = loginId + "-device";
         MvcResult result = mockMvc.perform(
                         post("/auth/login")
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
                                           \"loginId\": \"%s\",
-                                          \"password\": \"%s\"
+                                          \"password\": \"%s\",
+                                          \"deviceId\": \"%s\"
                                         }
-                                        """.formatted(loginId, password))
+                                        """.formatted(loginId, password, deviceId))
                 )
                 .andExpect(status().isOk())
                 .andReturn();

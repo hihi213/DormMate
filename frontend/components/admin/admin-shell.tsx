@@ -20,7 +20,6 @@ import {
   FileBarChart2,
   Info,
   LayoutDashboard,
-  Menu,
   Search,
   Settings2,
   ShieldCheck,
@@ -32,14 +31,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
-import {
-  Sheet,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-  SheetTrigger,
-} from "@/components/ui/sheet"
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { getCurrentUser, logout, subscribeAuth, type AuthUser } from "@/lib/auth"
@@ -161,7 +153,6 @@ export default function AdminShell({ children }: AdminShellProps) {
   const pathname = usePathname()
   const user = useAuthUser()
   const [searchKeyword, setSearchKeyword] = useState("")
-  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [railSheetOpen, setRailSheetOpen] = useState(false)
   const desktopSearchRef = useRef<HTMLInputElement | null>(null)
   const mobileSearchRef = useRef<HTMLInputElement | null>(null)
@@ -297,44 +288,15 @@ export default function AdminShell({ children }: AdminShellProps) {
         <div className="flex flex-1 flex-col">
           <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/90 backdrop-blur">
             <div className="flex items-center justify-between gap-4 px-6 py-4">
-              <Sheet open={mobileNavOpen} onOpenChange={setMobileNavOpen}>
-                <div className="flex items-center gap-2 lg:hidden">
-                  <SheetTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="관리자 내비게이션 열기"
-                      className="rounded-full border border-slate-200 bg-white shadow-sm"
-                    >
-                      <Menu className="size-5" aria-hidden />
-                    </Button>
-                  </SheetTrigger>
-                  <div className="flex items-center gap-2">
-                    <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
-                      <ShieldCheck className="size-5 text-emerald-600" aria-hidden />
-                    </span>
-                    <div>
-                      <p className="text-sm font-semibold text-slate-900">DormMate Admin</p>
-                      <p className="text-xs text-slate-500">운영 허브</p>
-                    </div>
-                  </div>
+              <div className="flex items-center gap-2 lg:hidden">
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100">
+                  <ShieldCheck className="size-5 text-emerald-600" aria-hidden />
+                </span>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">DormMate Admin</p>
+                  <p className="text-xs text-slate-500">운영 허브</p>
                 </div>
-                <SheetContent side="left" className="w-[280px] p-0">
-                  <SheetHeader className="sr-only">
-                    <SheetTitle>모바일 관리자 내비게이션</SheetTitle>
-                    <SheetDescription>관리자 페이지 간 이동 메뉴</SheetDescription>
-                  </SheetHeader>
-                  <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4 pr-9">
-                    <div className="flex items-center gap-2">
-                      <span className="rounded-full bg-emerald-100 p-2">
-                        <ShieldCheck className="size-5 text-emerald-600" aria-hidden />
-                      </span>
-                      <p className="text-sm font-semibold text-slate-900">DormMate Admin</p>
-                    </div>
-                  </div>
-                  <NavList onNavigate={() => setMobileNavOpen(false)} />
-                </SheetContent>
-              </Sheet>
+              </div>
               <form
                 onSubmit={handleSearchSubmit}
                 className="relative hidden w-full max-w-xl items-center lg:flex"

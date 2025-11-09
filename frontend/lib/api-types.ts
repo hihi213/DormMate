@@ -701,9 +701,15 @@ export interface components {
             recordedAt?: string;
             /** Format: uuid */
             recordedBy?: string;
+            recordedByLogin?: string;
+            recordedByName?: string;
             note?: string;
             /** Format: uuid */
             correlationId?: string;
+            roomNumber?: string;
+            /** Format: int32 */
+            personalNo?: number;
+            targetName?: string;
             items?: components["schemas"]["InspectionActionItemResponse"][];
             penalties?: components["schemas"]["PenaltyHistoryResponse"][];
         };
@@ -739,6 +745,11 @@ export interface components {
             status?: string;
             /** Format: uuid */
             startedBy?: string;
+            startedByLogin?: string;
+            startedByName?: string;
+            startedByRoomNumber?: string;
+            /** Format: int32 */
+            startedByPersonalNo?: number;
             /** Format: date-time */
             startedAt?: string;
             /** Format: date-time */

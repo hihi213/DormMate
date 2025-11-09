@@ -320,6 +320,42 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void adminInspectionListingIncludesInspectorAndTargetMetadata() throws Exception {
+        JsonNode bundle = ensureBundleForPrimaryResident(slot2FAId);
+        UUID bundleId = UUID.fromString(bundle.path("bundleId").asText());
+        UUID itemId = UUID.fromString(bundle.path("items").get(0).path("itemId").asText());
+
+        JsonNode session = startInspection(managerToken, slot2FAId);
+        UUID sessionId = UUID.fromString(session.path("sessionId").asText());
+
+        recordDisposeAction(managerToken, sessionId, bundleId, itemId);
+        submitInspection(managerToken, sessionId);
+
+        JsonNode inspections = listInspections(adminToken, slot2FAId);
+        assertThat(inspections.isArray()).isTrue();
+        assertThat(inspections).isNotEmpty();
+
+        JsonNode latest = inspections.get(0);
+        assertThat(latest.path("startedByLogin").asText()).isEqualTo(FLOOR2_ROOM05_SLOT3);
+        assertThat(latest.path("startedByName").asText()).isNotBlank();
+
+        JsonNode firstAction = latest.path("actions").get(0);
+        assertThat(firstAction.path("targetName").asText()).isNotBlank();
+        String expectedRoom = jdbcTemplate.queryForObject(
+                "SELECT room_number FROM room WHERE id = ?",
+                String.class,
+                residentRoomId
+        );
+        Integer expectedPersonal = jdbcTemplate.queryForObject(
+                "SELECT personal_no FROM room_assignment WHERE dorm_user_id = ? AND released_at IS NULL",
+                Integer.class,
+                residentId
+        );
+        assertThat(firstAction.path("roomNumber").asText()).isEqualTo(expectedRoom);
+        assertThat(firstAction.path("personalNo").asInt()).isEqualTo(expectedPersonal);
+    }
+
+    @Test
     void managerCannotSubmitTwice() throws Exception {
         JsonNode session = startInspection(managerToken, slot2FAId);
         UUID sessionId = UUID.fromString(session.path("sessionId").asText());
@@ -472,6 +508,15 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
     private JsonNode submitInspection(String token, UUID sessionId) throws Exception {
         MvcResult result = mockMvc.perform(post("/fridge/inspections/%s/submit".formatted(sessionId))
                         .header("Authorization", "Bearer " + token))
+                .andExpect(status().isOk())
+                .andReturn();
+        return objectMapper.readTree(result.getResponse().getContentAsString());
+    }
+
+    private JsonNode listInspections(String token, UUID slotId) throws Exception {
+        MvcResult result = mockMvc.perform(get("/fridge/inspections")
+                        .header("Authorization", "Bearer " + token)
+                        .param("slotId", slotId.toString()))
                 .andExpect(status().isOk())
                 .andReturn();
         return objectMapper.readTree(result.getResponse().getContentAsString());
@@ -640,14 +685,16 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     private String login(String loginId, String password) throws Exception {
+        String deviceId = loginId + "-device";
         MvcResult result = mockMvc.perform(post("/auth/login")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
                                   "loginId": "%s",
-                                  "password": "%s"
+                                  "password": "%s",
+                                  "deviceId": "%s"
                                 }
-                                """.formatted(loginId, password)))
+                                """.formatted(loginId, password, deviceId)))
                 .andExpect(status().isOk())
                 .andReturn();
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());

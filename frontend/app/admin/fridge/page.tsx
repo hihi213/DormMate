@@ -86,7 +86,13 @@ const INSPECTION_STATUS_LABEL: Record<AdminInspectionSession["status"], string> 
 }
 
 const formatInspectorDisplay = (session: AdminInspectionSession) => {
+  const room = session.startedByRoomNumber?.trim()
+  const roomLabel = room ? `${room}호` : undefined
   const name = session.startedByName?.trim()
+  if (roomLabel && name) {
+    return `${roomLabel} ${name}`
+  }
+  if (roomLabel) return roomLabel
   if (name) return name
 
   const login = session.startedByLogin?.trim()
@@ -1870,7 +1876,7 @@ export default function AdminFridgePage() {
                     <TableHeader>
                       <TableRow>
                         <TableHead className="w-[180px] px-3 text-xs font-semibold text-slate-500">
-                          검사일 · 검사자
+                          검사일
                         </TableHead>
                         <TableHead className="w-[96px] px-3 text-xs font-semibold text-slate-500">
                           상태
@@ -1912,9 +1918,7 @@ export default function AdminFridgePage() {
                           >
                             <TableCell className="px-3 py-3 align-top text-sm text-slate-900">
                               <div className="font-semibold">{formatDateTime(inspection.startedAt, "-")}</div>
-                              <div className="text-xs text-slate-500">
-                                검사자 {formatInspectorDisplay(inspection)}
-                              </div>
+                              <div className="text-xs text-slate-500">{formatInspectorDisplay(inspection)}</div>
                             </TableCell>
                             <TableCell className="px-3 py-3 align-top">
                               <Badge variant="outline" className="border-slate-200 text-slate-600">
@@ -2119,7 +2123,7 @@ export default function AdminFridgePage() {
               <DialogHeader>
                 <DialogTitle>검사 상세</DialogTitle>
                 <DialogDescription>
-                  {formatDateTime(selectedInspection.startedAt, "-")} · 검사자 {formatInspectorDisplay(selectedInspection)}
+                  {formatDateTime(selectedInspection.startedAt, "-")} · {formatInspectorDisplay(selectedInspection)}
                 </DialogDescription>
               </DialogHeader>
               <div className="space-y-4 text-sm text-slate-600">
@@ -2178,16 +2182,22 @@ export default function AdminFridgePage() {
                               : actionType.startsWith("WARN")
                                 ? "border-amber-200 text-amber-700 bg-amber-50"
                                 : "border-slate-200 text-slate-600 bg-slate-50"
-                          const roomLabel = action.roomNumber ?? undefined
+                          const rawRoom = action.roomNumber?.trim()
                           const personalLabel =
                             typeof action.personalNo === "number" ? String(action.personalNo) : undefined
-                          const roomPersonal =
-                            roomLabel && personalLabel
-                              ? `${roomLabel} - ${personalLabel}`
-                              : roomLabel || personalLabel || undefined
-                          const ownerName = action.bundleId
-                            ? bundleOwnerLookup.get(action.bundleId) ?? "사용자"
-                            : "사용자"
+                          const roomIdentifier =
+                            rawRoom && personalLabel
+                              ? `${rawRoom}-${personalLabel}`
+                              : rawRoom
+                                ? `${rawRoom}호`
+                                : undefined
+                          const ownerName =
+                            action.targetName?.trim() ??
+                            (action.bundleId ? bundleOwnerLookup.get(action.bundleId) ?? undefined : undefined)
+                          const occupantLabel =
+                            roomIdentifier && ownerName
+                              ? `${roomIdentifier} ${ownerName}`
+                              : roomIdentifier ?? ownerName ?? "사용자"
                           return (
                             <div
                               key={key}
@@ -2202,15 +2212,16 @@ export default function AdminFridgePage() {
                               >
                                 {actionLabel}
                               </Badge>
-                              {roomPersonal ? <span>{roomPersonal}</span> : null}
                               {action.targetUserId ? (
                                 <Link
                                   href={`/admin/users?focus=${action.targetUserId}`}
                                   className="text-emerald-600 hover:underline"
                                 >
-                                  {ownerName}
+                                  {occupantLabel}
                                 </Link>
-                              ) : null}
+                              ) : (
+                                <span>{occupantLabel}</span>
+                              )}
                               {bundleCount > 0 ? <span>물품 {bundleCount}개</span> : null}
                               <span className="text-slate-500">{recordedAt}</span>
                               {notificationLabel ? (

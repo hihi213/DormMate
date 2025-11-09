@@ -22,6 +22,8 @@ import org.springframework.test.web.servlet.MvcResult;
 @org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc
 class AuthIntegrationTest extends AbstractPostgresIntegrationTest {
 
+    private static final String ADMIN_DEVICE_ID = "mock-admin-device";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -68,9 +70,10 @@ class AuthIntegrationTest extends AbstractPostgresIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
-                                          "refreshToken": "%s"
+                                          "refreshToken": "%s",
+                                          "deviceId": "%s"
                                         }
-                                        """.formatted(originalRefreshToken))
+                                        """.formatted(originalRefreshToken, ADMIN_DEVICE_ID))
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tokens.refreshToken").isNotEmpty())
@@ -88,9 +91,10 @@ class AuthIntegrationTest extends AbstractPostgresIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
-                                          "refreshToken": "%s"
+                                          "refreshToken": "%s",
+                                          "deviceId": "%s"
                                         }
-                                        """.formatted(originalRefreshToken))
+                                        """.formatted(originalRefreshToken, ADMIN_DEVICE_ID))
                 )
                 .andExpect(status().isUnauthorized());
     }
@@ -116,9 +120,10 @@ class AuthIntegrationTest extends AbstractPostgresIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
-                                          "refreshToken": "%s"
+                                          "refreshToken": "%s",
+                                          "deviceId": "%s"
                                         }
-                                        """.formatted(refreshToken))
+                                        """.formatted(refreshToken, ADMIN_DEVICE_ID))
                 )
                 .andExpect(status().isUnauthorized());
     }
@@ -130,9 +135,10 @@ class AuthIntegrationTest extends AbstractPostgresIntegrationTest {
                                 .content("""
                                         {
                                           "loginId": "dormmate",
-                                          "password": "admin1!"
+                                          "password": "admin1!",
+                                          "deviceId": "%s"
                                         }
-                                        """)
+                                        """.formatted(ADMIN_DEVICE_ID))
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tokens.accessToken").isNotEmpty())
