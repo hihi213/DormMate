@@ -346,7 +346,7 @@ export default function AdminFridgePage() {
     syncResumeTimeoutRef.current = setTimeout(() => {
       setSyncQueryEnabled(true)
       syncResumeTimeoutRef.current = null
-    }, 0)
+    }, 100)
   }, [])
 
   const updateQueryParams = useCallback(
