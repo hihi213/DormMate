@@ -321,6 +321,8 @@ export default function AdminFridgePage() {
     initialInspectionIdRef.current,
   )
   const [syncQueryEnabled, setSyncQueryEnabled] = useState(false)
+  const syncResumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const ignoreQueryParamsRef = useRef(false)
   const [inspectionEditOpen, setInspectionEditOpen] = useState(false)
   const [inspectionDraftActions, setInspectionDraftActions] = useState<InspectionActionDraft[]>([])
   const [inspectionDraftNotes, setInspectionDraftNotes] = useState("")
@@ -330,6 +332,24 @@ export default function AdminFridgePage() {
 
   useEffect(() => {
     setSyncQueryEnabled(true)
+    return () => {
+      if (syncResumeTimeoutRef.current) {
+        clearTimeout(syncResumeTimeoutRef.current)
+      }
+    }
+  }, [])
+
+  const temporarilyDisableQuerySync = useCallback(() => {
+    ignoreQueryParamsRef.current = true
+    setSyncQueryEnabled(false)
+    if (syncResumeTimeoutRef.current) {
+      clearTimeout(syncResumeTimeoutRef.current)
+    }
+    syncResumeTimeoutRef.current = setTimeout(() => {
+      ignoreQueryParamsRef.current = false
+      setSyncQueryEnabled(true)
+      syncResumeTimeoutRef.current = null
+    }, 150)
   }, [])
 
   const updateQueryParams = useCallback(
@@ -350,9 +370,9 @@ export default function AdminFridgePage() {
       if (selectedSlotId) {
         const current = params.get("slot") ?? params.get("slotId")
         if (current === selectedSlotId) return false
-        console.log("[querySync] push slot", { selectedSlotId })
         params.set("slot", selectedSlotId)
         params.delete("slotId")
+        lastSyncedSlotParamRef.current = selectedSlotId
         return true
       }
       let changed = false
@@ -399,8 +419,12 @@ export default function AdminFridgePage() {
   )
 
   useEffect(() => {
+    if (ignoreQueryParamsRef.current) {
+      return
+    }
     const slotParam = searchParams.get("slot") ?? searchParams.get("slotId") ?? null
-    if (slotParam !== lastSyncedSlotParamRef.current) {
+    const previousSlotParam = lastSyncedSlotParamRef.current
+    if (slotParam !== previousSlotParam) {
       console.log("[queryWatch] apply new slotParam", {
         slotParam,
         selectedSlotId,
@@ -458,13 +482,15 @@ export default function AdminFridgePage() {
   const handleFloorChange = useCallback(
     (floor: number) => {
       if (floor === selectedFloor) return
+      temporarilyDisableQuerySync()
       resetBundleFilters()
       setSelectedSlotId(null)
       setPendingSlotId(null)
       lastSyncedSlotParamRef.current = null
+      clearQueryKeys(["slot", "slotId", "bundle", "bundleId", "inspection", "inspectionId"])
       setSelectedFloor(floor)
     },
-    [resetBundleFilters, selectedFloor],
+    [resetBundleFilters, selectedFloor, clearQueryKeys, temporarilyDisableQuerySync],
   )
 
   const [inspectionState, setInspectionState] = useState<InspectionState>({
@@ -486,6 +512,8 @@ export default function AdminFridgePage() {
   })
   const [detailTab, setDetailTab] = useState<DetailTabValue>("inspections")
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
+  const mobileScrollPositionRef = useRef<number | null>(null)
+  const prevMobileDetailOpenRef = useRef(mobileDetailOpen)
 
   const [reallocationOpen, setReallocationOpen] = useState(false)
   const [reallocationLoading, setReallocationLoading] = useState(false)
@@ -528,6 +556,23 @@ export default function AdminFridgePage() {
     }
   }, [selectedSlotId])
 
+  useEffect(() => {
+    if (!isMobile || typeof window === "undefined") {
+      prevMobileDetailOpenRef.current = mobileDetailOpen
+      mobileScrollPositionRef.current = null
+      return
+    }
+    const wasOpen = prevMobileDetailOpenRef.current
+    prevMobileDetailOpenRef.current = mobileDetailOpen
+    if (!wasOpen && mobileDetailOpen) {
+      mobileScrollPositionRef.current = window.scrollY
+      return
+    }
+    if (wasOpen && !mobileDetailOpen && mobileScrollPositionRef.current !== null) {
+      window.scrollTo({ top: mobileScrollPositionRef.current })
+    }
+  }, [mobileDetailOpen, isMobile])
+
   const handleSlotSelect = useCallback(
     (slotId: string) => {
       if (slotId === selectedSlotId) {
@@ -536,6 +581,7 @@ export default function AdminFridgePage() {
         }
         return
       }
+      temporarilyDisableQuerySync()
       if (pendingSlotId) {
         setPendingSlotId(null)
       }
@@ -544,10 +590,10 @@ export default function AdminFridgePage() {
       setHighlightedInspectionId(null)
       setSelectedSlotId(slotId)
       if (isMobile) {
-        setMobileDetailOpen(false)
+        setMobileDetailOpen(true)
       }
     },
-    [selectedSlotId, resetBundleFilters, isMobile, pendingSlotId],
+    [selectedSlotId, resetBundleFilters, isMobile, pendingSlotId, temporarilyDisableQuerySync],
   )
 
   useEffect(() => {
@@ -1459,20 +1505,9 @@ export default function AdminFridgePage() {
           <span>마지막 갱신 {formatRelative(slot.lockedUntil) || "-"}</span>
           {isMobile ? (
             isSelected ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  setMobileDetailOpen(true)
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                aria-label="선택된 칸 상세 열기"
-              >
-                상세 열기
-                <ArrowRight className="size-3.5" aria-hidden />
-              </Button>
+              <Badge className="bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">
+                선택됨
+              </Badge>
             ) : (
               <span className="font-medium text-emerald-600">탭하여 선택</span>
             )
@@ -1703,15 +1738,8 @@ export default function AdminFridgePage() {
                             )}
                             onClick={() => {
                               setHighlightedBundleId(bundle.bundleId)
-                              setDetailTab("inspections")
-                              if (bundle.lastInspectionId) {
-                                setPendingInspectionFocusId(bundle.lastInspectionId)
-                              } else {
-                                toast({
-                                  title: "검사 기록 없음",
-                                  description: "이 포장에 대한 검사 기록이 아직 없습니다.",
-                                })
-                              }
+                              setDetailTab("bundles")
+                              setPendingBundleFocusId(bundle.bundleId)
                             }}
                           >
                             <TableCell className="px-2 py-2 align-top">
@@ -2117,52 +2145,53 @@ export default function AdminFridgePage() {
           }
         }}
       >
-        <DialogContent className="max-w-3xl">
-          {selectedInspection ? (
-            <>
-              <DialogHeader>
-                <DialogTitle>검사 상세</DialogTitle>
-                <DialogDescription>
-                  {formatDateTime(selectedInspection.startedAt, "-")} · {formatInspectorDisplay(selectedInspection)}
-                </DialogDescription>
-              </DialogHeader>
-              <div className="space-y-4 text-sm text-slate-600">
-                <section className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline" className="border-slate-200 text-slate-600">
-                    {INSPECTION_STATUS_LABEL[selectedInspection.status]}
-                  </Badge>
-                  <Badge className="bg-emerald-100 px-3 py-0.5 text-xs font-semibold text-emerald-700">
-                    경고 {selectedInspection.warningCount}
-                  </Badge>
-                  <Badge className="bg-rose-100 px-3 py-0.5 text-xs font-semibold text-rose-700">
-                    폐기 {selectedInspection.disposalCount}
-                  </Badge>
-                </section>
-                {selectedInspection.notes ? (
-                  <section className="space-y-2">
-                    <h3 className="text-sm font-semibold text-slate-900">검사 메모</h3>
-                    <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
-                      {selectedInspection.notes}
-                    </p>
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-hidden p-0">
+          <ScrollArea className="max-h-[90vh] px-6 py-6">
+            {selectedInspection ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>검사 상세</DialogTitle>
+                  <DialogDescription>
+                    {formatDateTime(selectedInspection.startedAt, "-")} · {formatInspectorDisplay(selectedInspection)}
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4 text-sm text-slate-600">
+                  <section className="flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="border-slate-200 text-slate-600">
+                      {INSPECTION_STATUS_LABEL[selectedInspection.status]}
+                    </Badge>
+                    <Badge className="bg-emerald-100 px-3 py-0.5 text-xs font-semibold text-emerald-700">
+                      경고 {selectedInspection.warningCount}
+                    </Badge>
+                    <Badge className="bg-rose-100 px-3 py-0.5 text-xs font-semibold text-rose-700">
+                      폐기 {selectedInspection.disposalCount}
+                    </Badge>
                   </section>
-                ) : null}
-                <section className="space-y-3">
-                  <div className="flex items-center justify-between">
-                    <h3 className="text-sm font-semibold text-slate-900">조치 타임라인</h3>
-                    <Button size="sm" variant="outline" onClick={handleInspectionAdjust} disabled={inspectionEditSubmitting}>
-                      정정
-                    </Button>
-                  </div>
-                  {selectedInspection.actions.length === 0 ? (
-                    <p className="text-xs text-slate-500">기록된 조치가 없습니다.</p>
-                  ) : (
-                    <ScrollArea className="max-h-[260px] pr-2">
-                      <div className="space-y-1">
-                        {selectedInspection.actions.map((action, index) => {
-                          const key =
-                            action.actionId ??
-                            action.correlationId ??
-                            `${action.recordedAt ?? "action"}-${index}`
+                  {selectedInspection.notes ? (
+                    <section className="space-y-2">
+                      <h3 className="text-sm font-semibold text-slate-900">검사 메모</h3>
+                      <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                        {selectedInspection.notes}
+                      </p>
+                    </section>
+                  ) : null}
+                  <section className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h3 className="text-sm font-semibold text-slate-900">조치 타임라인</h3>
+                      <Button size="sm" variant="outline" onClick={handleInspectionAdjust} disabled={inspectionEditSubmitting}>
+                        정정
+                      </Button>
+                    </div>
+                    {selectedInspection.actions.length === 0 ? (
+                      <p className="text-xs text-slate-500">기록된 조치가 없습니다.</p>
+                    ) : (
+                      <ScrollArea className="max-h-[260px] pr-2">
+                        <div className="space-y-1">
+                          {selectedInspection.actions.map((action, index) => {
+                            const key =
+                              action.actionId ??
+                              action.correlationId ??
+                              `${action.recordedAt ?? "action"}-${index}`
                           const actionType = isInspectionActionType(action.actionType)
                             ? action.actionType
                             : DEFAULT_INSPECTION_ACTION
@@ -2232,30 +2261,31 @@ export default function AdminFridgePage() {
                               ) : null}
                             </div>
                           )
-                        })}
-                      </div>
-                    </ScrollArea>
-                  )}
-                </section>
-              </div>
-              <Separator className="mt-4" />
-              <DialogFooter className="mt-6 flex flex-col gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-between">
-                <div className="flex flex-wrap gap-2 text-xs text-slate-500">
-                  <Button size="sm" variant="outline" className="gap-1" onClick={handleInspectionResend} disabled={inspectionEditSubmitting}>
-                    알림 재발송
-                  </Button>
-                  <Button asChild size="sm" variant="ghost" className="gap-1 text-slate-600">
-                    <Link href={`/admin/audit?module=fridge&sessionId=${selectedInspection.sessionId}`}>
-                      감사 로그 이동
-                    </Link>
-                  </Button>
+                          })}
+                        </div>
+                      </ScrollArea>
+                    )}
+                  </section>
                 </div>
-                <Button variant="outline" size="sm" onClick={closeInspectionDialog} disabled={inspectionEditSubmitting}>
-                  닫기
-                </Button>
-              </DialogFooter>
-            </>
-          ) : null}
+                <Separator className="mt-4" />
+                <DialogFooter className="mt-6 flex flex-col gap-2 border-t border-slate-200 pt-4 sm:flex-row sm:justify-between">
+                  <div className="flex flex-wrap gap-2 text-xs text-slate-500">
+                    <Button size="sm" variant="outline" className="gap-1" onClick={handleInspectionResend} disabled={inspectionEditSubmitting}>
+                      알림 재발송
+                    </Button>
+                    <Button asChild size="sm" variant="ghost" className="gap-1 text-slate-600">
+                      <Link href={`/admin/audit?module=fridge&sessionId=${selectedInspection.sessionId}`}>
+                        감사 로그 이동
+                      </Link>
+                    </Button>
+                  </div>
+                  <Button variant="outline" size="sm" onClick={closeInspectionDialog} disabled={inspectionEditSubmitting}>
+                    닫기
+                  </Button>
+                </DialogFooter>
+              </>
+            ) : null}
+          </ScrollArea>
         </DialogContent>
       </Dialog>
 

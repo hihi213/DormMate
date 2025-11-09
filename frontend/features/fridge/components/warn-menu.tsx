@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -12,10 +12,20 @@ import { AlertTriangle, ChevronDown } from "lucide-react"
 
 export default function WarnMenu({
   onSelect = () => {},
+  disabled = false,
+  disabledReason,
 }: {
   onSelect?: (kind: "warn_storage" | "warn_mismatch") => void
+  disabled?: boolean
+  disabledReason?: string
 }) {
   const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    if (disabled && open) {
+      setOpen(false)
+    }
+  }, [disabled, open])
 
   const handleSelect = (kind: "warn_storage" | "warn_mismatch") => {
     onSelect(kind)
@@ -23,9 +33,23 @@ export default function WarnMenu({
   }
 
   return (
-    <DropdownMenu open={open} onOpenChange={setOpen} modal={false}>
+    <DropdownMenu
+      open={disabled ? false : open}
+      onOpenChange={(next) => {
+        if (!disabled) {
+          setOpen(next)
+        }
+      }}
+      modal={false}
+    >
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm">
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={disabled}
+          title={disabled ? disabledReason : undefined}
+          aria-disabled={disabled}
+        >
           <AlertTriangle className="size-4 mr-1 text-amber-600" />
           {"조치"}
           <ChevronDown className="size-4 ml-1" />
