@@ -9,7 +9,6 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -636,7 +635,21 @@ public class InspectionService {
         List<FridgeBundle> bundles = fridgeBundleRepository
                 .findByFridgeCompartmentAndStatus(compartment, FridgeBundleStatus.ACTIVE);
 
-        Map<UUID, RoomAssignment> assignments = loadAssignmentsForBundles(bundles);
+        DormUser inspector = session.getStartedBy();
+
+        Set<UUID> assignmentTargets = new LinkedHashSet<>();
+        for (FridgeBundle bundle : bundles) {
+            assignmentTargets.add(bundle.getOwner().getId());
+        }
+        assignmentTargets.add(inspector.getId());
+        for (InspectionAction action : session.getActions()) {
+            DormUser targetUser = action.getTargetUser();
+            if (targetUser != null) {
+                assignmentTargets.add(targetUser.getId());
+            }
+        }
+
+        Map<UUID, RoomAssignment> assignments = loadAssignmentsForUserIds(assignmentTargets);
         UUID viewerId = viewer.getId();
         List<FridgeBundleResponse> bundleResponses = bundles.stream()
                 .sorted(Comparator.comparing(FridgeBundle::getCreatedAt).reversed())
@@ -672,15 +685,23 @@ public class InspectionService {
                                     penalty.getCorrelationId()
                             ))
                             .toList();
+                    DormUser targetUser = action.getTargetUser();
+                    DormUser recordedBy = action.getRecordedBy();
+                    RoomAssignment targetAssignment = targetUser != null ? assignments.get(targetUser.getId()) : null;
                     return new InspectionActionDetailResponse(
                             action.getId(),
                             action.getActionType().name(),
                             action.getFridgeBundle() != null ? action.getFridgeBundle().getId() : null,
                             action.getTargetUser() != null ? action.getTargetUser().getId() : null,
                             action.getRecordedAt(),
-                            action.getRecordedBy() != null ? action.getRecordedBy().getId() : null,
+                            recordedBy != null ? recordedBy.getId() : null,
+                            recordedBy != null ? recordedBy.getLoginId() : null,
+                            recordedBy != null ? recordedBy.getFullName() : null,
                             action.getFreeNote(),
                             action.getCorrelationId(),
+                            targetAssignment != null ? targetAssignment.getRoom().getRoomNumber() : null,
+                            resolvePersonalNo(targetAssignment),
+                            targetUser != null ? targetUser.getFullName() : null,
                             itemResponses,
                             penaltyResponses
                     );
@@ -692,6 +713,8 @@ public class InspectionService {
         int floorNo = compartment.getFridgeUnit().getFloorNo();
         String floorCode = floorNo + "F";
 
+        RoomAssignment inspectorAssignment = assignments.get(inspector.getId());
+
         return new InspectionSessionResponse(
                 session.getId(),
                 compartment.getId(),
@@ -700,7 +723,11 @@ public class InspectionService {
                 floorNo,
                 floorCode,
                 session.getStatus().name(),
-                session.getStartedBy().getId(),
+                inspector.getId(),
+                inspector.getLoginId(),
+                inspector.getFullName(),
+                inspectorAssignment != null ? inspectorAssignment.getRoom().getRoomNumber() : null,
+                resolvePersonalNo(inspectorAssignment),
                 session.getStartedAt(),
                 session.getEndedAt(),
                 bundleResponses,
@@ -772,16 +799,23 @@ public class InspectionService {
         }
     }
 
-    private Map<UUID, RoomAssignment> loadAssignmentsForBundles(List<FridgeBundle> bundles) {
-        Set<UUID> ownerIds = bundles.stream()
-                .map(bundle -> bundle.getOwner().getId())
-                .collect(Collectors.toSet());
-        Map<UUID, RoomAssignment> result = new HashMap<>();
-        for (UUID ownerId : ownerIds) {
-            roomAssignmentRepository.findActiveAssignment(ownerId)
-                    .ifPresent(assignment -> result.put(ownerId, assignment));
+    private Map<UUID, RoomAssignment> loadAssignmentsForUserIds(Set<UUID> userIds) {
+        if (CollectionUtils.isEmpty(userIds)) {
+            return Map.of();
         }
-        return result;
+        return roomAssignmentRepository.findActiveAssignmentsByUserIds(userIds).stream()
+                .collect(Collectors.toMap(
+                        assignment -> assignment.getDormUser().getId(),
+                        assignment -> assignment,
+                        (existing, replacement) -> existing
+                ));
+    }
+
+    private Integer resolvePersonalNo(RoomAssignment assignment) {
+        if (assignment == null) {
+            return null;
+        }
+        return (int) assignment.getPersonalNo();
     }
 
 }

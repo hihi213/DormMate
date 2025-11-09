@@ -28,8 +28,8 @@ public class JwtTokenService {
 
     public JwtTokenService(
             JwtTokenProvider tokenProvider,
-            @Value("${jwt.expiration:900000}") long accessTokenTtlMillis,
-            @Value("${jwt.refresh-expiration:604800000}") long refreshTokenTtlMillis,
+            @Value("${jwt.expiration:45000}") long accessTokenTtlMillis,
+            @Value("${jwt.refresh-expiration:300000}") long refreshTokenTtlMillis,
             Clock clock
     ) {
         this.tokenProvider = tokenProvider;

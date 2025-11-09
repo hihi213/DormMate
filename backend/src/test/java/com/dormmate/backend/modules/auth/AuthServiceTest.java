@@ -37,7 +37,7 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void loginSucceedsWithSeedAdmin() {
-        var response = authService.login(new LoginRequest("dormmate", "admin1!", null));
+        var response = authService.login(new LoginRequest("dormmate", "admin1!", "seed-device"));
         assertThat(response.user().loginId()).isEqualTo("dormmate");
     }
 
@@ -59,8 +59,8 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
         UserSession freshSession = userSessionRepository.findByRefreshTokenHash(hashToken(response.tokens().refreshToken())).orElseThrow();
         assertThat(freshSession.getDeviceId()).isEqualTo("ios-device-1234567890");
         assertThat(freshSession.getRevokedAt()).isNull();
-        assertThat(freshSession.getExpiresAt()).isAfter(freshSession.getIssuedAt().plusDays(6));
-        assertThat(freshSession.getExpiresAt()).isBefore(freshSession.getIssuedAt().plusDays(8));
+        assertThat(freshSession.getExpiresAt()).isAfter(freshSession.getIssuedAt().plusMinutes(4));
+        assertThat(freshSession.getExpiresAt()).isBefore(freshSession.getIssuedAt().plusMinutes(6));
 
         UserSession revoked = userSessionRepository.findByRefreshTokenHash(hashToken("expired-token")).orElseThrow();
         assertThat(revoked.getRevokedAt()).isNotNull();
@@ -81,6 +81,40 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
         UserSession revoked = userSessionRepository.findByRefreshTokenHash(hashToken(refreshToken)).orElseThrow();
         assertThat(revoked.getRevokedReason()).isEqualTo("DEVICE_MISMATCH");
         assertThat(revoked.getRevokedAt()).isNotNull();
+    }
+
+    @Test
+    void refreshFailsWhenDeviceIdMissing() {
+        var login = authService.login(new LoginRequest("dormmate", "admin1!", "macbook-pro"));
+        String refreshToken = login.tokens().refreshToken();
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> authService.refresh(new RefreshRequest(refreshToken, "   "))
+        );
+        assertThat(exception.getReason()).isEqualTo("REFRESH_TOKEN_DEVICE_MISMATCH");
+
+        UserSession revoked = userSessionRepository.findByRefreshTokenHash(hashToken(refreshToken)).orElseThrow();
+        assertThat(revoked.getRevokedReason()).isEqualTo("DEVICE_MISMATCH");
+    }
+
+    @Test
+    void refreshFailsWhenSessionHasMissingDeviceId() {
+        var login = authService.login(new LoginRequest("dormmate", "admin1!", "surface-pro"));
+        String refreshToken = login.tokens().refreshToken();
+
+        UserSession session = userSessionRepository.findByRefreshTokenHash(hashToken(refreshToken)).orElseThrow();
+        session.setDeviceId(null);
+        userSessionRepository.save(session);
+
+        ResponseStatusException exception = assertThrows(
+                ResponseStatusException.class,
+                () -> authService.refresh(new RefreshRequest(refreshToken, "surface-pro"))
+        );
+        assertThat(exception.getReason()).isEqualTo("REFRESH_TOKEN_DEVICE_MISMATCH");
+
+        UserSession revoked = userSessionRepository.findById(session.getId()).orElseThrow();
+        assertThat(revoked.getRevokedReason()).isEqualTo("DEVICE_MISMATCH");
     }
 
     private String hashToken(String token) {
