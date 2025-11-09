@@ -2,6 +2,7 @@ package com.dormmate.backend.modules.fridge.application;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import org.springframework.http.HttpStatus;
@@ -18,6 +19,7 @@ import com.dormmate.backend.modules.fridge.domain.FridgeCompartment;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeCompartmentRepository;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeDtoMapper;
 import com.dormmate.backend.modules.fridge.presentation.dto.FridgeSlotResponse;
+import com.dormmate.backend.modules.fridge.presentation.dto.FridgeSlotStatus;
 import com.dormmate.backend.modules.fridge.presentation.dto.UpdateCompartmentConfigRequest;
 import com.dormmate.backend.modules.inspection.domain.InspectionStatus;
 import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionSessionRepository;
@@ -28,13 +30,16 @@ public class FridgeAdminService {
 
     private final FridgeCompartmentRepository fridgeCompartmentRepository;
     private final InspectionSessionRepository inspectionSessionRepository;
+    private final FridgeSlotStatusResolver fridgeSlotStatusResolver;
 
     public FridgeAdminService(
             FridgeCompartmentRepository fridgeCompartmentRepository,
-            InspectionSessionRepository inspectionSessionRepository
+            InspectionSessionRepository inspectionSessionRepository,
+            FridgeSlotStatusResolver fridgeSlotStatusResolver
     ) {
         this.fridgeCompartmentRepository = fridgeCompartmentRepository;
         this.inspectionSessionRepository = inspectionSessionRepository;
+        this.fridgeSlotStatusResolver = fridgeSlotStatusResolver;
     }
 
     @Transactional(readOnly = true)
@@ -54,11 +59,16 @@ public class FridgeAdminService {
             compartments = fridgeCompartmentRepository.findAllWithActiveUnit();
         }
 
+        Map<UUID, FridgeSlotStatus> slotStatuses = fridgeSlotStatusResolver.resolve(compartments);
+
         return compartments.stream()
                 .sorted(Comparator
                         .comparingInt((FridgeCompartment compartment) -> compartment.getFridgeUnit().getFloorNo())
                         .thenComparingInt(FridgeCompartment::getSlotIndex))
-                .map(compartment -> FridgeDtoMapper.toSlotResponse(compartment, fullView))
+                .map(compartment -> FridgeDtoMapper.toSlotResponse(
+                        compartment,
+                        fullView,
+                        slotStatuses.getOrDefault(compartment.getId(), FridgeSlotStatus.ACTIVE)))
                 .toList();
     }
 
@@ -75,7 +85,9 @@ public class FridgeAdminService {
         FridgeCompartment saved = fridgeCompartmentRepository.save(compartment);
         fridgeCompartmentRepository.flush();
 
-        return FridgeDtoMapper.toSlotResponse(saved, true);
+        FridgeSlotStatus slotStatus = fridgeSlotStatusResolver.resolve(saved);
+
+        return FridgeDtoMapper.toSlotResponse(saved, true, slotStatus);
     }
 
     private void applyCapacityUpdate(UpdateCompartmentConfigRequest request, FridgeCompartment compartment) {

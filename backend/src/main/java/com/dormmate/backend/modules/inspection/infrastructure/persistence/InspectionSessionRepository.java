@@ -1,5 +1,6 @@
 package com.dormmate.backend.modules.inspection.infrastructure.persistence;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
@@ -17,6 +18,11 @@ public interface InspectionSessionRepository extends JpaRepository<InspectionSes
     List<InspectionSession> findByFridgeCompartmentAndStatus(FridgeCompartment compartment, InspectionStatus status);
 
     List<InspectionSession> findByStatus(InspectionStatus status);
+
+    List<InspectionSession> findByFridgeCompartmentIdInAndStatus(
+            Collection<UUID> compartmentIds,
+            InspectionStatus status
+    );
 
     @Query("""
             select distinct s
