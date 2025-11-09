@@ -322,6 +322,7 @@ export default function AdminFridgePage() {
   )
   const [syncQueryEnabled, setSyncQueryEnabled] = useState(false)
   const syncResumeTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const ignoreQueryParamsRef = useRef(false)
   const [inspectionEditOpen, setInspectionEditOpen] = useState(false)
   const [inspectionDraftActions, setInspectionDraftActions] = useState<InspectionActionDraft[]>([])
   const [inspectionDraftNotes, setInspectionDraftNotes] = useState("")
@@ -339,14 +340,16 @@ export default function AdminFridgePage() {
   }, [])
 
   const temporarilyDisableQuerySync = useCallback(() => {
+    ignoreQueryParamsRef.current = true
     setSyncQueryEnabled(false)
     if (syncResumeTimeoutRef.current) {
       clearTimeout(syncResumeTimeoutRef.current)
     }
     syncResumeTimeoutRef.current = setTimeout(() => {
+      ignoreQueryParamsRef.current = false
       setSyncQueryEnabled(true)
       syncResumeTimeoutRef.current = null
-    }, 100)
+    }, 150)
   }, [])
 
   const updateQueryParams = useCallback(
@@ -416,6 +419,9 @@ export default function AdminFridgePage() {
   )
 
   useEffect(() => {
+    if (ignoreQueryParamsRef.current) {
+      return
+    }
     const slotParam = searchParams.get("slot") ?? searchParams.get("slotId") ?? null
     const previousSlotParam = lastSyncedSlotParamRef.current
     if (slotParam !== previousSlotParam) {
