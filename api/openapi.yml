@@ -1150,11 +1150,22 @@ components:
         recordedBy:
           type: string
           format: uuid
+        recordedByLogin:
+          type: string
+        recordedByName:
+          type: string
         note:
           type: string
         correlationId:
           type: string
           format: uuid
+        roomNumber:
+          type: string
+        personalNo:
+          type: integer
+          format: int32
+        targetName:
+          type: string
         items:
           type: array
           items:
@@ -1215,6 +1226,15 @@ components:
         startedBy:
           type: string
           format: uuid
+        startedByLogin:
+          type: string
+        startedByName:
+          type: string
+        startedByRoomNumber:
+          type: string
+        startedByPersonalNo:
+          type: integer
+          format: int32
         startedAt:
           type: string
           format: date-time
@@ -1412,6 +1432,7 @@ components:
     RefreshRequest:
       required:
         - refreshToken
+        - deviceId
       type: object
       properties:
         refreshToken:
@@ -1501,6 +1522,7 @@ components:
       required:
         - loginId
         - password
+        - deviceId
       type: object
       properties:
         loginId:

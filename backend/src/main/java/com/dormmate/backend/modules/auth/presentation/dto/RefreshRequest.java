@@ -4,6 +4,6 @@ import jakarta.validation.constraints.NotBlank;
 
 public record RefreshRequest(
         @NotBlank(message = "refreshToken is required") String refreshToken,
-        String deviceId
+        @NotBlank(message = "deviceId is required") String deviceId
 ) {
 }

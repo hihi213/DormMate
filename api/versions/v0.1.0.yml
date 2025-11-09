@@ -106,9 +106,9 @@ components:
         password: { type: string, format: password }
         deviceId:
           type: string
-          nullable: true
+          nullable: false
           description: 다중 디바이스 토큰 관리용 식별자
-      required: [loginId, password]
+      required: [loginId, password, deviceId]
     LoginResponse:
       type: object
       properties:
@@ -121,8 +121,8 @@ components:
         refreshToken: { type: string }
         deviceId:
           type: string
-          nullable: true
-      required: [refreshToken]
+          nullable: false
+      required: [refreshToken, deviceId]
     LogoutRequest:
       type: object
       properties:

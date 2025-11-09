@@ -68,10 +68,13 @@ export type AdminInspectionActionDetail = {
   targetUserId?: string | null
   recordedAt?: string
   recordedBy?: string | null
+  recordedByLogin?: string | null
+  recordedByName?: string | null
   note?: string | null
   correlationId?: string | null
   roomNumber?: string | null
   personalNo?: number | null
+  targetName?: string | null
   notificationStatus?: string | null
   penaltyPoints?: number | null
   items: AdminInspectionActionItem[]
@@ -89,6 +92,8 @@ export type AdminInspectionSession = {
   startedBy: string
   startedByLogin?: string | null
   startedByName?: string | null
+  startedByRoomNumber?: string | null
+  startedByPersonalNo?: number | null
   summary: AdminInspectionAggregate[]
   warningCount: number
   disposalCount: number
@@ -184,15 +189,20 @@ type InspectionActionDtoExtras =
   NonNullable<NonNullable<AdminInspectionSessionDto["actions"]>[number]> & {
     roomNumber?: string | null
     personalNo?: number | null
+    targetName?: string | null
     notificationStatus?: string | null
     penaltyPoints?: number | null
     recordedAt?: string | null
     recordedBy?: string | null
+    recordedByLogin?: string | null
+    recordedByName?: string | null
   }
 
 type InspectionSessionDtoExtras = AdminInspectionSessionDto & {
     startedByLogin?: string | null
     startedByName?: string | null
+    startedByRoomNumber?: string | null
+    startedByPersonalNo?: number | null
     slotIndex?: number | null
     actions?: Array<InspectionActionDtoExtras | null>
 }
@@ -239,6 +249,8 @@ export function mapAdminInspectionSession(
     startedBy: extended.startedBy,
     startedByLogin: extended.startedByLogin ?? null,
     startedByName: extended.startedByName ?? null,
+    startedByRoomNumber: extended.startedByRoomNumber ?? null,
+    startedByPersonalNo: extended.startedByPersonalNo ?? null,
     summary: summary.map((entry) => ({
       action: entry.action,
       count: entry.count,
@@ -278,10 +290,13 @@ export function mapAdminInspectionSession(
           targetUserId: action.targetUserId ?? null,
           recordedAt: action.recordedAt ?? undefined,
           recordedBy: action.recordedBy ?? null,
+          recordedByLogin: action.recordedByLogin ?? null,
+          recordedByName: action.recordedByName ?? null,
           note: action.note ?? null,
           correlationId: action.correlationId ?? null,
           roomNumber: action.roomNumber ?? null,
           personalNo: action.personalNo ?? null,
+          targetName: action.targetName ?? null,
           notificationStatus: action.notificationStatus ?? null,
           penaltyPoints: action.penaltyPoints ?? null,
           items,

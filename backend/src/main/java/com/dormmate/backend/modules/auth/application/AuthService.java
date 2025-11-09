@@ -118,7 +118,7 @@ public class AuthService {
 
         String requestDeviceId = normalizeDeviceId(request.deviceId());
         String sessionDeviceId = normalizeDeviceId(session.getDeviceId());
-        if (sessionDeviceId != null && requestDeviceId != null && !Objects.equals(sessionDeviceId, requestDeviceId)) {
+        if (sessionDeviceId == null || requestDeviceId == null || !Objects.equals(sessionDeviceId, requestDeviceId)) {
             revokeSession(session, REASON_DEVICE_MISMATCH);
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "REFRESH_TOKEN_DEVICE_MISMATCH");
         }

@@ -16,11 +16,11 @@ BEGIN
         RETURN;
     END IF;
 
-    -- 데모 정책상 냉장 칸 허용량(기본 10개)을 보장한다.
+    -- 데모 정책상 냉장/냉동 칸 모두 허용량(기본 10개)을 보장한다.
     UPDATE fridge_compartment
     SET max_bundle_count = 10,
         updated_at = CURRENT_TIMESTAMP
-    WHERE compartment_type = 'CHILL'
+    WHERE compartment_type IN ('CHILL', 'FREEZE')
       AND max_bundle_count <> 10;
 
     -- 기존 데이터 정리
@@ -180,7 +180,7 @@ BEGIN
     JOIN fridge_compartment fc ON fc.id = cra.fridge_compartment_id
     WHERE cra.released_at IS NULL
       AND r.floor BETWEEN 2 AND 5
-      AND fc.compartment_type = 'CHILL';
+      AND fc.compartment_type IN ('CHILL', 'FREEZE');
 
     CREATE TEMP TABLE tmp_bundle_assignments (
         compartment_id uuid,
