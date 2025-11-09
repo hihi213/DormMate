@@ -23,11 +23,10 @@ type FridgeSlotDto = components["schemas"]["FridgeSlot"]
 
 function raiseFridgeError(error: ApiError | undefined, fallbackMessage: string): never {
   const message = error?.message ?? fallbackMessage
-  const richError: RaisedError = new Error(message)
-  if (error) {
-    richError.status = error.status
-    richError.code = error.code
-  }
+  const richError: RaisedError = Object.assign(new Error(message), {
+    status: error?.status,
+    code: error?.code,
+  })
   throw richError
 }
 
