@@ -1788,6 +1788,15 @@ components:
           type: string
         resourceStatus:
           type: string
+        slotStatus:
+          type: string
+          description: >
+            Computed status that indicates whether the compartment is ACTIVE,
+            LOCKED, or currently IN_INSPECTION.
+          enum:
+            - ACTIVE
+            - LOCKED
+            - IN_INSPECTION
         locked:
           type: boolean
         lockedUntil:
