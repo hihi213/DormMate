@@ -571,7 +571,7 @@ export default function AdminFridgePage() {
       setHighlightedInspectionId(null)
       setSelectedSlotId(slotId)
       if (isMobile) {
-        setMobileDetailOpen(false)
+        setMobileDetailOpen(true)
       }
     },
     [selectedSlotId, resetBundleFilters, isMobile, pendingSlotId, temporarilyDisableQuerySync],
@@ -1486,20 +1486,9 @@ export default function AdminFridgePage() {
           <span>마지막 갱신 {formatRelative(slot.lockedUntil) || "-"}</span>
           {isMobile ? (
             isSelected ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  setMobileDetailOpen(true)
-                }}
-                onKeyDown={(event) => event.stopPropagation()}
-                aria-label="선택된 칸 상세 열기"
-              >
-                상세 열기
-                <ArrowRight className="size-3.5" aria-hidden />
-              </Button>
+              <Badge className="bg-emerald-100 px-2 py-0.5 text-[11px] text-emerald-700">
+                선택됨
+              </Badge>
             ) : (
               <span className="font-medium text-emerald-600">탭하여 선택</span>
             )
