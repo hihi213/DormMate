@@ -400,7 +400,8 @@ export default function AdminFridgePage() {
 
   useEffect(() => {
     const slotParam = searchParams.get("slot") ?? searchParams.get("slotId") ?? null
-    if (slotParam !== lastSyncedSlotParamRef.current) {
+    const previousSlotParam = lastSyncedSlotParamRef.current
+    if (slotParam !== previousSlotParam) {
       console.log("[queryWatch] apply new slotParam", {
         slotParam,
         selectedSlotId,
@@ -408,12 +409,7 @@ export default function AdminFridgePage() {
         lastSynced: lastSyncedSlotParamRef.current,
       })
       lastSyncedSlotParamRef.current = slotParam
-      if (
-        slotParam &&
-        slotParam !== selectedSlotId &&
-        slotParam !== pendingSlotId &&
-        slotParam !== lastSyncedSlotParamRef.current
-      ) {
+      if (slotParam && slotParam !== selectedSlotId && slotParam !== pendingSlotId) {
         setPendingSlotId(slotParam)
       }
     }
