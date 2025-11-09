@@ -512,6 +512,8 @@ export default function AdminFridgePage() {
   })
   const [detailTab, setDetailTab] = useState<DetailTabValue>("inspections")
   const [mobileDetailOpen, setMobileDetailOpen] = useState(false)
+  const mobileScrollPositionRef = useRef<number | null>(null)
+  const prevMobileDetailOpenRef = useRef(mobileDetailOpen)
 
   const [reallocationOpen, setReallocationOpen] = useState(false)
   const [reallocationLoading, setReallocationLoading] = useState(false)
@@ -553,6 +555,23 @@ export default function AdminFridgePage() {
       setMobileDetailOpen(false)
     }
   }, [selectedSlotId])
+
+  useEffect(() => {
+    if (!isMobile || typeof window === "undefined") {
+      prevMobileDetailOpenRef.current = mobileDetailOpen
+      mobileScrollPositionRef.current = null
+      return
+    }
+    const wasOpen = prevMobileDetailOpenRef.current
+    prevMobileDetailOpenRef.current = mobileDetailOpen
+    if (!wasOpen && mobileDetailOpen) {
+      mobileScrollPositionRef.current = window.scrollY
+      return
+    }
+    if (wasOpen && !mobileDetailOpen && mobileScrollPositionRef.current !== null) {
+      window.scrollTo({ top: mobileScrollPositionRef.current })
+    }
+  }, [mobileDetailOpen, isMobile])
 
   const handleSlotSelect = useCallback(
     (slotId: string) => {
