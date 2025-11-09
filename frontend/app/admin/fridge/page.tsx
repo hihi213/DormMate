@@ -562,6 +562,7 @@ export default function AdminFridgePage() {
         }
         return
       }
+      temporarilyDisableQuerySync()
       if (pendingSlotId) {
         setPendingSlotId(null)
       }
@@ -573,7 +574,7 @@ export default function AdminFridgePage() {
         setMobileDetailOpen(false)
       }
     },
-    [selectedSlotId, resetBundleFilters, isMobile, pendingSlotId],
+    [selectedSlotId, resetBundleFilters, isMobile, pendingSlotId, temporarilyDisableQuerySync],
   )
 
   useEffect(() => {
