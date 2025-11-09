@@ -126,11 +126,51 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 > 운영 배포 전에는 `./auto tests core --full-playwright` 결과를 확인하세요.
 
+## 서버 배포 절차
+
+1. **코드 동기화**
+   ```bash
+   cd ~/DormMate
+   git fetch --all
+   git checkout <배포 브랜치>   # main 혹은 develop
+   git pull
+   ```
+2. **환경 변수 확인**
+   - `deploy/.env.prod` 내용을 로컬과 동일하게 업데이트하고 `chmod 600 deploy/.env.prod`.
+   - 비밀번호나 도메인이 변경됐다면 GitHub Secrets(`ENV_FILE_CONTENTS`)도 함께 갱신.
+3. **데이터베이스 마이그레이션**
+   ```bash
+   ./auto db migrate                 # 실패 시 ./auto db migrate --repair 후 재실행
+   ```
+   - DB 초기화가 필요하면 `./auto deploy reset --build`를 사용하면 된다.
+4. **스택 재배포**
+   ```bash
+   ./auto deploy down                # 필요 시 --volumes 제거 가능
+   ./auto deploy up --build          # 이미지 빌드 후 proxy(app/frontend) 기동
+   ```
+   - 이미지 push/pull이 필요하면 `--push`, `--pull` 옵션을 추가한다.
+5. **검증**
+   ```bash
+   ./auto deploy status
+   curl http://<서버IP>/healthz
+   curl http://<서버IP>/frontend-healthz
+   ```
+   - 브라우저에서 `http://<서버IP>` 접속 후 로그인/주요 기능 확인.
+6. **문제 발생 시 정리**
+   ```bash
+   ./auto deploy down --volumes --remove-orphans
+   ```
+   - 포트 충돌 시 `sudo systemctl stop nginx` 또는 `PROXY_HTTP_PORT` 변경.
+   - 디스크 부족 시 `docker system prune -af`, `docker volume prune` 등으로 공간 확보 후 다시 실행.
+
+> `./auto deploy up --build`를 기준 흐름으로 사용하면 로컬과 동일한 환경이 서버에도 재현된다.
+
 ## 추가 문서
 
 - `backend/ENV_SETUP.md`: 환경 변수와 보안 체크리스트
 - `api/openapi.yml`: OpenAPI seed 명세
 - `tools/db/README.md`: 스키마 드리프트 감지 가이드 (CLI 연동 예정)
+- `docs/presentation-outline.md`: 질문 대비용 전체 구현 개요(문제 정의, 아키텍처, 인프라/운영 상세)
 - `docs/service/service-definition.md#6-테스트-및-완료-기준`: Step 6 테스트 번들·로그 기록 지침
 
 운영/배포 절차, 검증 체크리스트 등은 이후 문서화를 진행하면서 `docs/` 이하에 보강할 예정입니다.
