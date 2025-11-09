@@ -576,6 +576,19 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
 
         if (remaining.length === 0) {
           setBundleState((prev) => prev.filter((bundle) => bundle.bundleId !== target.bundleId))
+          setSlots((prev) =>
+            prev.map((slot) => {
+              if (!targetBundle || slot.slotId !== targetBundle.slotId) {
+                return slot
+              }
+              if (slot.capacity == null || slot.occupiedCount == null) {
+                return slot
+              }
+              const next = Math.max(slot.occupiedCount - 1, 0)
+              return { ...slot, occupiedCount: next }
+            }),
+          )
+          void refreshSlots()
         } else {
           setBundleState((prev) =>
             prev.map((bundle) =>
@@ -608,7 +621,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [units, bundles, slots],
+    [units, bundles, slots, refreshSlots],
   )
 
   const deleteBundle = useCallback<FridgeContextValue["deleteBundle"]>(
