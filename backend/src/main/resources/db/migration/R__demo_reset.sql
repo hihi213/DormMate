@@ -16,6 +16,13 @@ BEGIN
         RETURN;
     END IF;
 
+    -- 데모 정책상 냉장 칸 허용량(기본 10개)을 보장한다.
+    UPDATE fridge_compartment
+    SET max_bundle_count = 10,
+        updated_at = CURRENT_TIMESTAMP
+    WHERE compartment_type = 'CHILL'
+      AND max_bundle_count <> 10;
+
     -- 기존 데이터 정리
     PERFORM
         (CASE WHEN to_regclass('public.inspection_action_item') IS NOT NULL THEN 1 END);
