@@ -1221,28 +1221,24 @@ function InspectionItemCard({
   const detailLine = `${item.bundleLabelDisplay ?? item.displayLabel ?? formatStickerLabel(item.slotIndex, item.labelNumber)} • ${formatShortDate(item.expiryDate)}`
   const daysUntilExpiry = daysLeft(item.expiryDate)
   const isExpired = !Number.isNaN(daysUntilExpiry) && daysUntilExpiry < 0
-  const warnDisabledReason = "유통기한이 지난 물품은 경고 조치 대신 폐기해야 합니다."
-  const discardDisabledReason = "유통기한이 지난 물품만 즉시 폐기할 수 있습니다."
   return (
     <Card>
       <CardContent className="py-3 px-3">
         <div className="flex w-full items-center gap-3">
           <div className="flex items-center gap-1 shrink-0">
-            <WarnMenu
-              disabled={isExpired}
-              disabledReason={warnDisabledReason}
-              onSelect={(type) => onWarn(item, type === "warn_storage" ? "WARN_STORAGE_POOR" : "WARN_INFO_MISMATCH")}
-            />
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => onDiscard(item)}
-              disabled={!isExpired}
-              title={!isExpired ? discardDisabledReason : undefined}
-            >
-              <Trash2 className="size-4 mr-1" />
-              {"폐기"}
-            </Button>
+            {!isExpired ? (
+              <WarnMenu
+                onSelect={(type) =>
+                  onWarn(item, type === "warn_storage" ? "WARN_STORAGE_POOR" : "WARN_INFO_MISMATCH")
+                }
+              />
+            ) : null}
+            {isExpired ? (
+              <Button variant="destructive" size="sm" onClick={() => onDiscard(item)}>
+                <Trash2 className="size-4 mr-1" />
+                {"폐기"}
+              </Button>
+            ) : null}
           </div>
           <div className="flex-1 min-w-0 text-center sm:text-left">
             <div className="text-base font-semibold text-gray-900">{item.name}</div>

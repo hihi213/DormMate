@@ -94,6 +94,7 @@
     2.  `maybeAttachPenalty`가 호출되어, '폐기' 조치에 대한 벌점(`PenaltyHistory`)이 자동으로 생성됩니다.
     3.  조치가 성공했으므로 잠금 시간이 30분 더 연장됩니다."
 
+
 #### 5단계: 제출 및 알림 (거주자)
 > 목표: 검사 제출과 알림/배지 반영.  
 > 핵심 API/검증: `POST /inspections/{id}/submit` → `NotificationService.sendInspectionResultNotifications` (dedupe `FRIDGE_RESULT:<session>:<user>`), `/notifications` 미읽음 우선.

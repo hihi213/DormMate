@@ -1,17 +1,9 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
-import {
-  CalendarDays,
-  ClipboardCheck,
-  Loader2,
-  MoreVertical,
-  PauseCircle,
-  Play,
-  Plus,
-  ShieldCheck,
-} from "lucide-react"
+import { CalendarDays, ClipboardCheck, Loader2, MoreVertical, Play, Plus, ShieldCheck } from "lucide-react"
 
 import BottomNav from "@/components/bottom-nav"
 import AuthGuard from "@/features/auth/components/auth-guard"
@@ -89,7 +81,6 @@ const getStatusMeta = (status: InspectionSession["status"]) =>
   STATUS_BADGE[normalizeInspectionStatus(status)]
 
 type ScheduleFormState = {
-  slotId: string
   scheduledAt: string
   title: string
   notes: string
@@ -136,6 +127,10 @@ function InspectionsInner() {
   const [starting, setStarting] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const minScheduleInputValue = useMemo(
+    () => formatDateTimeInputValue(new Date()),
+    [scheduleDialogOpen],
+  )
 
   const currentUser = getCurrentUser()
   const isFloorManager = currentUser?.roles.includes("FLOOR_MANAGER") ?? false
@@ -414,22 +409,9 @@ function InspectionsInner() {
 
   const handleOpenCreateSchedule = () => {
     if (!isFloorManager) return
-    if (!slots.length) {
-      toast({
-        title: "검사 일정을 추가할 수 없습니다.",
-        description: "배정된 냉장고 칸이 없습니다. 먼저 칸 배정을 확인해 주세요.",
-        variant: "destructive",
-      })
-      return
-    }
     setScheduleDialogMode("create")
     setEditingScheduleId(null)
-    const baseline = getDefaultScheduleFormState()
-    const initialSlot = slots[0]?.slotId ?? ""
-    setScheduleForm({
-      ...baseline,
-      slotId: initialSlot,
-    })
+    setScheduleForm(getDefaultScheduleFormState())
     setScheduleDialogOpen(true)
   }
 
@@ -438,7 +420,6 @@ function InspectionsInner() {
     setScheduleDialogMode("edit")
     setEditingScheduleId(schedule.scheduleId)
     setScheduleForm({
-      slotId: schedule.fridgeCompartmentId ?? "",
       scheduledAt: formatDateTimeInputValue(new Date(schedule.scheduledAt)),
       title: schedule.title ?? "",
       notes: schedule.notes ?? "",
@@ -455,23 +436,6 @@ function InspectionsInner() {
 
   const handleSubmitSchedule = async () => {
     if (!isFloorManager) return
-    if (!scheduleForm.slotId) {
-      toast({
-        title: "검사 일정을 저장할 수 없습니다.",
-        description: "검사할 냉장고 칸을 선택해 주세요.",
-        variant: "destructive",
-      })
-      return
-    }
-    const targetSlot = slots.find((candidate) => candidate.slotId === scheduleForm.slotId)
-    if (!targetSlot) {
-      toast({
-        title: "검사 일정을 저장할 수 없습니다.",
-        description: "선택한 칸 정보를 찾지 못했습니다. 다시 선택해 주세요.",
-        variant: "destructive",
-      })
-      return
-    }
     if (!scheduleForm.scheduledAt) {
       toast({
         title: "검사 일정을 저장할 수 없습니다.",
@@ -490,6 +454,15 @@ function InspectionsInner() {
       })
       return
     }
+    const now = new Date()
+    if (parsed.getTime() < now.getTime()) {
+      toast({
+        title: "검사 일정을 저장할 수 없습니다.",
+        description: "현재 이후의 일시를 선택해 주세요.",
+        variant: "destructive",
+      })
+      return
+    }
 
     const title = scheduleForm.title.trim()
     const notes = scheduleForm.notes.trim()
@@ -501,7 +474,6 @@ function InspectionsInner() {
           scheduledAt: parsed.toISOString(),
           title: title.length ? title : undefined,
           notes: notes.length ? notes : undefined,
-          fridgeCompartmentId: targetSlot.slotId,
         })
         toast({
           title: "검사 일정을 추가했습니다.",
@@ -511,7 +483,6 @@ function InspectionsInner() {
           scheduledAt: parsed.toISOString(),
           title: title.length ? title : null,
           notes: notes.length ? notes : null,
-          fridgeCompartmentId: targetSlot.slotId,
         })
         toast({
           title: "검사 일정을 수정했습니다.",
@@ -757,155 +728,104 @@ function InspectionsInner() {
                         ? slotLabelCandidate
                         : hasSlotInfo
                           ? "칸 정보 없음"
-                          : null
+                          : "검사 시작 시 칸 선택"
+                    const scheduleStatusBadge = isActiveSchedule
+                      ? { className: "border-emerald-300 bg-emerald-100 text-emerald-700", label: "진행 중" }
+                      : { className: "border-slate-200 bg-slate-50 text-slate-600", label: "예정" }
+                    const slotLabelForCard = slotDisplayLabel ?? "검사 시작 시 칸 선택"
+
                     return (
-                      <li
-                        key={schedule.scheduleId}
-                        className={`rounded-md border px-3 py-3 transition ${
-                          isActiveSchedule ? "border-emerald-400 bg-emerald-50 shadow-sm" : "border-slate-200"
-                        }`}
-                      >
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex-1 space-y-1">
-                            <div className="flex items-center gap-2">
-                              <span className="text-sm font-medium text-gray-900">
-                                {getScheduleTitleText(schedule)}
-                              </span>
-                              <Badge variant="outline" className="border-emerald-200 text-emerald-700">
-                                {formatShortDate(schedule.scheduledAt)}
-                              </Badge>
-                              {isActiveSchedule && (
-                                <Badge variant="secondary" className="border-emerald-300 bg-emerald-100 text-emerald-700">
-                                  {"진행 중"}
-                                </Badge>
-                              )}
-                            </div>
-                            <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                              <span>
-                                {new Date(schedule.scheduledAt).toLocaleString("ko-KR", {
-                                  month: "numeric",
-                                  day: "numeric",
-                                  hour: "2-digit",
-                                  minute: "2-digit",
-                                })}
-                              </span>
-                              {slotDisplayLabel && (
-                                <span className="inline-flex items-center rounded-md border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600">
-                                  {slotDisplayLabel}
-                                </span>
-                              )}
-                            </div>
-                            {schedule.notes && (
-                              <p className="text-xs text-muted-foreground whitespace-pre-wrap">{schedule.notes}</p>
-                            )}
-                            {schedule.inspectionSessionId && (
-                              <p className="text-[11px] text-emerald-600">
-                                {"연결된 세션 · "}
-                                <span className="font-mono">{schedule.inspectionSessionId.slice(0, 8)}…</span>
-                              </p>
-                            )}
+                      <li key={schedule.scheduleId} className="rounded-lg border border-slate-200 p-4 space-y-3">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+                            <span>{slotLabelForCard}</span>
+                            <Badge variant="outline" className={scheduleStatusBadge.className}>
+                              {scheduleStatusBadge.label}
+                            </Badge>
                           </div>
-                          <div className="flex flex-col items-end gap-2">
+                          <div className="flex items-center gap-2">
                             {isFloorManager ? (
-                              <>
-                                <div className="flex items-center gap-2">
-                                  <Button
-                                    size="sm"
-                                    className="w-full sm:w-auto"
-                                    onClick={() =>
-                                      isActiveSchedule ? handleContinue() : handleRequestStart(schedule)
-                                    }
-                                    disabled={primaryDisabled}
-                                    variant={isActiveSchedule ? "secondary" : "default"}
-                                  >
-                                    {scheduleStartingId === schedule.scheduleId && starting && !isActiveSchedule ? (
-                                      <>
-                                        <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-                                        {"검사 시작"}
-                                      </>
-                                    ) : isActiveSchedule ? (
-                                      <>
-                                        <ShieldCheck className="mr-2 size-4" aria-hidden />
-                                        {"검사 중"}
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Play className="mr-2 size-4" aria-hidden />
-                                        {"검사 시작"}
-                                      </>
-                                    )}
-                                  </Button>
-                                  <DropdownMenu>
-                                    <DropdownMenuTrigger asChild>
-                                      <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                                        <MoreVertical className="size-4" aria-hidden />
-                                        <span className="sr-only">{"일정 옵션"}</span>
-                                      </Button>
-                                    </DropdownMenuTrigger>
-                                    <DropdownMenuContent align="end">
-                                      <DropdownMenuItem
-                                        onSelect={(event) => {
-                                          event.preventDefault()
-                                          handleEditSchedule(schedule)
-                                        }}
-                                      >
-                                        {"일정 수정"}
-                                      </DropdownMenuItem>
-                                      <DropdownMenuItem
-                                        className="text-rose-600 focus:text-rose-600"
-                                        onSelect={(event) => {
-                                          event.preventDefault()
-                                          handleDeleteScheduleRequest(schedule)
-                                        }}
-                                      >
-                                        {"일정 삭제"}
-                                      </DropdownMenuItem>
-                                    </DropdownMenuContent>
-                                  </DropdownMenu>
-                                </div>
-                                {isActiveSchedule && (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={handleCancel}
-                                    disabled={canceling}
-                                    className="w-full sm:w-auto"
-                                  >
-                                    {canceling ? (
-                                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
-                                    ) : (
-                                      <PauseCircle className="mr-2 size-4" aria-hidden />
-                                    )}
-                                    {"검사 취소"}
-                                  </Button>
+                              <Button
+                                size="sm"
+                                className="px-3"
+                                onClick={() =>
+                                  isActiveSchedule ? handleContinue() : handleRequestStart(schedule)
+                                }
+                                disabled={primaryDisabled}
+                                variant={isActiveSchedule ? "secondary" : "default"}
+                              >
+                                {scheduleStartingId === schedule.scheduleId && starting && !isActiveSchedule ? (
+                                  <>
+                                    <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
+                                    {"검사 시작"}
+                                  </>
+                                ) : isActiveSchedule ? (
+                                  <>
+                                    <ShieldCheck className="mr-2 size-4" aria-hidden />
+                                    {"검사 중"}
+                                  </>
+                                ) : (
+                                  <>
+                                    <Play className="mr-2 size-4" aria-hidden />
+                                    {"검사 시작"}
+                                  </>
                                 )}
-                              </>
-                            ) : isActiveSchedule ? (
-                              <span className="text-xs text-emerald-700">{"진행 중"}</span>
+                              </Button>
                             ) : (
-                              <span className="text-xs text-muted-foreground">{"층별장 전용 기능입니다."}</span>
+                              <Badge variant="outline" className="border-slate-200 text-slate-600">
+                                {isActiveSchedule ? "진행 중" : "층별장 전용"}
+                              </Badge>
+                            )}
+                            {isFloorManager && (
+                              <DropdownMenu>
+                                <DropdownMenuTrigger asChild>
+                                  <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
+                                    <MoreVertical className="size-4" aria-hidden />
+                                    <span className="sr-only">{"일정 옵션"}</span>
+                                  </Button>
+                                </DropdownMenuTrigger>
+                                <DropdownMenuContent align="end">
+                              <DropdownMenuItem
+                                onSelect={(event) => {
+                                  event.preventDefault()
+                                  handleEditSchedule(schedule)
+                                }}
+                              >
+                                {"일정 수정"}
+                              </DropdownMenuItem>
+                              {isActiveSchedule && (
+                                <DropdownMenuItem
+                                  className="text-amber-600 focus:text-amber-600"
+                                  onSelect={(event) => {
+                                    event.preventDefault()
+                                    if (!canceling) {
+                                      void handleCancel()
+                                    }
+                                  }}
+                                >
+                                  {canceling ? "취소 중..." : "검사 취소"}
+                                </DropdownMenuItem>
+                              )}
+                              <DropdownMenuItem
+                                className="text-rose-600 focus:text-rose-600"
+                                onSelect={(event) => {
+                                  event.preventDefault()
+                                  handleDeleteScheduleRequest(schedule)
+                                    }}
+                                  >
+                                    {"일정 삭제"}
+                                  </DropdownMenuItem>
+                                </DropdownMenuContent>
+                              </DropdownMenu>
                             )}
                           </div>
                         </div>
-                        {isActiveSchedule && activeSession && (
-                          <div className="mt-3 space-y-1 text-xs text-muted-foreground">
-                            <p>
-                              {`시작: ${formatDateTimeLabel(activeSession.startedAt)}`}
-                              {activeSession.endedAt ? ` · 종료: ${formatDateTimeLabel(activeSession.endedAt)}` : ""}
-                            </p>
-                            {activeSession.summary.length > 0 && (
-                              <div className="flex flex-wrap gap-2">
-                                {activeSession.summary.map((entry) => (
-                                  <span key={entry.action} className="inline-flex items-center gap-1 rounded-md border px-2 py-1">
-                                    {`${friendlyActionLabel(entry.action)} ${entry.count}건`}
-                                  </span>
-                                ))}
-                              </div>
-                            )}
-                            {activeSession.notes && (
-                              <p className="whitespace-pre-wrap text-slate-600">{activeSession.notes}</p>
-                            )}
-                          </div>
+                        <div className="flex items-center justify-between text-xs text-muted-foreground">
+                          <p>{formatDateTimeLabel(schedule.scheduledAt)}</p>
+                        </div>
+                        <p className="text-sm font-medium text-gray-900">{getScheduleTitleText(schedule)}</p>
+                        {schedule.notes && (
+                          <p className="text-xs text-muted-foreground whitespace-pre-wrap">{schedule.notes}</p>
                         )}
                       </li>
                     )
@@ -1011,22 +931,6 @@ function InspectionsInner() {
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-2">
-                <Label htmlFor="inspection-schedule-slot">{"검사할 칸"}</Label>
-                {slots.length > 0 ? (
-                  <SlotSelector
-                    value={scheduleForm.slotId}
-                    onChange={(value) => handleScheduleFieldChange("slotId")(value)}
-                    slots={slots}
-                    placeholder="검사할 보관 칸 선택"
-                    className="max-w-full"
-                  />
-                ) : (
-                  <p className="text-sm text-muted-foreground">
-                    {"배정된 냉장고 칸이 없어 일정을 만들 수 없습니다."}
-                  </p>
-                )}
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="inspection-schedule-datetime">{"검사 일시"}</Label>
                 <Input
                   id="inspection-schedule-datetime"
@@ -1034,7 +938,11 @@ function InspectionsInner() {
                   value={scheduleForm.scheduledAt}
                   onChange={(event) => handleScheduleFieldChange("scheduledAt")(event.target.value)}
                   disabled={scheduleSubmitting}
+                  min={minScheduleInputValue}
                 />
+                <p className="text-xs text-muted-foreground">
+                  {"오늘 이후 시각만 선택할 수 있습니다."}
+                </p>
               </div>
               <div className="space-y-2">
                 <Label htmlFor="inspection-schedule-title">{"제목"}</Label>
@@ -1107,7 +1015,7 @@ function getScheduleTitleText(schedule: InspectionSchedule): string {
   if (trimmed && trimmed.length > 0) {
     return trimmed
   }
-  return `${formatShortDate(schedule.scheduledAt)} 검사`
+  return ""
 }
 
 function getScheduleDisplayName(schedule: InspectionSchedule): string {
@@ -1228,7 +1136,6 @@ function getDefaultScheduleFormState(): ScheduleFormState {
   const baseline = new Date()
   baseline.setSeconds(0, 0)
   return {
-    slotId: "",
     scheduledAt: formatDateTimeInputValue(baseline),
     title: "",
     notes: "",

@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
@@ -32,7 +31,6 @@ import { useToast } from "@/hooks/use-toast"
 type UserStatusFilter = "ACTIVE" | "INACTIVE"
 
 type FilterState = {
-  search: string
   floor: string
   status: UserStatusFilter
 }
@@ -42,7 +40,6 @@ type RoleChangeMode = "PROMOTE" | "DEMOTE"
 
 export default function AdminUsersPage() {
   const [filters, setFilters] = useState<FilterState>({
-    search: "",
     floor: "ALL",
     status: "ACTIVE",
   })
@@ -52,7 +49,6 @@ export default function AdminUsersPage() {
   const pageSize = 6
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [drawerUser, setDrawerUser] = useState<AdminUser | null>(null)
-  const [searchInput, setSearchInput] = useState("")
   const [selectionMode, setSelectionMode] = useState<SelectionMode>(null)
   const [actionLoading, setActionLoading] = useState(false)
   const { toast } = useToast()
@@ -150,10 +146,6 @@ export default function AdminUsersPage() {
   }, [pendingFocusId, userItems, focusLookupAttempted, focusLookupLoading, toast])
 
   useEffect(() => {
-    setSearchInput(filters.search)
-  }, [filters.search])
-
-  useEffect(() => {
     setSelectedIds([])
     setDrawerUser(null)
   }, [filters.status])
@@ -177,30 +169,16 @@ export default function AdminUsersPage() {
   }, [userItems])
 
   const filteredUsers = useMemo(() => {
-    const keyword = filters.search.trim().toLowerCase()
     const filtered = userItems.filter((user) => {
-      const roomLabel = user.room?.toLowerCase() ?? ""
-      const roomCode = user.roomCode?.toLowerCase() ?? ""
-      const personalNo = user.personalNo != null ? String(user.personalNo) : ""
-      const roomWithPersonal = formatRoomWithPersonal(user).toLowerCase()
-      const matchesSearch =
-        keyword.length === 0 ||
-        user.name.toLowerCase().includes(keyword) ||
-        roomLabel.includes(keyword) ||
-        roomCode.includes(keyword) ||
-        roomWithPersonal.includes(keyword) ||
-        personalNo.includes(keyword) ||
-        user.id.toLowerCase().includes(keyword)
-
       const statusMatches = user.status === filters.status
       const userFloor = resolveUserFloor(user)
       const floorMatches =
         filters.floor === "ALL" || (userFloor !== null && String(userFloor) === filters.floor)
 
-      return matchesSearch && statusMatches && floorMatches
+      return statusMatches && floorMatches
     })
     return filtered.sort(compareAdminUsers)
-  }, [filters, userItems])
+  }, [filters.floor, filters.status, userItems])
 
   const totalItems = filteredUsers.length
   const paginated = filteredUsers.slice((page - 1) * pageSize, page * pageSize)
@@ -219,12 +197,6 @@ export default function AdminUsersPage() {
       setFilters((prev) => ({ ...prev, floor: "ALL" }))
       return
     }
-    if (filters.search !== "") {
-      setFilters((prev) => ({ ...prev, search: "" }))
-      setSearchInput("")
-      return
-    }
-
     const targetIndex = filteredUsers.findIndex((user) => user.id === focusCandidate.id)
     if (targetIndex === -1) {
       return
@@ -249,7 +221,6 @@ export default function AdminUsersPage() {
     focusCandidate,
     filters.status,
     filters.floor,
-    filters.search,
     filteredUsers,
     page,
     pageSize,
@@ -278,12 +249,6 @@ export default function AdminUsersPage() {
   const closeDrawer = () => {
     setDrawerUser(null)
     setFocusedUserId(null)
-  }
-
-  const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    setFilters((prev) => ({ ...prev, search: searchInput.trim() }))
-    setPage(1)
   }
 
   const handleFloorChange = (value: string) => {
@@ -455,8 +420,8 @@ export default function AdminUsersPage() {
         </section>
 
         <section className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm space-y-4">
-          <div className="grid gap-3 lg:grid-cols-[minmax(0,0.6fr)_minmax(0,1fr)_auto]">
-            <div className="space-y-1.5">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-1.5 w-full lg:max-w-[220px]">
               <Label className="text-xs font-semibold uppercase tracking-wide text-slate-600">층 선택</Label>
               <Select value={filters.floor} onValueChange={handleFloorChange}>
                 <SelectTrigger className="h-10 rounded-xl border border-slate-200 bg-white/90">
@@ -472,26 +437,7 @@ export default function AdminUsersPage() {
                 </SelectContent>
               </Select>
             </div>
-            <form onSubmit={handleSearchSubmit} className="grid w-full grid-cols-[minmax(0,1fr)_auto] gap-2 lg:w-auto">
-              <div className="space-y-1.5">
-                <Label htmlFor="user-search" className="text-xs font-semibold uppercase tracking-wide text-slate-600">
-                  검색
-                </Label>
-                <Input
-                  id="user-search"
-                  value={searchInput}
-                  onChange={(event) => setSearchInput(event.target.value)}
-                  placeholder="이름·호실(예: 301-1)·개인번호 검색"
-                  className="h-10 rounded-xl border border-slate-200 bg-white/90"
-                />
-              </div>
-              <div className="flex items-end">
-                <Button type="submit" className="h-10 px-4">
-                  검색
-                </Button>
-              </div>
-            </form>
-            <div className="flex items-end justify-end">
+            <div className="flex justify-end">
               <Button asChild variant="ghost" className="text-slate-600">
                 <Link href="/admin/audit?module=roles">권한 변경 로그</Link>
               </Button>
