@@ -32,8 +32,9 @@ import { Badge } from "@/components/ui/badge"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
 import { useAddItemWorkflow, formatExpiryDisplay } from "./use-add-item-workflow"
-import { getCurrentUserId } from "@/lib/auth"
+import { getCurrentUser } from "@/lib/auth"
 import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
+import { computePermittedSlotIds } from "@/features/fridge/utils/slot-permissions"
 
 const LIST_SCROLL_BOX_HEIGHT = "clamp(240px, 35vh, 360px)"
 
@@ -50,7 +51,10 @@ export default function AddItemDialog({
 }) {
   const { addBundle, bundles } = useFridge()
   const { toast } = useToast()
-  const uid = getCurrentUserId()
+  const currentUser = getCurrentUser()
+  const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
+  const isFloorManager = currentUser?.roles.includes("FLOOR_MANAGER") ?? false
+  const restrictSlotViewToOwnership = !(isAdmin || isFloorManager)
 
   const isSlotSelectable = useCallback(
     (slot: Slot) => slot.resourceStatus === "ACTIVE" && !slot.locked,
@@ -73,37 +77,21 @@ export default function AddItemDialog({
     }
   }, [])
 
-  const ownedSlotIds = useMemo(() => {
-    if (!uid) return []
-    const ids = new Set<string>()
-    bundles.forEach((bundle) => {
-      if (bundle.slotId && bundle.ownerId && bundle.ownerId === uid) {
-        ids.add(bundle.slotId)
-      } else if (bundle.slotId && bundle.ownerUserId && bundle.ownerUserId === uid) {
-        ids.add(bundle.slotId)
-      } else if (!bundle.ownerId && bundle.owner === "me") {
-        ids.add(bundle.slotId)
-      }
-    })
-    const activeIds = Array.from(ids).filter((slotId) => {
-      const slot = slots.find((s) => s.slotId === slotId)
-      return slot ? isSlotSelectable(slot) : true
-    })
-    activeIds.sort((a, b) => {
-      const slotA = slots.find((slot) => slot.slotId === a)
-      const slotB = slots.find((slot) => slot.slotId === b)
-      const idxA = slotA ? slotA.slotIndex : Number.MAX_SAFE_INTEGER
-      const idxB = slotB ? slotB.slotIndex : Number.MAX_SAFE_INTEGER
-      return idxA - idxB
-    })
-    return activeIds
-  }, [bundles, uid, slots, isSlotSelectable])
+  const permittedSlotIds = useMemo(() => {
+    if (!restrictSlotViewToOwnership) return null
+    return computePermittedSlotIds(slots, currentUser?.roomDetails ?? null)
+  }, [restrictSlotViewToOwnership, slots, currentUser?.roomDetails])
+
+  const allowedSlots = useMemo(() => {
+    if (!permittedSlotIds || permittedSlotIds.size === 0) return slots
+    const filtered = slots.filter((slot) => permittedSlotIds.has(slot.slotId))
+    return filtered.length > 0 ? filtered : slots
+  }, [slots, permittedSlotIds])
 
   const fallbackSlot =
-    currentSlotId ||
-    ownedSlotIds[0] ||
-    slots.find((slot) => isSlotSelectable(slot))?.slotId ||
-    ""
+    (currentSlotId && allowedSlots.some((slot) => slot.slotId === currentSlotId)
+      ? currentSlotId
+      : allowedSlots.find((slot) => isSlotSelectable(slot))?.slotId) || ""
 
   const closeDialog = useCallback(() => onOpenChange(false), [onOpenChange])
 
@@ -187,8 +175,8 @@ export default function AddItemDialog({
   }, [entries.length, listCollapsed])
 
   const selectedSlot = useMemo(
-    () => (metadataSlot ? slots.find((slot) => slot.slotId === metadataSlot) ?? null : null),
-    [slots, metadataSlot],
+    () => (metadataSlot ? allowedSlots.find((slot) => slot.slotId === metadataSlot) ?? null : null),
+    [allowedSlots, metadataSlot],
   )
   const currentBundleCount = useMemo(() => {
     if (!metadataSlot) return 0
@@ -233,7 +221,9 @@ export default function AddItemDialog({
 
   const readOnly = isMetadataStep || isCompletionStep
   const hasEntries = entries.length > 0
-  const completionSlot = completion ? slots.find((slot) => slot.slotId === completion.slotId) ?? null : null
+  const completionSlot = completion
+    ? allowedSlots.find((slot) => slot.slotId === completion.slotId) ?? null
+    : null
   const completionSlotLabel = completionSlot ? formatSlotDisplayName(completionSlot) : undefined
 
   return (
@@ -417,7 +407,7 @@ export default function AddItemDialog({
               >
                 {isMetadataStep ? (
                   <MetadataFields
-                    slots={slots}
+                    slots={allowedSlots}
                     slotId={metadataSlot}
                     packName={packName}
                     packMemo={packMemo}
