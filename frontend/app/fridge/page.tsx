@@ -59,8 +59,7 @@ function FridgeInner() {
   })
   const uid = getCurrentUserId()
 
-  const isFloorManager = currentUser?.roles.includes("FLOOR_MANAGER") ?? false
-  const restrictSlotViewToOwnership = !(isAdmin || isFloorManager)
+  const restrictSlotViewToOwnership = !isAdmin
   const roomDetails = currentUser?.roomDetails ?? null
 
   const permittedSlotIds = useMemo(() => {
