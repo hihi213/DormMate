@@ -882,12 +882,27 @@ function InspectInner() {
         ) : (
           <Card>
             <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                {"검사 결과"}
-                <Badge variant="secondary" className="ml-auto">
-                  {summaryFromServer.reduce((sum, entry) => sum + entry.count, 0)}건
-                </Badge>
-              </CardTitle>
+              <div className="flex items-center gap-2">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2 flex-1">
+                  {"검사 결과"}
+                  <Badge variant="secondary" className="ml-auto">
+                    {summaryFromServer.reduce((sum, entry) => sum + entry.count, 0)}건
+                  </Badge>
+                </CardTitle>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setTab("before")
+                    if (typeof window !== "undefined") {
+                      window.scrollTo({ top: 0, behavior: "smooth" })
+                    }
+                  }}
+                >
+                  {"검사 취소"}
+                </Button>
+              </div>
             </CardHeader>
             <CardContent className="space-y-3">
               <div className="flex flex-wrap gap-2 text-xs">
@@ -1221,39 +1236,37 @@ function InspectionItemCard({
   const detailLine = `${item.bundleLabelDisplay ?? item.displayLabel ?? formatStickerLabel(item.slotIndex, item.labelNumber)} • ${formatShortDate(item.expiryDate)}`
   const daysUntilExpiry = daysLeft(item.expiryDate)
   const isExpired = !Number.isNaN(daysUntilExpiry) && daysUntilExpiry < 0
-  const warnDisabledReason = "유통기한이 지난 물품은 경고 조치 대신 폐기해야 합니다."
-  const discardDisabledReason = "유통기한이 지난 물품만 즉시 폐기할 수 있습니다."
   return (
     <Card>
       <CardContent className="py-3 px-3">
         <div className="flex w-full items-center gap-3">
           <div className="flex items-center gap-1 shrink-0">
-            <WarnMenu
-              disabled={isExpired}
-              disabledReason={warnDisabledReason}
-              onSelect={(type) => onWarn(item, type === "warn_storage" ? "WARN_STORAGE_POOR" : "WARN_INFO_MISMATCH")}
-            />
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={() => onDiscard(item)}
-              disabled={!isExpired}
-              title={!isExpired ? discardDisabledReason : undefined}
-            >
-              <Trash2 className="size-4 mr-1" />
-              {"폐기"}
-            </Button>
+            {!isExpired ? (
+              <WarnMenu
+                onSelect={(type) =>
+                  onWarn(item, type === "warn_storage" ? "WARN_STORAGE_POOR" : "WARN_INFO_MISMATCH")
+                }
+              />
+            ) : null}
+            {isExpired ? (
+              <Button variant="destructive" size="sm" onClick={() => onDiscard(item)}>
+                <Trash2 className="size-4 mr-1" />
+                {"폐기"}
+              </Button>
+            ) : null}
           </div>
           <div className="flex-1 min-w-0 text-center sm:text-left">
             <div className="text-base font-semibold text-gray-900">{item.name}</div>
             <div className="text-sm text-muted-foreground">{detailLine}</div>
           </div>
-          <div className="shrink-0">
-            <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onPass(item)}>
-              <Check className="size-4 mr-1" />
-              {"통과"}
-            </Button>
-          </div>
+          {!isExpired && (
+            <div className="shrink-0">
+              <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700" onClick={() => onPass(item)}>
+                <Check className="size-4 mr-1" />
+                {"통과"}
+              </Button>
+            </div>
+          )}
         </div>
       </CardContent>
     </Card>

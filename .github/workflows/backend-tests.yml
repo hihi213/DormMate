@@ -9,20 +9,6 @@ on:
 jobs:
   backend-tests:
     runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16.4
-        ports:
-          - 5432:5432
-        env:
-          POSTGRES_DB: ${{ secrets.POSTGRES_DB }}
-          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
-        options: >-
-          --health-cmd "pg_isready -U ${{ secrets.POSTGRES_USER }} -d ${{ secrets.POSTGRES_DB }}"
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 20
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -37,20 +23,51 @@ jobs:
       - name: Create deploy/.env.prod from secrets
         run: |
           mkdir -p deploy
-          cat <<'ENV' > deploy/.env.prod
-          DB_URL=${{ secrets.DB_URL }}
-          DB_USERNAME=${{ secrets.POSTGRES_USER }}
-          DB_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          POSTGRES_DB=${{ secrets.POSTGRES_DB }}
-          POSTGRES_USER=${{ secrets.POSTGRES_USER }}
-          POSTGRES_PASSWORD=${{ secrets.POSTGRES_PASSWORD }}
-          JWT_SECRET=${{ secrets.JWT_SECRET }}
-          ADMIN_USERNAME=${{ secrets.ADMIN_USERNAME }}
-          ADMIN_PASSWORD=${{ secrets.ADMIN_PASSWORD }}
-          ENV
+          if [ -z "${{ secrets.ENV_FILE_CONTENTS }}" ]; then
+            echo "ENV_FILE_CONTENTS secret is not configured." >&2
+            exit 1
+          fi
+          printf '%s' "${{ secrets.ENV_FILE_CONTENTS }}" > deploy/.env.prod
+          chmod 600 deploy/.env.prod
+
+      - name: Export deploy env values
+        run: |
+          set -a
+          source deploy/.env.prod
+          set +a
+          {
+            echo "POSTGRES_DB=${POSTGRES_DB}"
+            echo "POSTGRES_USER=${POSTGRES_USER}"
+            echo "POSTGRES_PASSWORD=${POSTGRES_PASSWORD}"
+            echo "DB_URL=${DB_URL:-jdbc:postgresql://localhost:5432/${POSTGRES_DB}}"
+            echo "DB_USERNAME=${DB_USERNAME:-$POSTGRES_USER}"
+            echo "DB_PASSWORD=${DB_PASSWORD:-$POSTGRES_PASSWORD}"
+          } >> "$GITHUB_ENV"
+
+      - name: Start PostgreSQL service
+        run: |
+          docker run -d --name backend-tests-postgres -p 5432:5432 \
+            -e POSTGRES_DB="$POSTGRES_DB" \
+            -e POSTGRES_USER="$POSTGRES_USER" \
+            -e POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
+            postgres:16.4
+          for i in {1..30}; do
+            if docker exec backend-tests-postgres pg_isready -U "$POSTGRES_USER" -d "$POSTGRES_DB"; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs backend-tests-postgres
+          exit 1
 
       - name: Run backend tests
         run: ./auto tests backend
+
+      - name: Stop PostgreSQL service
+        if: always()
+        run: |
+          docker stop backend-tests-postgres >/dev/null 2>&1 || true
+          docker rm backend-tests-postgres >/dev/null 2>&1 || true
 
       - name: Upload test reports
         if: always()

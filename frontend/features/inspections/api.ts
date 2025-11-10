@@ -321,7 +321,7 @@ type CreateInspectionSchedulePayload = {
   scheduledAt: string
   title?: string | null
   notes?: string | null
-  fridgeCompartmentId: string
+  fridgeCompartmentId?: string | null
 }
 
 export async function createInspectionSchedule(
@@ -331,7 +331,7 @@ export async function createInspectionSchedule(
     scheduledAt: payload.scheduledAt,
     title: payload.title ?? undefined,
     notes: payload.notes ?? undefined,
-    fridgeCompartmentId: payload.fridgeCompartmentId,
+    fridgeCompartmentId: payload.fridgeCompartmentId ?? undefined,
   }
   const { data, error } = await safeApiCall<InspectionScheduleDto>("/fridge/inspection-schedules", {
     method: "POST",

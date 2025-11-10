@@ -62,6 +62,7 @@ import {
 } from "@/features/admin/utils/fridge-adapter"
 import { updateFridgeCompartment } from "@/features/fridge/api"
 import type { ResourceStatus, Slot, UpdateCompartmentConfigPayload } from "@/features/fridge/types"
+import { formatRoomLabel, formatSlotDisplayName } from "@/features/fridge/utils/labels"
 
 const FLOOR_OPTIONS = [2, 3, 4, 5]
 const BUNDLE_PAGE_SIZE = 8
@@ -86,8 +87,7 @@ const INSPECTION_STATUS_LABEL: Record<AdminInspectionSession["status"], string> 
 }
 
 const formatInspectorDisplay = (session: AdminInspectionSession) => {
-  const room = session.startedByRoomNumber?.trim()
-  const roomLabel = room ? `${room}호` : undefined
+  const roomLabel = formatRoomLabel(session.startedByRoomNumber, session.floorNo) ?? undefined
   const name = session.startedByName?.trim()
   if (roomLabel && name) {
     return `${roomLabel} ${name}`
@@ -118,6 +118,19 @@ const INSPECTION_ACTION_LABELS = {
   UNREGISTERED_DISPOSE: "미등록 물품 폐기",
   PASS: "정상",
 } as const
+
+const formatSlotTitleLabel = (
+  slot?: Pick<AdminFridgeSlot, "slotIndex" | "slotLetter" | "compartmentType" | "floorNo"> | null,
+): string | null => {
+  if (!slot) return null
+  const floorText = typeof slot.floorNo === "number" ? `${slot.floorNo}F` : ""
+  const slotLabel = formatSlotDisplayName({
+    slotIndex: typeof slot.slotIndex === "number" ? slot.slotIndex : 0,
+    slotLetter: typeof slot.slotLetter === "string" ? slot.slotLetter : "",
+    compartmentType: slot.compartmentType,
+  })
+  return [floorText, slotLabel].filter(Boolean).join(" ").trim() || null
+}
 
 const INSPECTION_NOTIFICATION_LABELS: Record<string, string> = {
   PENDING: "발송 대기",
@@ -244,14 +257,6 @@ type BundleDataState = {
   error: string | null
   items: AdminBundleSummary[]
   totalCount: number
-}
-
-type ActionShortcut = {
-  id: string
-  label: string
-  description: string
-  href?: string
-  onClick?: () => void
 }
 
 const INITIAL_BUNDLE_DATA: BundleDataState = {
@@ -650,43 +655,6 @@ export default function AdminFridgePage() {
     clearQueryKeys,
   ])
 
-  const actionShortcuts = useMemo<ActionShortcut[]>(
-    () => [
-      {
-        id: "reallocate",
-        label: `${selectedFloor}층 호실 재배분`,
-        description: "칸-호실 배정을 재정비하고 잠금/검사 중 칸을 함께 확인합니다.",
-        onClick: () => setReallocationOpen(true),
-      },
-      {
-        id: "deleted",
-        label: "삭제 이력 확인",
-        description: "최근 3개월 내 삭제된 포장을 검토하고 복구 필요 여부를 판단합니다.",
-        onClick: () =>
-          setDeletedState((prev) => ({
-            ...prev,
-            open: true,
-          })),
-      },
-      {
-        id: "slot-config",
-        label: "칸 상태·용량 편집",
-        description: "선택된 칸의 상태와 최대 포장 용량을 빠르게 조정합니다.",
-        onClick: () => {
-          if (!selectedSlot) {
-            toast({
-              title: "칸을 먼저 선택하세요",
-              description: "상태 또는 용량을 수정할 칸을 목록에서 선택해주세요.",
-            })
-            return
-          }
-          openSlotConfigDialog(selectedSlot)
-        },
-      },
-    ],
-    [selectedFloor, selectedSlot, toast],
-  )
-
   const evaluateSlotAlerts = useCallback(async (slotList: AdminFridgeSlot[]) => {
     if (slotList.length === 0) {
       setSlotAlerts({})
@@ -935,6 +903,14 @@ export default function AdminFridgePage() {
     return { active, locked, utilization }
   }, [slots])
 
+  const slotFloorMap = useMemo(() => {
+    const map = new Map<string, number>()
+    slots.forEach((slot) => {
+      map.set(slot.slotId, slot.floorNo)
+    })
+    return map
+  }, [slots])
+
   const totalBundlePages = useMemo(
     () => Math.max(1, Math.ceil(bundleData.totalCount / BUNDLE_PAGE_SIZE)),
     [bundleData.totalCount],
@@ -948,14 +924,16 @@ export default function AdminFridgePage() {
   const bundleOwnerLookup = useMemo(() => {
     const map = new Map<string, string>()
     bundleData.items.forEach((bundle) => {
-      const name = bundle.ownerDisplayName ?? bundle.ownerRoomNumber ?? "사용자"
+      const floorHint = slotFloorMap.get(bundle.slotId) ?? null
+      const roomLabel = formatRoomLabel(bundle.ownerRoomNumber, floorHint)
+      const name = bundle.ownerDisplayName ?? roomLabel ?? "사용자"
       map.set(bundle.bundleId, name)
       if (bundle.canonicalId) {
         map.set(bundle.canonicalId, name)
       }
     })
     return map
-  }, [bundleData.items])
+  }, [bundleData.items, slotFloorMap])
 
   const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
@@ -1375,13 +1353,16 @@ export default function AdminFridgePage() {
           }
         }),
       )
+      const resolvedLabel =
+        formatSlotTitleLabel(updated) ??
+        formatSlotTitleLabel(target) ??
+        updated.displayName ??
+        target.displayName ??
+        `${target.floorNo}F`
+
       toast({
         title: "칸 설정이 저장되었습니다",
-        description: `${
-          updated.displayName ??
-          target.displayName ??
-          `${target.floorNo}F ${target.slotLetter ?? ""}`
-        } 설정을 갱신했습니다.`,
+        description: `${resolvedLabel} 설정을 갱신했습니다.`,
       })
       resetSlotConfigDialog()
     } catch (error) {
@@ -1426,7 +1407,7 @@ export default function AdminFridgePage() {
         <div className="flex items-start justify-between gap-3">
           <div>
             <p className="text-sm font-semibold text-slate-900">
-              {slot.displayName ?? `${slot.floorNo}F · ${slot.slotLetter}`}
+              {formatSlotTitleLabel(slot) ?? `${slot.floorNo}F`}
             </p>
           </div>
           <div className="flex flex-col items-end gap-2">
@@ -1550,23 +1531,32 @@ export default function AdminFridgePage() {
     return <div className={containerClassName}>{slots.map((slot) => renderSlotCard(slot))}</div>
   }
 
+  const slotHeadingLabel = formatSlotTitleLabel(selectedSlot)
+  const slotRoomLabel =
+    selectedSlot && selectedSlot.roomIds?.length
+      ? `${selectedSlot.roomIds.length}개 호실 배정`
+      : null
+
   const detailSection = (
     <section className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-lg font-semibold text-slate-900">상세</h2>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="space-y-1">
+          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">칸 상세</p>
+          <div className="flex flex-wrap items-baseline gap-2">
+            <h2 className="text-xl font-semibold text-slate-900">
+              {slotHeadingLabel ?? "선택된 칸 없음"}
+            </h2>
+          </div>
+          {slotRoomLabel ? (
+            <p className="text-sm text-slate-500">{slotRoomLabel}</p>
+          ) : selectedSlot ? (
+            <p className="text-sm text-slate-400">배정된 호실 없음</p>
+          ) : (
+            <p className="text-sm text-slate-400">칸을 선택하면 상세 정보가 표시됩니다.</p>
+          )}
+        </div>
         {selectedSlot ? (
           <div className="flex flex-wrap items-center gap-3">
-            <div className="flex flex-wrap items-center gap-2 text-xs text-slate-500">
-              <Badge
-                variant="outline"
-                className="border-slate-200 bg-slate-50 px-2.5 py-0.5 text-xs font-semibold text-slate-600"
-              >
-                {selectedSlot.displayName ?? `${selectedSlot.floorNo}F ${selectedSlot.slotLetter}`}
-              </Badge>
-              <span>{selectedSlot.compartmentType}</span>
-              <span className="text-slate-300">·</span>
-              <span>인덱스 {selectedSlot.slotIndex}</span>
-            </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button
                 variant="outline"
@@ -1714,7 +1704,9 @@ export default function AdminFridgePage() {
                       {visibleBundles.map((bundle) => {
                         const freshnessBadge = formatFreshness(bundle.freshness)
                         const bundleNameDisplay = truncateText(bundle.bundleName, 11)
-                        const ownerDisplay = truncateText(bundle.ownerDisplayName ?? "-", 6)
+                        const floorHint = slotFloorMap.get(bundle.slotId) ?? selectedSlot?.floorNo ?? null
+                        const ownerRoomLabel = formatRoomLabel(bundle.ownerRoomNumber, floorHint)
+                        const ownerDisplay = truncateText(bundle.ownerDisplayName ?? ownerRoomLabel ?? "-", 6)
                         const warningCount = bundle.warningCount ?? 0
                         const disposalCount = bundle.disposalCount ?? 0
                         const lastInspectionText = bundle.lastInspectionAt
@@ -1761,7 +1753,7 @@ export default function AdminFridgePage() {
                                 <span>{ownerDisplay}</span>
                               )}
                               <p className="text-xs text-slate-500">
-                                {bundle.ownerRoomNumber ?? "호실 정보 없음"}
+                                {ownerRoomLabel ?? "호실 정보 없음"}
                               </p>
                             </TableCell>
                             <TableCell className="px-2 py-2 align-top text-sm font-semibold text-slate-900">
@@ -1866,17 +1858,11 @@ export default function AdminFridgePage() {
                   </SelectContent>
                 </Select>
               </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() =>
-                  setInspectionState((prev) => ({
-                    ...prev,
-                    status: "SUBMITTED",
-                  }))
-                }
-              >
-                기본값으로
+              <Button variant="outline" size="sm" asChild>
+                <Link href="/admin/audit?module=fridge" className="inline-flex items-center gap-1">
+                  감사 로그 이동
+                  <ArrowRight className="size-3" aria-hidden />
+                </Link>
               </Button>
             </div>
             <div className="rounded-lg border border-slate-200">
@@ -2074,10 +2060,14 @@ export default function AdminFridgePage() {
     if (!reallocationPlan) return new Map<string, string>()
     const map = new Map<string, string>()
     reallocationPlan.rooms.forEach((room) => {
-      map.set(room.roomId, room.roomNumber)
+      const label =
+        formatRoomLabel(room.roomNumber, room.floor ?? reallocationPlan.floor ?? selectedFloor ?? null) ??
+        room.roomNumber ??
+        "미정"
+      map.set(room.roomId, label)
     })
     return map
-  }, [reallocationPlan])
+  }, [reallocationPlan, selectedFloor])
 
   return (
     <Fragment>
@@ -2211,15 +2201,13 @@ export default function AdminFridgePage() {
                               : actionType.startsWith("WARN")
                                 ? "border-amber-200 text-amber-700 bg-amber-50"
                                 : "border-slate-200 text-slate-600 bg-slate-50"
-                          const rawRoom = action.roomNumber?.trim()
+                          const roomLabel = formatRoomLabel(action.roomNumber, selectedInspection.floorNo)
                           const personalLabel =
                             typeof action.personalNo === "number" ? String(action.personalNo) : undefined
                           const roomIdentifier =
-                            rawRoom && personalLabel
-                              ? `${rawRoom}-${personalLabel}`
-                              : rawRoom
-                                ? `${rawRoom}호`
-                                : undefined
+                            roomLabel && personalLabel
+                              ? `${roomLabel}-${personalLabel}`
+                              : roomLabel ?? undefined
                           const ownerName =
                             action.targetName?.trim() ??
                             (action.bundleId ? bundleOwnerLookup.get(action.bundleId) ?? undefined : undefined)
@@ -2337,24 +2325,26 @@ export default function AdminFridgePage() {
                 </p>
               ) : (
                 <div className="space-y-3">
-                  {inspectionDraftActions.map((draft, index) => (
-                    <div
-                      key={draft.localId}
-                      className={cn(
-                        "rounded-lg border px-3 py-3 text-xs shadow-sm",
-                        draft.remove ? "border-rose-200 bg-rose-50/70" : "border-slate-200 bg-slate-50",
-                      )}
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div className="space-y-1">
-                          <p className="text-sm font-semibold text-slate-900">조치 {index + 1}</p>
-                          <p className="text-[11px] text-slate-500">
-                            {draft.roomNumber ? `호실 ${draft.roomNumber}` : null}
-                            {draft.roomNumber && typeof draft.personalNo === "number" ? " · " : null}
-                            {typeof draft.personalNo === "number" ? `개인번호 ${draft.personalNo}` : null}
-                          </p>
-                        </div>
-                        <div className="flex flex-wrap items-center gap-2">
+                  {inspectionDraftActions.map((draft, index) => {
+                    const draftRoomLabel = formatRoomLabel(draft.roomNumber, selectedInspection?.floorNo ?? null)
+                    return (
+                      <div
+                        key={draft.localId}
+                        className={cn(
+                          "rounded-lg border px-3 py-3 text-xs shadow-sm",
+                          draft.remove ? "border-rose-200 bg-rose-50/70" : "border-slate-200 bg-slate-50",
+                        )}
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div className="space-y-1">
+                            <p className="text-sm font-semibold text-slate-900">조치 {index + 1}</p>
+                            <p className="text-[11px] text-slate-500">
+                              {draftRoomLabel ? `호실 ${draftRoomLabel}` : null}
+                              {draftRoomLabel && typeof draft.personalNo === "number" ? " · " : null}
+                              {typeof draft.personalNo === "number" ? `개인번호 ${draft.personalNo}` : null}
+                            </p>
+                          </div>
+                          <div className="flex flex-wrap items-center gap-2">
                           {draft.remove ? (
                             <Badge variant="destructive" className="px-2 py-0.5 text-[11px]">
                               삭제 예정
@@ -2370,9 +2360,9 @@ export default function AdminFridgePage() {
                           >
                             {draft.remove ? "복구" : draft.isNew ? "제거" : "삭제"}
                           </Button>
+                          </div>
                         </div>
-                      </div>
-                      <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
                         <div className="space-y-1">
                           <Label className="text-[11px] text-muted-foreground">조치 유형</Label>
                           <Select
@@ -2422,8 +2412,9 @@ export default function AdminFridgePage() {
                           className="min-h-[80px]"
                         />
                       </div>
-                    </div>
-                  ))}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
             </div>
@@ -2559,21 +2550,28 @@ export default function AdminFridgePage() {
                                   <DropdownMenuContent align="end" className="max-h-64 overflow-y-auto">
                                     <DropdownMenuLabel>배정 호실 선택</DropdownMenuLabel>
                                     <DropdownMenuSeparator />
-                                    {reallocationPlan.rooms.map((room) => (
-                                      <DropdownMenuCheckboxItem
-                                        key={room.roomId}
-                                        checked={selectedRooms.includes(room.roomId)}
-                                        onCheckedChange={(checked) =>
-                                          handleToggleRoomSelection(
-                                            allocation.compartmentId,
-                                            room.roomId,
-                                            Boolean(checked),
-                                          )
-                                        }
-                                      >
-                                        {room.roomNumber}
-                                      </DropdownMenuCheckboxItem>
-                                    ))}
+                                    {reallocationPlan.rooms.map((room) => {
+                                      const roomLabel =
+                                        formatRoomLabel(
+                                          room.roomNumber,
+                                          room.floor ?? reallocationPlan.floor ?? selectedFloor ?? null,
+                                        ) ?? room.roomNumber ?? "미정"
+                                      return (
+                                        <DropdownMenuCheckboxItem
+                                          key={room.roomId}
+                                          checked={selectedRooms.includes(room.roomId)}
+                                          onCheckedChange={(checked) =>
+                                            handleToggleRoomSelection(
+                                              allocation.compartmentId,
+                                              room.roomId,
+                                              Boolean(checked),
+                                            )
+                                          }
+                                        >
+                                          {roomLabel}
+                                        </DropdownMenuCheckboxItem>
+                                      )
+                                    })}
                                   </DropdownMenuContent>
                                 </DropdownMenu>
                                 <Button
@@ -2663,9 +2661,7 @@ export default function AdminFridgePage() {
               className="flex w-full items-center justify-between rounded-2xl border-emerald-200 bg-emerald-50/60 px-4 py-3 text-sm font-semibold text-emerald-700"
               onClick={() => setMobileDetailOpen(true)}
             >
-              <span>
-                {selectedSlot.displayName ?? `${selectedSlot.floorNo}F ${selectedSlot.slotLetter}`}
-              </span>
+              <span>{formatSlotTitleLabel(selectedSlot) ?? "-"}</span>
               <ArrowRight className="size-4" aria-hidden />
             </Button>
           ) : (
@@ -2693,49 +2689,7 @@ export default function AdminFridgePage() {
         </div>
       )}
 
-      {!isMobile ? (
-        <aside
-          data-admin-slot="rail"
-          className="space-y-4"
-          aria-label="냉장고 운영 퀵 액션"
-        >
-          <section className="rounded-2xl border border-emerald-100 bg-white/90 p-5 shadow-sm">
-            <h2 className="text-sm font-semibold text-slate-900">빠른 실행</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              재배분, 삭제 이력 확인, 칸 설정 편집을 빠르게 수행할 수 있습니다. Cmd/Ctrl + K로 전역 검색창에 집중하세요.
-            </p>
-            <ul className="mt-4 space-y-3 text-sm text-slate-700">
-              {actionShortcuts.map((item) => (
-                <li key={item.id} className="rounded-lg border border-emerald-100 bg-emerald-50/60 p-3 shadow-sm">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <p className="font-semibold text-emerald-700">{item.label}</p>
-                      <p className="mt-1 text-xs text-slate-500">{item.description}</p>
-                    </div>
-                    {item.href ? (
-                      <Button asChild size="icon" variant="ghost" className="text-emerald-600">
-                        <Link href={item.href} aria-label={`${item.label} 이동`}>
-                          <ArrowRight className="size-4" aria-hidden />
-                        </Link>
-                      </Button>
-                    ) : (
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="text-emerald-600"
-                        onClick={item.onClick}
-                        aria-label={`${item.label} 실행`}
-                      >
-                        <ArrowRight className="size-4" aria-hidden />
-                      </Button>
-                    )}
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        </aside>
-      ) : null}
+      {/* Quick action rail removed per updated UX */}
 
       {isMobile && selectedSlot ? (
         <Sheet open={mobileDetailOpen} onOpenChange={setMobileDetailOpen}>
@@ -2831,12 +2785,15 @@ export default function AdminFridgePage() {
                     {(deletedState.response?.items ?? []).map((item) => {
                       const bundle = mapAdminBundleSummary(item)
                       const deletedAt = bundle.deletedAt ?? bundle.removedAt ?? bundle.updatedAt
+                      const floorHint =
+                        slotFloorMap.get(bundle.slotId) ?? selectedSlot?.floorNo ?? selectedFloor ?? null
+                      const ownerRoomLabel = formatRoomLabel(bundle.ownerRoomNumber, floorHint)
                       return (
                         <TableRow key={`${bundle.bundleId}-${deletedAt}`}>
                           <TableCell className="font-medium">{bundle.labelDisplay}</TableCell>
                           <TableCell>{bundle.bundleName}</TableCell>
                           <TableCell>
-                            {bundle.ownerDisplayName ?? bundle.ownerRoomNumber ?? "-"}
+                            {bundle.ownerDisplayName ?? ownerRoomLabel ?? "-"}
                           </TableCell>
                           <TableCell>
                             <div className="text-xs font-medium text-slate-700">
@@ -2875,8 +2832,7 @@ export default function AdminFridgePage() {
             <div className="space-y-4">
               <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
                 <p className="font-semibold text-slate-900">
-                  {slotConfigDialog.slot.displayName ??
-                    `${slotConfigDialog.slot.floorNo}F · ${slotConfigDialog.slot.slotLetter}`}
+                  {formatSlotTitleLabel(slotConfigDialog.slot) ?? "-"}
                 </p>
                 <p className="mt-1">
                   현재 상태{" "}

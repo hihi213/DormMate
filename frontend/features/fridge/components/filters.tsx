@@ -19,6 +19,7 @@ export default function Filters({
   onToggleMyOnly = () => {},
   searchValue = "",
   onSearchChange = () => {},
+  allowAllSlots = true,
 }: {
   active?: "all" | "mine" | "expiring" | "expired"
   onChange?: (t: "all" | "mine" | "expiring" | "expired") => void
@@ -30,12 +31,15 @@ export default function Filters({
   onToggleMyOnly?: (v: boolean) => void
   searchValue?: string
   onSearchChange?: (v: string) => void
+  allowAllSlots?: boolean
 }) {
   // Only status filters: expiring/expired (tap active to reset to 'all')
   const statusTabs: { key: "expiring" | "expired"; label: string; count?: number }[] = [
     { key: "expiring", label: "임박", count: counts.expiring },
     { key: "expired", label: "만료", count: counts.expired },
   ]
+
+  const slotPlaceholder = allowAllSlots ? "전체 칸" : "내 칸 선택"
 
   return (
     <div className="mt-3 space-y-3">
@@ -45,8 +49,8 @@ export default function Filters({
           value={slotId}
           onChange={setSlotId}
           slots={slots}
-          showAllOption
-          placeholder="전체 칸"
+          showAllOption={allowAllSlots}
+          placeholder={slotPlaceholder}
           className="shrink-0 max-w-[55%]"
         />
         

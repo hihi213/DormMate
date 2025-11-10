@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import dynamic from "next/dynamic"
 import { Snowflake, Plus } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
@@ -15,7 +15,11 @@ import AddItemDialog from "@/features/fridge/components/add-item-dialog"
 import { formatKoreanDate } from "./utils-fridge-page"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import { useToast } from "@/hooks/use-toast"
-import { fetchNextInspectionSchedule } from "@/features/inspections/api"
+import { fetchNextInspectionSchedule, fetchInspectionSchedules } from "@/features/inspections/api"
+import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
+import { computePermittedSlotIds } from "@/features/fridge/utils/slot-permissions"
+import type { InspectionSchedule } from "@/features/inspections/types"
+import type { Slot } from "@/features/fridge/types"
 
 // Lazy load heavier bottom sheets
 const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
@@ -53,45 +57,33 @@ function FridgeInner() {
     id: "",
     edit: false,
   })
-  const initializedSlotRef = useRef(false)
   const uid = getCurrentUserId()
 
-  const ownedSlotIds = useMemo(() => {
-    if (!uid) return []
-    const ids = new Set<string>()
-    bundles.forEach((bundle) => {
-      if (!bundle.slotId) return
-      if (bundle.ownerId && bundle.ownerId === uid) {
-        ids.add(bundle.slotId)
-      } else if (bundle.ownerUserId && bundle.ownerUserId === uid) {
-        ids.add(bundle.slotId)
-      } else if (!bundle.ownerId && bundle.owner === "me") {
-        ids.add(bundle.slotId)
-      }
-    })
-    const activeIds = Array.from(ids).filter((slotId) => {
-      const slot = slots.find((s) => s.slotId === slotId)
-      return slot ? slot.resourceStatus === "ACTIVE" : true
-    })
-    activeIds.sort((a, b) => {
-      const slotA = slots.find((slot) => slot.slotId === a)
-      const slotB = slots.find((slot) => slot.slotId === b)
-      const indexA = slotA ? slotA.slotIndex : Number.MAX_SAFE_INTEGER
-      const indexB = slotB ? slotB.slotIndex : Number.MAX_SAFE_INTEGER
-      return indexA - indexB
-    })
-    return activeIds
-  }, [bundles, uid, slots])
+  const restrictSlotViewToOwnership = !isAdmin
+  const roomDetails = currentUser?.roomDetails ?? null
+
+  const permittedSlotIds = useMemo(() => {
+    if (!restrictSlotViewToOwnership) return null
+    return computePermittedSlotIds(slots, roomDetails ?? null)
+  }, [restrictSlotViewToOwnership, roomDetails, slots])
+
+  const visibleSlots = useMemo(() => {
+    if (!permittedSlotIds || permittedSlotIds.size === 0) {
+      return slots
+    }
+    const filtered = slots.filter((slot) => permittedSlotIds.has(slot.slotId))
+    return filtered.length > 0 ? filtered : slots
+  }, [permittedSlotIds, slots])
 
   useEffect(() => {
-    if (initializedSlotRef.current) return
-    if (ownedSlotIds.length > 0) {
-      setSelectedSlotId(ownedSlotIds[0])
-      initializedSlotRef.current = true
-    } else if (slots.length > 0) {
-      initializedSlotRef.current = true
+    if (!restrictSlotViewToOwnership) return
+    if (!permittedSlotIds || permittedSlotIds.size === 0) return
+    const availableSlotIds = Array.from(permittedSlotIds)
+    const fallbackSlotId = availableSlotIds[0]
+    if (!selectedSlotId || !permittedSlotIds.has(selectedSlotId)) {
+      setSelectedSlotId(fallbackSlotId)
     }
-  }, [ownedSlotIds, slots.length])
+  }, [restrictSlotViewToOwnership, permittedSlotIds, selectedSlotId])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -105,26 +97,75 @@ function FridgeInner() {
 
   useEffect(() => {
     let cancelled = false
-    const loadNextSchedule = async () => {
+
+    const formatScheduleSummary = (schedule: InspectionSchedule | null): string => {
+      if (!schedule) return restrictSlotViewToOwnership ? "내 칸 일정 없음" : "예정 없음"
+      const dateText = formatKoreanDate(new Date(schedule.scheduledAt))
+      const linkedSlot = schedule.fridgeCompartmentId
+        ? slots.find((slot) => slot.slotId === schedule.fridgeCompartmentId)
+        : null
+      let slotText: string | null = null
+      if (linkedSlot) {
+        const slotLabel = formatSlotDisplayName(linkedSlot)
+        slotText = linkedSlot.floorNo ? `${linkedSlot.floorNo}F ${slotLabel}` : slotLabel
+      } else if (schedule.slotLetter) {
+        const floorPrefix = schedule.floorNo ? `${schedule.floorNo}F ` : ""
+        slotText = `${floorPrefix}칸 ${schedule.slotLetter}`
+      }
+      return slotText ? `${dateText} · ${slotText}` : dateText
+    }
+
+    const loadResidentSchedule = async () => {
+      const permittedIds = permittedSlotIds ? Array.from(permittedSlotIds) : []
+      if (permittedIds.length === 0) {
+        setNextScheduleText("내 칸 일정 없음")
+        return
+      }
+      try {
+        const schedules = await fetchInspectionSchedules({ status: "SCHEDULED", limit: 20 })
+        if (cancelled) return
+        const relevant = schedules
+          .filter(
+            (schedule) =>
+              schedule.fridgeCompartmentId && permittedIds.includes(schedule.fridgeCompartmentId),
+          )
+          .sort(
+            (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
+          )
+        if (relevant.length === 0) {
+          setNextScheduleText("내 칸 일정 없음")
+          return
+        }
+        setNextScheduleText(formatScheduleSummary(relevant[0]))
+      } catch (error) {
+        console.error("Failed to load resident-specific schedules", error)
+        setNextScheduleText("내 칸 일정 없음")
+      }
+    }
+
+    const loadGlobalSchedule = async () => {
       try {
         const schedule = await fetchNextInspectionSchedule()
         if (cancelled) return
-        if (!schedule) {
-          setNextScheduleText("예정 없음")
-          return
-        }
-        setNextScheduleText(formatKoreanDate(new Date(schedule.scheduledAt)))
-      } catch {
+        setNextScheduleText(formatScheduleSummary(schedule ?? null))
+      } catch (error) {
+        console.error("Failed to load global schedule", error)
         if (!cancelled) {
           setNextScheduleText("예정 없음")
         }
       }
     }
-    void loadNextSchedule()
+
+    if (restrictSlotViewToOwnership) {
+      void loadResidentSchedule()
+    } else {
+      void loadGlobalSchedule()
+    }
+
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [restrictSlotViewToOwnership, slots, permittedSlotIds, roomDetails])
 
   const filtered = useMemo(() => {
     const now = new Date()
@@ -273,12 +314,13 @@ function FridgeInner() {
               onChange={setTab}
               slotId={selectedSlotId}
               setSlotId={setSelectedSlotId}
-              slots={slots}
+              slots={visibleSlots}
               counts={counts}
               myOnly={myOnly}
               onToggleMyOnly={setMyOnly}
               searchValue={query}
               onSearchChange={setQuery}
+              allowAllSlots={!restrictSlotViewToOwnership}
             />
           </CardContent>
         </Card>
@@ -299,7 +341,7 @@ function FridgeInner() {
         </section>
       </div>
 
-      <AddItemDialog open={addOpen} onOpenChange={setAddOpen} slots={slots} currentSlotId={selectedSlotId} />
+      <AddItemDialog open={addOpen} onOpenChange={setAddOpen} slots={visibleSlots} currentSlotId={selectedSlotId} />
 
       {/* Bottom sheets for quick detail (lazy-loaded) */}
       <ItemDetailSheet

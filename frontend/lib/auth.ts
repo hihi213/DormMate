@@ -3,11 +3,20 @@ import { getDeviceId } from "@/lib/device-id"
 
 export type UserRole = "RESIDENT" | "FLOOR_MANAGER" | "ADMIN"
 
+export type RoomDetails = {
+  roomId?: string
+  floor?: number
+  roomNumber?: string
+  personalNo?: number
+  floorCode?: string
+}
+
 export type AuthUser = {
   userId: string
   loginId: string
   name: string
   room?: string
+  roomDetails?: RoomDetails | null
   roles: UserRole[]
   isFloorManager: boolean
   isAdmin: boolean
@@ -36,6 +45,7 @@ type RoomAssignment = {
   roomNumber: string
   personalNo: number
   assignedAt: string
+  floorCode?: string
 }
 
 type UserProfile = {
@@ -66,11 +76,21 @@ const authListeners = new Set<(user: AuthUser | null) => void>()
 let refreshPromise: Promise<boolean> | null = null
 
 function mapUserProfile(profile: UserProfile): AuthUser {
+  const roomDetails = profile.primaryRoom
+    ? {
+        roomId: profile.primaryRoom.roomId,
+        floor: profile.primaryRoom.floor,
+        roomNumber: profile.primaryRoom.roomNumber,
+        personalNo: profile.primaryRoom.personalNo,
+        floorCode: profile.primaryRoom.floorCode,
+      }
+    : null
   return {
     userId: profile.userId,
     loginId: profile.loginId,
     name: profile.displayName,
     room: formatRoom(profile.primaryRoom ?? undefined),
+    roomDetails,
     roles: profile.roles ?? [],
     isFloorManager: profile.isFloorManager,
     isAdmin: profile.isAdmin,

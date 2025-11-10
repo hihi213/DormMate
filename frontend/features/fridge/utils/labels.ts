@@ -27,3 +27,38 @@ export const formatStickerWithSequence = (slotIndex: number, labelNumber: number
   const base = formatStickerLabel(slotIndex, labelNumber)
   return `${base}-${String(seqNo).padStart(2, "0")}`
 }
+
+export const formatRoomNumberLabel = (
+  roomNumber?: string | null,
+  floorHint?: number | null,
+): string | null => {
+  if (!roomNumber) return null
+  const trimmed = roomNumber.trim()
+  if (!trimmed) return null
+
+  const numericMatch = trimmed.match(/^(\d+)(?:호)?$/)
+  if (!numericMatch) {
+    return trimmed
+  }
+
+  const digits = numericMatch[1]
+  if (digits.length >= 3) {
+    return digits
+  }
+
+  if (typeof floorHint === "number" && Number.isFinite(floorHint)) {
+    const floorPrefix = String(Math.trunc(floorHint))
+    return `${floorPrefix}${digits.padStart(2, "0")}`
+  }
+
+  return digits.padStart(2, "0")
+}
+
+export const formatRoomLabel = (
+  roomNumber?: string | null,
+  floorHint?: number | null,
+): string | null => {
+  const base = formatRoomNumberLabel(roomNumber, floorHint)
+  if (!base) return null
+  return base.endsWith("호") ? base : `${base}호`
+}

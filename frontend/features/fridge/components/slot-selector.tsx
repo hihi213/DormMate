@@ -81,7 +81,7 @@ export function SlotSelector({
             aria-controls="slot-popover"
             aria-disabled={selectedDisabled}
           >
-            <span className="truncate">{currentSlotLabel}</span>
+            <span className="flex-1 text-left whitespace-nowrap">{currentSlotLabel}</span>
             <ChevronDown className="w-4 h-4 text-gray-500" />
           </button>
         </PopoverTrigger>
@@ -144,9 +144,10 @@ function SlotOption({
       )}
       aria-pressed={selected}
       aria-disabled={disabled}
+      title={description ?? undefined}
     >
-      <span className="flex w-full items-center justify-between gap-2">
-        <span className="truncate">{label}</span>
+      <span className="flex w-full items-center justify-between gap-2 text-left">
+        <span className="flex-1 text-left">{label}</span>
         <Check
           className={cn(
             "w-4 h-4 text-emerald-600",
@@ -156,9 +157,6 @@ function SlotOption({
           aria-hidden="true"
         />
       </span>
-      {description && (
-        <span className="text-xs text-muted-foreground">{description}</span>
-      )}
     </button>
   )
 }
