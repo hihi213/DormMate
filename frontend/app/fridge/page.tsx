@@ -10,13 +10,14 @@ import type { Item } from "@/features/fridge/types"
 import Filters from "@/features/fridge/components/filters"
 import ItemsList from "@/features/fridge/components/items-list"
 import BottomNav from "@/components/bottom-nav"
-import { getCurrentUser, getCurrentUserId, type RoomDetails } from "@/lib/auth"
+import { getCurrentUser, getCurrentUserId } from "@/lib/auth"
 import AddItemDialog from "@/features/fridge/components/add-item-dialog"
 import { formatKoreanDate } from "./utils-fridge-page"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import { useToast } from "@/hooks/use-toast"
 import { fetchNextInspectionSchedule, fetchInspectionSchedules } from "@/features/inspections/api"
 import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
+import { computePermittedSlotIds } from "@/features/fridge/utils/slot-permissions"
 import type { InspectionSchedule } from "@/features/inspections/types"
 import type { Slot } from "@/features/fridge/types"
 
@@ -58,44 +59,13 @@ function FridgeInner() {
   })
   const uid = getCurrentUserId()
 
-  const ownedSlotIds = useMemo(() => {
-    if (!uid) return []
-    const ids = new Set<string>()
-    bundles.forEach((bundle) => {
-      if (!bundle.slotId) return
-      if (bundle.ownerId && bundle.ownerId === uid) {
-        ids.add(bundle.slotId)
-      } else if (bundle.ownerUserId && bundle.ownerUserId === uid) {
-        ids.add(bundle.slotId)
-      } else if (!bundle.ownerId && bundle.owner === "me") {
-        ids.add(bundle.slotId)
-      }
-    })
-    const activeIds = Array.from(ids).filter((slotId) => {
-      const slot = slots.find((s) => s.slotId === slotId)
-      return slot ? slot.resourceStatus === "ACTIVE" : true
-    })
-    activeIds.sort((a, b) => {
-      const slotA = slots.find((slot) => slot.slotId === a)
-      const slotB = slots.find((slot) => slot.slotId === b)
-      const indexA = slotA ? slotA.slotIndex : Number.MAX_SAFE_INTEGER
-      const indexB = slotB ? slotB.slotIndex : Number.MAX_SAFE_INTEGER
-      return indexA - indexB
-    })
-    return activeIds
-  }, [bundles, uid, slots])
-
   const isFloorManager = currentUser?.roles.includes("FLOOR_MANAGER") ?? false
   const restrictSlotViewToOwnership = !(isAdmin || isFloorManager)
   const roomDetails = currentUser?.roomDetails ?? null
 
   const permittedSlotIds = useMemo(() => {
     if (!restrictSlotViewToOwnership) return null
-    if (!roomDetails?.floor) return null
-    return computePermittedSlotIds({
-      slots,
-      roomDetails,
-    })
+    return computePermittedSlotIds(slots, roomDetails ?? null)
   }, [restrictSlotViewToOwnership, roomDetails, slots])
 
   const visibleSlots = useMemo(() => {
@@ -110,12 +80,11 @@ function FridgeInner() {
     if (!restrictSlotViewToOwnership) return
     if (!permittedSlotIds || permittedSlotIds.size === 0) return
     const availableSlotIds = Array.from(permittedSlotIds)
-    const preferredOwned = ownedSlotIds.find((id) => permittedSlotIds.has(id))
-    const fallbackSlotId = preferredOwned ?? availableSlotIds[0]
+    const fallbackSlotId = availableSlotIds[0]
     if (!selectedSlotId || !permittedSlotIds.has(selectedSlotId)) {
       setSelectedSlotId(fallbackSlotId)
     }
-  }, [restrictSlotViewToOwnership, permittedSlotIds, ownedSlotIds, selectedSlotId])
+  }, [restrictSlotViewToOwnership, permittedSlotIds, selectedSlotId])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -149,8 +118,7 @@ function FridgeInner() {
 
     const loadResidentSchedule = async () => {
       const permittedIds = permittedSlotIds ? Array.from(permittedSlotIds) : []
-      const targetSlotIds = permittedIds.length > 0 ? permittedIds : ownedSlotIds
-      if (targetSlotIds.length === 0) {
+      if (permittedIds.length === 0) {
         setNextScheduleText("내 칸 일정 없음")
         return
       }
@@ -160,7 +128,7 @@ function FridgeInner() {
         const relevant = schedules
           .filter(
             (schedule) =>
-              schedule.fridgeCompartmentId && targetSlotIds.includes(schedule.fridgeCompartmentId),
+              schedule.fridgeCompartmentId && permittedIds.includes(schedule.fridgeCompartmentId),
           )
           .sort(
             (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
@@ -198,7 +166,7 @@ function FridgeInner() {
     return () => {
       cancelled = true
     }
-  }, [restrictSlotViewToOwnership, ownedSlotIds, slots, permittedSlotIds, roomDetails])
+  }, [restrictSlotViewToOwnership, slots, permittedSlotIds, roomDetails])
 
   const filtered = useMemo(() => {
     const now = new Date()
@@ -391,73 +359,4 @@ function FridgeInner() {
       />
     </main>
   )
-}
-
-const ROOMS_PER_FLOOR = 24
-
-function computePermittedSlotIds({
-  slots,
-  roomDetails,
-}: {
-  slots: Slot[]
-  roomDetails: RoomDetails
-}): Set<string> {
-  const permitted = new Set<string>()
-  const floor = roomDetails.floor
-  if (!floor) return permitted
-
-  const floorSlots = slots.filter((slot) => slot.floorNo === floor)
-  if (floorSlots.length === 0) {
-    return permitted
-  }
-
-  const targetOrdinal = resolveRoomOrdinal(roomDetails)
-  const chillSlots = floorSlots
-    .filter((slot) => slot.compartmentType === "CHILL")
-    .sort((a, b) => a.slotIndex - b.slotIndex)
-
-  if (targetOrdinal && chillSlots.length > 0) {
-    const baseChunk = Math.max(1, Math.floor(ROOMS_PER_FLOOR / chillSlots.length))
-    const remainder = ROOMS_PER_FLOOR % chillSlots.length
-    let start = 1
-    chillSlots.forEach((slot, index) => {
-      const bucketSize = baseChunk + (index < remainder ? 1 : 0)
-      const end = start + bucketSize - 1
-      if (targetOrdinal >= start && targetOrdinal <= end) {
-        permitted.add(slot.slotId)
-      }
-      start = end + 1
-    })
-  }
-
-  const freezeSlots = floorSlots.filter((slot) => slot.compartmentType === "FREEZE")
-  freezeSlots.forEach((slot) => permitted.add(slot.slotId))
-
-  if (permitted.size === 0) {
-    chillSlots.forEach((slot) => permitted.add(slot.slotId))
-    freezeSlots.forEach((slot) => permitted.add(slot.slotId))
-  }
-
-  return permitted
-}
-
-function normalizeRoomOrdinal(roomNumber?: string | number | null): number | null {
-  if (!roomNumber) return null
-  const digits = String(roomNumber).replace(/\D+/g, "")
-  if (!digits) return null
-  const numeric = Number.parseInt(digits, 10)
-  if (!Number.isFinite(numeric)) return null
-  const ordinal = numeric % 100
-  if (ordinal <= 0) return null
-  return ordinal
-}
-
-function resolveRoomOrdinal(roomDetails: RoomDetails): number | null {
-  if (typeof roomDetails.personalNo === "number" && Number.isFinite(roomDetails.personalNo)) {
-    return roomDetails.personalNo
-  }
-  if (roomDetails.roomNumber) {
-    return normalizeRoomOrdinal(roomDetails.roomNumber)
-  }
-  return null
 }
