@@ -84,6 +84,7 @@ type ScheduleFormState = {
   scheduledAt: string
   title: string
   notes: string
+  slotId: string
 }
 
 export default function InspectionsPage() {
@@ -127,10 +128,7 @@ function InspectionsInner() {
   const [starting, setStarting] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const minScheduleInputValue = useMemo(
-    () => formatDateTimeInputValue(new Date()),
-    [scheduleDialogOpen],
-  )
+  const minScheduleInputValue = useMemo(() => formatDateTimeInputValue(new Date()), [])
 
   const currentUser = getCurrentUser()
   const isFloorManager = currentUser?.roles.includes("FLOOR_MANAGER") ?? false
@@ -400,18 +398,29 @@ function InspectionsInner() {
     if (!open) {
       setScheduleDialogOpen(false)
       setEditingScheduleId(null)
-      setScheduleForm(getDefaultScheduleFormState())
+      setScheduleForm(getDefaultScheduleFormState(slots[0]?.slotId ?? ""))
       return
     }
     if (!isFloorManager) return
     setScheduleDialogOpen(true)
   }
 
+  useEffect(() => {
+    if (!scheduleDialogOpen) return
+    if (scheduleDialogMode !== "create") return
+    if (scheduleForm.slotId) return
+    if (!slots.length) return
+    setScheduleForm((prev) => ({
+      ...prev,
+      slotId: slots[0].slotId,
+    }))
+  }, [scheduleDialogOpen, scheduleDialogMode, scheduleForm.slotId, slots])
+
   const handleOpenCreateSchedule = () => {
     if (!isFloorManager) return
     setScheduleDialogMode("create")
     setEditingScheduleId(null)
-    setScheduleForm(getDefaultScheduleFormState())
+    setScheduleForm(getDefaultScheduleFormState(slots[0]?.slotId ?? ""))
     setScheduleDialogOpen(true)
   }
 
@@ -423,6 +432,7 @@ function InspectionsInner() {
       scheduledAt: formatDateTimeInputValue(new Date(schedule.scheduledAt)),
       title: schedule.title ?? "",
       notes: schedule.notes ?? "",
+      slotId: schedule.fridgeCompartmentId ?? slots[0]?.slotId ?? "",
     })
     setScheduleDialogOpen(true)
   }
@@ -466,6 +476,14 @@ function InspectionsInner() {
 
     const title = scheduleForm.title.trim()
     const notes = scheduleForm.notes.trim()
+    if (!scheduleForm.slotId) {
+      toast({
+        title: "검사 일정을 저장할 수 없습니다.",
+        description: "검사 대상 칸을 선택해 주세요.",
+        variant: "destructive",
+      })
+      return
+    }
 
     try {
       setScheduleSubmitting(true)
@@ -474,6 +492,7 @@ function InspectionsInner() {
           scheduledAt: parsed.toISOString(),
           title: title.length ? title : undefined,
           notes: notes.length ? notes : undefined,
+          fridgeCompartmentId: scheduleForm.slotId,
         })
         toast({
           title: "검사 일정을 추가했습니다.",
@@ -483,6 +502,7 @@ function InspectionsInner() {
           scheduledAt: parsed.toISOString(),
           title: title.length ? title : null,
           notes: notes.length ? notes : null,
+          fridgeCompartmentId: scheduleForm.slotId,
         })
         toast({
           title: "검사 일정을 수정했습니다.",
@@ -493,7 +513,7 @@ function InspectionsInner() {
       await refreshSchedules({ silent: true })
       setScheduleDialogOpen(false)
       setEditingScheduleId(null)
-      setScheduleForm(getDefaultScheduleFormState())
+      setScheduleForm(getDefaultScheduleFormState(slots[0]?.slotId ?? ""))
     } catch (err) {
       const message = err instanceof Error ? err.message : "검사 일정을 저장하지 못했습니다."
       toast({
@@ -945,6 +965,25 @@ function InspectionsInner() {
                 </p>
               </div>
               <div className="space-y-2">
+                <Label>{"검사 대상 칸"}</Label>
+                {slots.length > 0 ? (
+                  <SlotSelector
+                    value={scheduleForm.slotId}
+                    onChange={handleScheduleFieldChange("slotId")}
+                    slots={slots}
+                    placeholder="검사할 칸을 선택하세요"
+                    className="max-w-full"
+                  />
+                ) : (
+                  <p className="rounded-md border border-dashed border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
+                    {"선택 가능한 칸 정보가 없어 일정을 추가할 수 없습니다. 잠시 후 다시 시도해 주세요."}
+                  </p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  {"검사할 냉장고 칸을 선택하면 일정과 세션이 연결됩니다."}
+                </p>
+              </div>
+              <div className="space-y-2">
                 <Label htmlFor="inspection-schedule-title">{"제목"}</Label>
                 <Input
                   id="inspection-schedule-title"
@@ -1132,12 +1171,13 @@ function formatDateTimeInputValue(date: Date): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
-function getDefaultScheduleFormState(): ScheduleFormState {
+function getDefaultScheduleFormState(defaultSlotId = ""): ScheduleFormState {
   const baseline = new Date()
   baseline.setSeconds(0, 0)
   return {
     scheduledAt: formatDateTimeInputValue(baseline),
     title: "",
     notes: "",
+    slotId: defaultSlotId,
   }
 }
