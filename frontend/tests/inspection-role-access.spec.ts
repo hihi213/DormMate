@@ -16,7 +16,8 @@ test.describe('검사 권한 UI 가드', () => {
     await page.goto('/admin/fridge');
 
     await expect(page.getByRole('heading', { name: '냉장고 칸 운영 현황' })).toBeVisible();
-    await expect(page.getByLabel('냉장고 운영 퀵 액션')).toBeVisible();
+    await expect(page.getByRole('heading', { name: '칸 목록' })).toBeVisible();
+    await expect(page.getByRole('button', { name: '호실 재배분' })).toBeVisible();
   });
 
   test('층별장은 냉장고 탭에서 관리자 도구가 노출되지 않는다', async ({ page }) => {

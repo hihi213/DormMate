@@ -53,8 +53,7 @@ export default function AddItemDialog({
   const { toast } = useToast()
   const currentUser = getCurrentUser()
   const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
-  const isFloorManager = currentUser?.roles.includes("FLOOR_MANAGER") ?? false
-  const restrictSlotViewToOwnership = !(isAdmin || isFloorManager)
+  const restrictSlotViewToOwnership = !isAdmin
 
   const isSlotSelectable = useCallback(
     (slot: Slot) => slot.resourceStatus === "ACTIVE" && !slot.locked,
