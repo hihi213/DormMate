@@ -889,6 +889,38 @@ paths:
           schema:
             type: string
             default: ACTIVE
+        - name: floor
+          in: query
+          required: false
+          schema:
+            type: string
+            description: "층 번호 또는 'ALL'"
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            description: "이름 또는 호실(예: 205)"
+        - name: floorManagerOnly
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
       responses:
         '200':
           description: OK
@@ -1977,6 +2009,23 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/User'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        availableFloors:
+          type: array
+          items:
+            type: integer
+            format: int32
     User:
       type: object
       properties:

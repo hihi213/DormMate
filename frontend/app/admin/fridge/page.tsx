@@ -491,11 +491,20 @@ export default function AdminFridgePage() {
       resetBundleFilters()
       setSelectedSlotId(null)
       setPendingSlotId(null)
+      setHighlightedBundleId(null)
+      setHighlightedInspectionId(null)
+      setSelectedInspection(null)
       lastSyncedSlotParamRef.current = null
       clearQueryKeys(["slot", "slotId", "bundle", "bundleId", "inspection", "inspectionId"])
       setSelectedFloor(floor)
     },
-    [resetBundleFilters, selectedFloor, clearQueryKeys, temporarilyDisableQuerySync],
+    [
+      resetBundleFilters,
+      selectedFloor,
+      clearQueryKeys,
+      temporarilyDisableQuerySync,
+      setSelectedInspection,
+    ],
   )
 
   const [inspectionState, setInspectionState] = useState<InspectionState>({
@@ -705,18 +714,7 @@ export default function AdminFridgePage() {
 
         const hasCurrent = mapped.some((slot) => slot.slotId === selectedSlotId)
         if (!hasCurrent) {
-          if (pending) {
-            if (mapped.length === 0) {
-              setSelectedSlotId(null)
-            }
-          } else {
-            const nextSlotId = mapped[0]?.slotId ?? null
-            if (nextSlotId) {
-              handleSlotSelect(nextSlotId)
-            } else {
-              setSelectedSlotId(null)
-            }
-          }
+          setSelectedSlotId(null)
         }
       } catch (error) {
         const message = error instanceof Error ? error.message : "칸 정보를 불러오는 중 오류가 발생했습니다."

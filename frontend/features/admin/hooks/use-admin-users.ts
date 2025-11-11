@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react"
-import { fetchAdminUsers, type AdminUsersResponse, type AdminUserStatusFilter } from "../api"
+import { fetchAdminUsers, type AdminUsersResponse, type FetchAdminUsersParams } from "../api"
 
-export function useAdminUsers(status: AdminUserStatusFilter = "ACTIVE") {
+export function useAdminUsers(params: FetchAdminUsersParams = { status: "ACTIVE" }) {
   const [data, setData] = useState<AdminUsersResponse | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<unknown>(null)
 
-  const load = async (currentStatus: AdminUserStatusFilter) => {
+  const load = async (currentParams: FetchAdminUsersParams) => {
     try {
       setLoading(true)
       setError(null)
-      const response = await fetchAdminUsers(currentStatus)
+      const response = await fetchAdminUsers(currentParams)
       setData(response)
     } catch (err) {
       setError(err)
@@ -19,13 +19,15 @@ export function useAdminUsers(status: AdminUserStatusFilter = "ACTIVE") {
     }
   }
 
+  const serializedParams = JSON.stringify(params)
+
   useEffect(() => {
     let cancelled = false
     const fetchData = async () => {
       try {
         setLoading(true)
         setError(null)
-        const response = await fetchAdminUsers(status)
+        const response = await fetchAdminUsers(params)
         if (cancelled) return
         setData(response)
       } catch (err) {
@@ -41,9 +43,9 @@ export function useAdminUsers(status: AdminUserStatusFilter = "ACTIVE") {
     return () => {
       cancelled = true
     }
-  }, [status])
+  }, [serializedParams])
 
-  const refetch = () => load(status)
+  const refetch = () => load(params)
 
   return { data, loading, error, refetch }
 }

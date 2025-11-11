@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { AlertTriangle, Search } from "lucide-react"
+import { AlertTriangle } from "lucide-react"
 import { format } from "date-fns"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -49,10 +49,22 @@ export default function AdminUsersPage() {
     floorManagerOnly: false,
     search: "",
   })
-  const { data, loading, error, refetch } = useAdminUsers(filters.status)
-  const userItems = useMemo(() => data?.items ?? [], [data?.items])
+  const [searchDraft, setSearchDraft] = useState("")
   const [page, setPage] = useState(1)
   const pageSize = 6
+  const fetchParams = useMemo(
+    () => ({
+      status: filters.status,
+      floor: filters.floor,
+      floorManagerOnly: filters.floorManagerOnly,
+      search: filters.search.trim() || undefined,
+      page: Math.max(page - 1, 0),
+      size: pageSize,
+    }),
+    [filters.status, filters.floor, filters.floorManagerOnly, filters.search, page, pageSize],
+  )
+  const { data, loading, error, refetch } = useAdminUsers(fetchParams)
+  const userItems = useMemo(() => data?.items ?? [], [data?.items])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [drawerUser, setDrawerUser] = useState<AdminUser | null>(null)
   const [selectionMode, setSelectionMode] = useState<SelectionMode>(null)
@@ -64,6 +76,7 @@ export default function AdminUsersPage() {
   const [pendingFocusId, setPendingFocusId] = useState<string | null>(null)
   const processedFocusIdRef = useRef<string | null>(null)
   const [focusCandidate, setFocusCandidate] = useState<AdminUser | null>(null)
+  const [focusTargetPage, setFocusTargetPage] = useState<number | null>(null)
   const [focusLookupLoading, setFocusLookupLoading] = useState(false)
   const [focusLookupAttempted, setFocusLookupAttempted] = useState(false)
   const [focusedUserId, setFocusedUserId] = useState<string | null>(null)
@@ -108,6 +121,7 @@ export default function AdminUsersPage() {
     const current = userItems.find((user) => user.id === pendingFocusId)
     if (current) {
       setFocusCandidate(current)
+      setFocusTargetPage(page)
       return
     }
     if (focusLookupAttempted || focusLookupLoading) return
@@ -116,11 +130,17 @@ export default function AdminUsersPage() {
       try {
         setFocusLookupLoading(true)
         setFocusLookupAttempted(true)
-        const response = await fetchAdminUsers("ALL")
+        const response = await fetchAdminUsers({
+          status: "ALL",
+          page: 0,
+          size: 500,
+        })
         if (cancelled) return
-        const found = response.items.find((user) => user.id === pendingFocusId)
+        const foundIndex = response.items.findIndex((user) => user.id === pendingFocusId)
+        const found = foundIndex >= 0 ? response.items[foundIndex] : null
         if (found) {
           setFocusCandidate(found)
+          setFocusTargetPage(Math.floor(foundIndex / pageSize) + 1)
         } else {
           toast({
             title: "사용자를 찾을 수 없습니다.",
@@ -149,12 +169,21 @@ export default function AdminUsersPage() {
     return () => {
       cancelled = true
     }
-  }, [pendingFocusId, userItems, focusLookupAttempted, focusLookupLoading, toast])
+  }, [pendingFocusId, userItems, focusLookupAttempted, focusLookupLoading, toast, page, pageSize])
+
+  useEffect(() => {
+    if (!loading && data) {
+      const serverPage = (data.page ?? 0) + 1
+      if (serverPage !== page) {
+        setPage(serverPage)
+      }
+    }
+  }, [data, loading, page])
 
   useEffect(() => {
     setSelectedIds([])
     setDrawerUser(null)
-  }, [filters.status])
+  }, [filters.status, filters.floor, filters.floorManagerOnly, filters.search])
 
   useEffect(() => {
     if (!drawerUser) {
@@ -165,46 +194,30 @@ export default function AdminUsersPage() {
     setRoleChangeMode(drawerUser.role === "FLOOR_MANAGER" ? "DEMOTE" : "PROMOTE")
   }, [drawerUser])
 
-  const floors = useMemo(() => {
+  useEffect(() => {
+    setSearchDraft(filters.search)
+  }, [filters.search])
+
+  const availableFloors = useMemo(() => {
+    if (data?.availableFloors && data.availableFloors.length > 0) {
+      return data.availableFloors
+    }
     const set = new Set<number>()
     userItems.forEach((user) => {
       const floor = resolveUserFloor(user)
       if (floor !== null) set.add(floor)
     })
     return Array.from(set).sort((a, b) => a - b)
-  }, [userItems])
+  }, [data?.availableFloors, userItems])
 
-  const filteredUsers = useMemo(() => {
-    const keyword = filters.search.trim().toLowerCase()
-    const filtered = userItems.filter((user) => {
-      const statusMatches = user.status === filters.status
-      const userFloor = resolveUserFloor(user)
-      const floorMatches =
-        filters.floor === "ALL" || (userFloor !== null && String(userFloor) === filters.floor)
-      const floorManagerMatches = !filters.floorManagerOnly || user.role === "FLOOR_MANAGER"
-      const searchTargets = [
-        user.name,
-        user.room,
-        formatRoomWithPersonal(user),
-        typeof user.personalNo === "number" ? user.personalNo.toString() : undefined,
-      ]
-      const searchMatches =
-        keyword.length === 0 ||
-        searchTargets.some((value) => value?.toLowerCase().includes(keyword))
-
-      return statusMatches && floorMatches && floorManagerMatches && searchMatches
-    })
-    return filtered.sort(compareAdminUsers)
-  }, [filters.floor, filters.status, filters.floorManagerOnly, filters.search, userItems])
-
-  const totalItems = filteredUsers.length
-  const paginated = filteredUsers.slice((page - 1) * pageSize, page * pageSize)
-  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const totalItems = data?.totalElements ?? userItems.length
+  const totalPages = Math.max(1, data?.totalPages ?? 1)
+  const paginated = userItems
   const searchKeyword = filters.search.trim()
   const floorLabel = filters.floor === "ALL" ? "전체 층" : `${filters.floor}F`
   const statusLabel = filters.status === "ACTIVE" ? "활성" : "비활성"
   const selectionActive = Boolean(selectionMode)
-  const floorOptions = useMemo(() => ["ALL", ...floors.map((floor) => String(floor))], [floors])
+  const floorOptions = useMemo(() => ["ALL", ...availableFloors.map((floor) => String(floor))], [availableFloors])
 
   useEffect(() => {
     if (!pendingFocusId || !focusCandidate) return
@@ -219,20 +232,21 @@ export default function AdminUsersPage() {
       setFilters((prev) => ({ ...prev, floor: "ALL" }))
       return
     }
-    const targetIndex = filteredUsers.findIndex((user) => user.id === focusCandidate.id)
-    if (targetIndex === -1) {
-      return
-    }
-    const targetPage = Math.floor(targetIndex / pageSize) + 1
-    if (page !== targetPage) {
-      setPage(targetPage)
+    if (focusTargetPage && page !== focusTargetPage) {
+      setPage(focusTargetPage)
       return
     }
 
-    setDrawerUser(focusCandidate)
-    setFocusedUserId(focusCandidate.id)
-    processedFocusIdRef.current = focusCandidate.id
+    const current = userItems.find((user) => user.id === focusCandidate.id)
+    if (!current) {
+      return
+    }
+
+    setDrawerUser(current)
+    setFocusedUserId(current.id)
+    processedFocusIdRef.current = current.id
     setPendingFocusId(null)
+    setFocusTargetPage(null)
 
     const params = new URLSearchParams(searchParams.toString())
     params.delete("focus")
@@ -241,11 +255,11 @@ export default function AdminUsersPage() {
   }, [
     pendingFocusId,
     focusCandidate,
+    focusTargetPage,
     filters.status,
     filters.floor,
-    filteredUsers,
+    userItems,
     page,
-    pageSize,
     setFilters,
     pathname,
     router,
@@ -289,7 +303,11 @@ export default function AdminUsersPage() {
   }
 
   const handleSearchChange = (value: string) => {
-    setFilters((prev) => ({ ...prev, search: value }))
+    setSearchDraft(value)
+  }
+
+  const handleApplySearch = () => {
+    setFilters((prev) => ({ ...prev, search: searchDraft.trim() }))
     setPage(1)
   }
 
@@ -448,7 +466,8 @@ export default function AdminUsersPage() {
 
           <div className="space-y-3">
             <Label className="text-xs font-semibold uppercase tracking-wide text-slate-600">층 · 검색</Label>
-            <div className="flex gap-3 lg:flex-row lg:items-center">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+              <div className="lg:w-[240px]">
                 <Select value={filters.floor} onValueChange={handleFloorChange}>
                   <SelectTrigger className="h-11 rounded-2xl border border-slate-200 bg-white/95 px-4 text-sm font-semibold">
                     <SelectValue placeholder="층 선택" />
@@ -461,21 +480,26 @@ export default function AdminUsersPage() {
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
               <div className="flex flex-1 items-center gap-2">
                 <div className="flex min-w-[140px] items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
                   <Input
-                    value={filters.search}
+                    value={searchDraft}
                     onChange={(event) => handleSearchChange(event.target.value)}
                     placeholder="이름 · 호실(205)"
                     className="h-9 flex-1 border-none bg-transparent px-0 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault()
+                        handleApplySearch()
+                      }
+                    }}
                   />
                   <Button
                     type="button"
                     size="sm"
                     className="h-9 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-700"
-                    onClick={() => {
-                      void refetch()
-                    }}
+                    onClick={handleApplySearch}
                   >
                     검색
                   </Button>
@@ -953,31 +977,4 @@ function formatRoomWithPersonal(user: AdminUser): string {
   }
   if (roomCode) return roomCode
   return user.room ?? "호실 미배정"
-}
-
-function compareAdminUsers(a: AdminUser, b: AdminUser): number {
-  const floorA = resolveUserFloor(a)
-  const floorB = resolveUserFloor(b)
-  if (floorA !== floorB) {
-    if (floorA === null) return 1
-    if (floorB === null) return -1
-    return floorA - floorB
-  }
-
-  const codeA = resolveRoomCode(a)
-  const codeB = resolveRoomCode(b)
-  if (codeA || codeB) {
-    if (!codeA) return 1
-    if (!codeB) return -1
-    const codeCompare = codeA.localeCompare(codeB, undefined, { numeric: true, sensitivity: "base" })
-    if (codeCompare !== 0) return codeCompare
-  }
-
-  const personalA = typeof a.personalNo === "number" ? a.personalNo : Number.POSITIVE_INFINITY
-  const personalB = typeof b.personalNo === "number" ? b.personalNo : Number.POSITIVE_INFINITY
-  if (personalA !== personalB) {
-    return personalA - personalB
-  }
-
-  return a.name.localeCompare(b.name, "ko", { sensitivity: "base" })
 }
