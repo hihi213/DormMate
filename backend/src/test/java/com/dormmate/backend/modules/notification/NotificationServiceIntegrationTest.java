@@ -79,10 +79,9 @@ class NotificationServiceIntegrationTest extends AbstractPostgresIntegrationTest
 
         notificationService.sendInspectionResultNotifications(session);
 
-        List<Notification> notifications = notificationRepository.findAll();
-        assertThat(notifications).hasSize(1);
-
-        Notification saved = notifications.getFirst();
+        String dedupeKey = "FRIDGE_RESULT:" + sessionId + ":" + targetUser.getId();
+        Notification saved = notificationRepository.findByUserIdAndDedupeKey(targetUser.getId(), dedupeKey)
+                .orElseThrow(() -> new AssertionError("거주자 알림이 생성되지 않았습니다."));
         assertThat(saved.getUser().getId()).isEqualTo(targetUser.getId());
         assertThat(saved.getCorrelationId()).isEqualTo(sessionId);
         assertThat(saved.getMetadata()).containsEntry("sessionId", sessionId);
@@ -91,9 +90,13 @@ class NotificationServiceIntegrationTest extends AbstractPostgresIntegrationTest
         assertThat(saved.getMetadata()).containsEntry("penaltyHistoryIds", java.util.List.of());
         assertThat(saved.getTtlAt()).isAfter(OffsetDateTime.now(ZoneOffset.UTC));
 
-        // 중복 방지 확인
+
+        // 중복 방지 확인 (거주자용 알림은 1건만 유지)
         notificationService.sendInspectionResultNotifications(session);
-        assertThat(notificationRepository.count()).isEqualTo(1);
+        long residentNotificationCount = notificationRepository.findAll().stream()
+                .filter(notification -> notification.getUser().getId().equals(targetUser.getId()))
+                .count();
+        assertThat(residentNotificationCount).isEqualTo(1);
     }
 
     @Test
