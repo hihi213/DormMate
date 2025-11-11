@@ -19,6 +19,7 @@ import {
   updateItem as updateItemApi,
   deleteItem as deleteItemApi,
   deleteBundle as deleteBundleApi,
+  type SlotFetchOptions,
 } from "@/features/fridge/api"
 import { toItems } from "@/features/fridge/utils/data-shaping"
 import {
@@ -101,6 +102,10 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const [isInspector, setIsInspector] = useState(false)
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null)
 
+  const buildSlotFetchOptions = useCallback((): SlotFetchOptions => {
+    return {}
+  }, [])
+
   useEffect(() => {
     let canceled = false
 
@@ -119,8 +124,9 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       const ownerScope = currentUser?.isAdmin ? "all" : "me"
 
       try {
+        const slotOptions = buildSlotFetchOptions()
         const [slotResult, inventoryResult] = await Promise.allSettled([
-          fetchFridgeSlots(),
+          fetchFridgeSlots(slotOptions),
           fetchFridgeInventory(currentUserId, { ownerScope }),
         ])
 
@@ -179,7 +185,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
     return () => {
       canceled = true
     }
-  }, [currentUserId])
+  }, [buildSlotFetchOptions, currentUserId])
 
   const bundles = useMemo(() => bundleState, [bundleState])
   const items = useMemo(() => toItems(bundles, units), [bundles, units])
@@ -187,23 +193,12 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSlots = useCallback(async () => {
     try {
-      const updatedSlots = await fetchFridgeSlots()
+      const updatedSlots = await fetchFridgeSlots(buildSlotFetchOptions())
       setSlots(updatedSlots)
     } catch (error) {
       console.error("Failed to refresh fridge slots after mutation", error)
     }
-  }, [])
-
-  useEffect(() => {
-    if (!currentUserId) return
-    if (typeof window === "undefined") return
-    const intervalId = window.setInterval(() => {
-      void refreshSlots()
-    }, 30000)
-    return () => {
-      window.clearInterval(intervalId)
-    }
-  }, [currentUserId, refreshSlots])
+  }, [buildSlotFetchOptions])
 
   const refreshInventory = useCallback(async () => {
     if (!currentUserId) {
@@ -646,7 +641,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
             return { ...slot, occupiedCount: next }
           }),
         )
-        void refreshSlots()
+        void refreshAll()
         return { success: true, message: "묶음이 삭제되었습니다." }
       } catch (error) {
         if (isSuspendedError(error)) {
@@ -672,7 +667,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [bundles, slots, refreshSlots],
+    [bundles, slots, refreshAll],
   )
 
   const setLastInspectionNow = useCallback(() => {

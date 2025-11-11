@@ -1,14 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ArrowLeft, BookOpen, Search, Plus, Clock, CheckCircle, MoreVertical, Edit3, Trash2 } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { getCurrentUserId } from "@/lib/auth"
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { BookOpen } from "lucide-react"
+import { getCurrentUser } from "@/lib/auth"
 import BottomNav from "@/components/bottom-nav"
 import AuthGuard from "@/features/auth/components/auth-guard"
+import UserServiceHeader from "@/app/_components/home/user-service-header"
+import { ComingSoonCard } from "@/components/coming-soon-card"
+import { useLogoutRedirect } from "@/hooks/use-logout-redirect"
 
 type BookItem = {
   id: string
@@ -32,22 +31,35 @@ export default function LibraryPage() {
 }
 
 function LibraryInner() {
+  const currentUser = getCurrentUser()
+  const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
+  const [mounted, setMounted] = useState(false)
+  const logoutAndRedirect = useLogoutRedirect()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   return (
     <main className="min-h-[100svh] bg-white">
-      {/* Main page header (no back) */}
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-        <div className="mx-auto max-w-screen-sm px-2 py-3 flex items-center">
-          <div className="flex-1 text-center">
-            <div className="inline-flex items-center gap-2">
-              <BookOpen className="size-4 text-teal-700" />
-              <h1 className="text-base font-semibold leading-none">{"도서"}</h1>
-            </div>
-          </div>
-        </div>
-      </header>
+      <UserServiceHeader
+        service="library"
+        mounted={mounted}
+        user={currentUser}
+        isAdmin={isAdmin}
+        onLogout={() => {
+          void logoutAndRedirect()
+        }}
+      />
 
       <div className="mx-auto max-w-screen-sm px-4 py-8 pb-28">
-        <p className="text-sm text-muted-foreground mt-1">{"도서 모듈은 곧 도입 예정입니다."}</p>
+        <ComingSoonCard
+          badge="도서관"
+          title="도서 모듈 (준비 중)"
+          description="도서 검색·대출·예약 기능은 차기 배포에서 제공됩니다."
+          icon={<BookOpen className="size-4" aria-hidden />}
+          note="현재는 사감실에서 수기 대출을 도와드립니다."
+        />
       </div>
     </main>
   )

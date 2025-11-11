@@ -1,10 +1,4 @@
-import type {
-  AdminQuickAction,
-  AdminResource,
-  AdminSummaryCard,
-  AdminTimelineEvent,
-  AdminUser,
-} from "../types"
+import type { AdminQuickAction, AdminSummaryCard, AdminTimelineEvent, AdminUser } from "../types"
 
 export const mockSummaryCards: AdminSummaryCard[] = [
   { id: "inventory", label: "층별 물품", value: "128건", description: "최근 7일 등록" },
@@ -30,100 +24,38 @@ export const mockTimelineEvents: AdminTimelineEvent[] = [
     id: "event-3",
     time: "08:30",
     title: "냉장 B-2 칸 중단 요청",
-    detail: "거주자 4명 영향 — 자원 관리에서 상태 전환 필요",
+    detail: "거주자 4명 영향 — 냉장고 관제실에서 상태 전환 필요",
   },
 ]
 
 export const mockQuickActions: AdminQuickAction[] = [
   {
     id: "compartment",
-    title: "칸 상태 전환",
-    description: "자원 관리 허브에서 SUSPENDED/ACTIVE 전환",
-    href: "/admin/manage/resources",
+    title: "냉장고 칸 운영",
+    description: "냉장고 관제실에서 허용량·잠금을 조정",
+    href: "/admin/fridge",
     icon: "clipboard",
   },
   {
     id: "promote",
     title: "층별장 임명",
-    description: "권한·계정 화면에서 승격/복귀 처리",
-    href: "/admin/manage/roles",
+    description: "사용자 목록에서 승격/복귀 처리",
+    href: "/admin/users",
     icon: "shield",
   },
   {
     id: "policy",
     title: "알림 정책 편집",
     description: "09:00 배치, 상한, dedupe 키 즉시 변경",
-    href: "/admin/manage/policies",
+    href: "/admin/notifications",
     icon: "bell",
   },
   {
     id: "report",
     title: "보고서 내려받기",
     description: "검사·알림·벌점 통합 리포트 생성",
-    href: "/admin/manage/reports",
+    href: "/admin/audit",
     icon: "file",
-  },
-]
-
-export const mockResources: AdminResource[] = [
-  {
-    id: "fridge-3a",
-    facility: "fridge",
-    name: "냉장 3층-1",
-    location: "기숙사 3층",
-    status: "ACTIVE",
-    capacity: "7/8",
-    manager: "박층장",
-    rooms: "301~304",
-    labelRange: "A301~A340",
-    lastInspection: "2025-10-31",
-  },
-  {
-    id: "fridge-3b",
-    facility: "fridge",
-    name: "냉장 3층-2",
-    location: "기숙사 3층",
-    status: "SUSPENDED",
-    capacity: "2/8",
-    manager: "박층장",
-    rooms: "305~308",
-    issue: "정전 후 온도 미복구",
-    labelRange: "A341~A380",
-    lastInspection: "2025-10-30",
-  },
-  {
-    id: "laundry-1",
-    facility: "laundry",
-    name: "세탁 1호기",
-    location: "세탁실 1층",
-    status: "ACTIVE",
-    capacity: "예약 6/12",
-    manager: "시설팀",
-    rooms: "공용 구역",
-    lastInspection: "2025-10-29",
-  },
-  {
-    id: "library-1",
-    facility: "library",
-    name: "도서관 1 구역",
-    location: "도서관 2층",
-    status: "REPORTED",
-    capacity: "도서 512권",
-    manager: "사서팀",
-    rooms: "전 학년",
-    issue: "도서 대출 오류 신고",
-    lastInspection: "2025-10-28",
-  },
-  {
-    id: "multipurpose-1",
-    facility: "multipurpose",
-    name: "다목적실 A",
-    location: "커뮤니티 센터 1층",
-    status: "ACTIVE",
-    capacity: "예약 4/6",
-    manager: "행정팀",
-    rooms: "공용",
-    lastInspection: "2025-10-25",
   },
 ]
 

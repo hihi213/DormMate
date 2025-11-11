@@ -35,21 +35,6 @@ export function BundleDetailSheetSkeleton() {
   )
 }
 
-export function ItemDetailSheetSkeleton() {
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg p-6 w-96 max-w-[90vw]">
-        <div className="animate-pulse space-y-4">
-          <div className="h-6 bg-gray-200 rounded w-1/2"></div>
-          <div className="h-4 bg-gray-200 rounded"></div>
-          <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-          <div className="h-4 bg-gray-200 rounded w-1/2"></div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 // 동적 임포트 컴포넌트들
 export const LazyAddItemDialog = dynamic(
   () => import('@/features/fridge/components/add-item').then(mod => ({ default: mod.default })),
@@ -63,14 +48,6 @@ export const LazyBundleDetailSheet = dynamic(
   () => import('@/features/fridge/components/bundle-detail-sheet').then(mod => ({ default: mod.default })),
   {
     loading: () => <BundleDetailSheetSkeleton />,
-    ssr: false
-  }
-)
-
-export const LazyItemDetailSheet = dynamic(
-  () => import('@/features/fridge/components/item-detail-sheet').then(mod => ({ default: mod.default })),
-  {
-    loading: () => <ItemDetailSheetSkeleton />,
     ssr: false
   }
 )

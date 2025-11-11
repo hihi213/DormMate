@@ -16,6 +16,7 @@ interface SlotSelectorProps {
   className?: string
   isSelectable?: (slot: Slot) => boolean
   getDisabledDescription?: (slot: Slot) => string | undefined
+  statusBadge?: React.ReactNode
 }
 
 export function SlotSelector({
@@ -27,6 +28,7 @@ export function SlotSelector({
   className = "",
   isSelectable,
   getDisabledDescription,
+  statusBadge,
 }: SlotSelectorProps) {
   const [open, setOpen] = React.useState(false)
 
@@ -82,6 +84,7 @@ export function SlotSelector({
             aria-disabled={selectedDisabled}
           >
             <span className="flex-1 text-left whitespace-nowrap">{currentSlotLabel}</span>
+            {statusBadge ? <span className="shrink-0">{statusBadge}</span> : null}
             <ChevronDown className="w-4 h-4 text-gray-500" />
           </button>
         </PopoverTrigger>

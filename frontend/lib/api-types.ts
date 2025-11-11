@@ -544,22 +544,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/admin/resources": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get: operations["getResources"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/admin/fridge/compartments": {
         parameters: {
             query?: never;
@@ -851,7 +835,7 @@ export interface components {
         };
         RefreshRequest: {
             refreshToken: string;
-            deviceId?: string;
+            deviceId: string;
         };
         LoginResponse: {
             tokens?: components["schemas"]["TokenPairResponse"];
@@ -901,7 +885,7 @@ export interface components {
         LoginRequest: {
             loginId: string;
             password: string;
-            deviceId?: string;
+            deviceId: string;
         };
         SeedResponse: {
             message?: string;
@@ -1139,6 +1123,15 @@ export interface components {
         };
         AdminUsersResponse: {
             items?: components["schemas"]["User"][];
+            /** Format: int32 */
+            page?: number;
+            /** Format: int32 */
+            size?: number;
+            /** Format: int64 */
+            totalElements?: number;
+            /** Format: int32 */
+            totalPages?: number;
+            availableFloors?: number[];
         };
         User: {
             id?: string;
@@ -1155,22 +1148,6 @@ export interface components {
             lastLogin?: string;
             /** Format: int32 */
             penalties?: number;
-        };
-        AdminResourceResponse: {
-            items?: components["schemas"]["Resource"][];
-        };
-        Resource: {
-            id?: string;
-            facility?: string;
-            name?: string;
-            location?: string;
-            status?: string;
-            capacity?: string;
-            manager?: string;
-            rooms?: string;
-            labelRange?: string;
-            issue?: string;
-            lastInspection?: string;
         };
         AdminPoliciesResponse: {
             notification?: components["schemas"]["NotificationPolicy"];
@@ -2244,6 +2221,11 @@ export interface operations {
         parameters: {
             query?: {
                 status?: string;
+                floor?: string;
+                search?: string;
+                floorManagerOnly?: boolean;
+                page?: number;
+                size?: number;
             };
             header?: never;
             path?: never;
@@ -2258,26 +2240,6 @@ export interface operations {
                 };
                 content: {
                     "*/*": components["schemas"]["AdminUsersResponse"];
-                };
-            };
-        };
-    };
-    getResources: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "*/*": components["schemas"]["AdminResourceResponse"];
                 };
             };
         };

@@ -1,9 +1,8 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useMemo } from "react"
 import type { Slot } from "@/features/fridge/types"
 import { Button } from "@/components/ui/button"
-import { Switch } from "@/components/ui/switch"
 import { SearchIcon } from "lucide-react"
 import { SlotSelector } from "@/features/fridge/components/slot-selector"
 import SearchBar from "@/features/fridge/components/search-bar"
@@ -15,11 +14,10 @@ export default function Filters({
   setSlotId = () => {},
   slots = [],
   counts = { mine: 0, expiring: 0, expired: 0 },
-  myOnly = true,
-  onToggleMyOnly = () => {},
   searchValue = "",
   onSearchChange = () => {},
   allowAllSlots = true,
+  actionSlot,
 }: {
   active?: "all" | "mine" | "expiring" | "expired"
   onChange?: (t: "all" | "mine" | "expiring" | "expired") => void
@@ -27,11 +25,10 @@ export default function Filters({
   setSlotId?: (id: string) => void
   slots?: Slot[]
   counts?: { mine: number; expiring: number; expired: number }
-  myOnly?: boolean
-  onToggleMyOnly?: (v: boolean) => void
   searchValue?: string
   onSearchChange?: (v: string) => void
   allowAllSlots?: boolean
+  actionSlot?: React.ReactNode
 }) {
   // Only status filters: expiring/expired (tap active to reset to 'all')
   const statusTabs: { key: "expiring" | "expired"; label: string; count?: number }[] = [
@@ -64,7 +61,6 @@ export default function Filters({
         </div>
       </div>
 
-      {/* Row 2: Status chips + '내 물품만' switch */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex gap-2 overflow-x-auto no-scrollbar">
           {statusTabs.map((t) => {
@@ -84,11 +80,7 @@ export default function Filters({
             )
           })}
         </div>
-
-        <label className="inline-flex items-center gap-2 text-xs text-gray-700">
-          <span>{"내 물품만"}</span>
-          <Switch checked={myOnly} onCheckedChange={onToggleMyOnly} aria-label="내 물품만 보기" />
-        </label>
+        {actionSlot}
       </div>
     </div>
   )

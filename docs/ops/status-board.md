@@ -312,7 +312,7 @@
 - **세부 작업**
   1. [x] `frontend/components/admin`에 공통 컴포넌트 스켈레톤을 생성하고, Storybook 예제(`admin.stories.tsx`)로 사용 예시를 남긴다.
   1-1. [x] `frontend/app/admin/components-gallery` 페이지를 추가해 Storybook 없이도 컴포넌트 시각 검증이 가능하도록 한다.
-  2. [x] 관리자 메인/자원 관리/권한·계정 화면 와이어프레임을 텍스트 문서(`docs/ai-impl/frontend-admin-wireframes.md`)로 공유하고, 승인 후 구현 순서를 결정한다.
+  2. [x] 관리자 메인/냉장고 관제실/권한·계정 화면 와이어프레임을 텍스트 문서(`docs/ai-impl/frontend-admin-wireframes.md`)로 공유하고, 승인 후 구현 순서를 결정한다.
   3. 관리자 빠른 실행 카드가 기존 Drawer 폼을 재사용하도록 UX 흐름을 점검하고, 감사 로그 트래킹(source=shortcut|hub) 스펙을 정의한다.
   4. 위험 액션(칸 증설, 라벨 조정, 벌점 수정, 데모 Seed 실행)을 DangerZoneModal로 통일하고, prod 빌드에서 기본 비활성화 플래그를 확인한다.
   5. [x] 관리자 핵심 Playwright 시나리오와 `@admin` 태그 구조를 `docs/tests/admin-playwright-plan.md`에 정리한다.
@@ -324,9 +324,9 @@
 - 2025-11-01: `docs/ai-impl/frontend.md`에 관리자 IA & 공통 컴포넌트 전략 섹션 추가(FilterBar/PaginatedTable/DetailsDrawer 재사용, 도메인 계산 서버 집중, Feature Flag 지침 포함).
 - 2025-11-01: `frontend/app/admin/components-gallery` 페이지를 추가해 공통 컴포넌트 시각 확인 및 QA 대비 문서를 마련.
 - 2025-11-01: Playwright 헬퍼(`tests/e2e/utils/admin.ts`)와 관리자 스토리지 생성 스크립트(`scripts/create-admin-storage.mjs`)를 추가하고, `playwright.config.ts`에 storage state/grep 환경 변수 지원을 확장.
-- 2025-11-01: 관리자 대시보드/관리 허브/자원·권한·정책·리포트·운영 도구 페이지를 구현해 하단 탭-관리 허브 분리 구조를 UI로 반영.
+- 2025-11-01: 관리자 대시보드/관리 허브/냉장고 관제실·권한·정책·리포트·운영 도구 페이지를 구현해 하단 탭-관리 허브 분리 구조를 UI로 반영.
 - 2025-11-01: 관리자 대시보드/자원/권한/정책 화면을 `frontend/features/admin/hooks` 기반 데이터 훅으로 전환하고, 실제 API 부재 시 mock 데이터를 단일 위치에서 공급하도록 정리.
-- 2025-11-02: `/admin/dashboard`, `/admin/resources`, `/admin/users`, `/admin/policies` API를 추가해 프런트엔드가 실제 데이터를 조회하고, `AdminReadIntegrationTest`로 권한 및 응답 구조를 검증.
+- 2025-11-02: `/admin/dashboard`, `/admin/users`, `/admin/policies`, `/admin/fridge/**` API를 추가해 프런트엔드가 실제 데이터를 조회하고, `AdminReadIntegrationTest`로 권한 및 응답 구조를 검증.
 - 2025-11-03: 냉장고 포장 목록 조회 성능 이슈 분석 완료 — DB 레벨 검색/페이징 + 삭제 이력 전용 팝업 API 분리 계획 수립.
 - 2025-11-03: `FridgeBundleRepository#searchBundles`를 네이티브 쿼리 기반 페이지네이션으로 재구성하고, `/admin/fridge/bundles/deleted` API를 추가해 3개월 한정 삭제 이력을 분리. `./gradlew test`로 회귀 테스트 통과.
 

@@ -48,7 +48,7 @@ export type PaginatedTableProps<TData> = {
 }
 
 /**
- * 관리자 대시보드/자원 관리에서 공통으로 사용하는 테이블 스켈레톤.
+ * 관리자 대시보드와 모듈별 리스트 화면에서 재사용하는 테이블 스켈레톤.
  * 열 정의와 페이지네이션 콜백만 주입하면 동일한 시각 패턴을 재사용할 수 있다.
  */
 export function PaginatedTable<TData>({

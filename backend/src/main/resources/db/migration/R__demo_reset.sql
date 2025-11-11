@@ -8,6 +8,7 @@ RETURNS void
 LANGUAGE plpgsql
 AS $$
 DECLARE
+    demo_reference_date date := DATE '2025-11-12';
 BEGIN
     PERFORM set_config('TimeZone', 'UTC', true);
 
@@ -43,15 +44,15 @@ BEGIN
     END IF;
 
     PERFORM
-        (CASE WHEN to_regclass('public.inspection_session') IS NOT NULL THEN 1 END);
-    IF FOUND THEN
-        EXECUTE 'DELETE FROM inspection_session';
-    END IF;
-
-    PERFORM
         (CASE WHEN to_regclass('public.inspection_schedule') IS NOT NULL THEN 1 END);
     IF FOUND THEN
         EXECUTE 'DELETE FROM inspection_schedule';
+    END IF;
+
+    PERFORM
+        (CASE WHEN to_regclass('public.inspection_session') IS NOT NULL THEN 1 END);
+    IF FOUND THEN
+        EXECUTE 'DELETE FROM inspection_session';
     END IF;
 
     PERFORM
@@ -106,11 +107,11 @@ BEGIN
 
     INSERT INTO tmp_bundle_templates (ordinal, bundle_name, bundle_memo)
     VALUES
-        (1, '아침 과일 박스', '상큼한 과일과 요거트 모음'),
-        (2, '늦은 밤 라면 세트', '야간 자습 후 즐기는 라면'),
-        (3, '냉음료 모음', '탄산음료와 주스'),
-        (4, '주말 브런치 키트', '샌드위치와 샐러드 재료'),
-        (5, '야식 냉동 코너', '냉동만두와 간식 거리'),
+        (1, '바밤바 냉동 바스켓', '시그니처 막대 아이스크림 모음'),
+        (2, '누가바 레트로 스테이션', '복고 감성 막대 아이스크림 세트'),
+        (3, '메로나 트로피컬 코너', '과일맛 아이스크림과 멀티팩'),
+        (4, '월드콘 디저트 타워', '콘 타입 프리미엄 디저트'),
+        (5, '옥동자 클래식 키트', '레트로 아이스크림과 크림 간식'),
         (6, '공동 비상식품', '비상 시 사용할 간편식'),
         (7, '홈카페 재료', '커피와 디저트 토핑'),
         (8, '채식 간편식', '채소 위주의 간편 조리 식단'),
@@ -118,25 +119,57 @@ BEGIN
         (10, '스포츠 보충식', '운동 후 보충용 음료와 스낵');
 
     CREATE TEMP TABLE tmp_item_templates (
-        ordinal integer PRIMARY KEY,
+        bundle_ordinal integer,
+        item_seq integer,
         item_name text,
         quantity integer,
         unit_code text,
-        relative_days integer
+        relative_days integer,
+        PRIMARY KEY (bundle_ordinal, item_seq)
     ) ON COMMIT DROP;
 
-    INSERT INTO tmp_item_templates (ordinal, item_name, quantity, unit_code, relative_days)
+    INSERT INTO tmp_item_templates (bundle_ordinal, item_seq, item_name, quantity, unit_code, relative_days)
     VALUES
-        (1, '제주 감귤', 5, 'EA', -2),
-        (2, '매운맛 컵라면', 3, 'EA', 0),
-        (3, '탄산수', 4, 'BTL', 1),
-        (4, '훈제 닭가슴살', 2, 'PACK', 3),
-        (5, '갈릭 만두', 12, 'EA', 5),
-        (6, '비상 미니 파우치', 5, 'EA', 7),
-        (7, '콜드브루 원액', 1, 'BTL', 9),
-        (8, '채소 믹스팩', 2, 'PACK', 10),
-        (9, '수제 쿠키', 8, 'EA', 12),
-        (10, '초콜릿 프로틴바', 6, 'EA', 14);
+        -- 1. 바밤바 냉동 바스켓
+        (1, 1, '바밤바 6입', 6, 'EA', 16),
+        (1, 2, '돼지바 클래식 6입', 6, 'EA', 20),
+        (1, 3, '찰떡아이스 인절미 4입', 4, 'EA', -4),
+        -- 2. 누가바 레트로 스테이션
+        (2, 1, '누가바 6입', 6, 'EA', -7),
+        (2, 2, '죠스바 6입', 6, 'EA', 2),
+        (2, 3, '쌍쌍바 6입', 6, 'EA', 18),
+        -- 3. 메로나 트로피컬 코너
+        (3, 1, '메로나 멜론 8입', 8, 'EA', 23),
+        (3, 2, '메로나 복숭아 8입', 8, 'EA', 23),
+        (3, 3, '수박바 멀티팩', 3, 'PACK', 8),
+        -- 4. 월드콘 디저트 타워
+        (4, 1, '월드콘 초코 4입', 4, 'EA', 57),
+        (4, 2, '월드콘 쿠앤크 4입', 4, 'EA', 43),
+        (4, 3, '브라보콘 민트 4입', 4, 'EA', 6),
+        -- 5. 옥동자 클래식 키트
+        (5, 1, '옥동자 5입', 5, 'EA', -2),
+        (5, 2, '구구바 크런치 5입', 5, 'EA', 10),
+        (5, 3, '빵빠레 바닐라 4입', 4, 'EA', 3),
+        -- 6. 공동 비상식품
+        (6, 1, '비상 미니 파우치', 5, 'EA', 7),
+        (6, 2, '즉석죽', 3, 'EA', 15),
+        (6, 3, '생수 500ml', 6, 'BTL', 30),
+        -- 7. 홈카페 재료
+        (7, 1, '콜드브루 원액', 1, 'BTL', 9),
+        (7, 2, '휘핑 크림', 1, 'CAN', 5),
+        (7, 3, '카라멜 토핑', 1, 'JAR', 20),
+        -- 8. 채식 간편식
+        (8, 1, '채소 믹스팩', 2, 'PACK', 10),
+        (8, 2, '렌틸콩 샐러드', 1, 'PACK', 6),
+        (8, 3, '두부 스테이크', 2, 'EA', 8),
+        -- 9. 간식 상자
+        (9, 1, '수제 쿠키', 8, 'EA', 12),
+        (9, 2, '믹스 견과', 4, 'PACK', 30),
+        (9, 3, '말린 과일칩', 3, 'PACK', 25),
+        -- 10. 스포츠 보충식
+        (10, 1, '초콜릿 프로틴바', 6, 'EA', 14),
+        (10, 2, '이온 음료', 3, 'BTL', 7),
+        (10, 3, '바나나 쉐이크', 2, 'BTL', 3);
 
     CREATE TEMP TABLE tmp_occupant_pool (
         owner_id uuid,
@@ -281,13 +314,13 @@ BEGIN
         tit.item_name,
         tit.quantity,
         tit.unit_code,
-        (CURRENT_DATE + make_interval(days => tit.relative_days))::DATE,
+        (demo_reference_date + tit.relative_days),
         'ACTIVE',
         NULL,
         tdb.created_at,
         tdb.created_at
     FROM tmp_demo_bundles tdb
-    JOIN tmp_item_templates tit ON tit.ordinal = tdb.label_number;
+    JOIN tmp_item_templates tit ON tit.bundle_ordinal = tdb.label_number;
 
     INSERT INTO bundle_label_sequence (
         fridge_compartment_id,

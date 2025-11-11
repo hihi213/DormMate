@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -14,6 +15,7 @@ import org.springframework.lang.NonNull;
 
 import com.dormmate.backend.global.error.ProblemException;
 import com.dormmate.backend.modules.admin.domain.AdminPolicy;
+import com.dormmate.backend.modules.audit.application.AuditLogService;
 import com.dormmate.backend.modules.admin.infrastructure.AdminPolicyRepository;
 import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.auth.domain.DormUserStatus;
@@ -39,6 +41,7 @@ public class AdminMutationService {
     private final InspectionSessionRepository inspectionSessionRepository;
     private final AdminPolicyRepository adminPolicyRepository;
     private final Clock clock;
+    private final AuditLogService auditLogService;
 
     public AdminMutationService(
             DormUserRepository dormUserRepository,
@@ -47,7 +50,8 @@ public class AdminMutationService {
             UserSessionRepository userSessionRepository,
             InspectionSessionRepository inspectionSessionRepository,
             AdminPolicyRepository adminPolicyRepository,
-            Clock clock
+            Clock clock,
+            AuditLogService auditLogService
     ) {
         this.dormUserRepository = dormUserRepository;
         this.roleRepository = roleRepository;
@@ -56,9 +60,11 @@ public class AdminMutationService {
         this.inspectionSessionRepository = inspectionSessionRepository;
         this.adminPolicyRepository = adminPolicyRepository;
         this.clock = clock;
+        this.auditLogService = auditLogService;
     }
 
-    public void promoteToFloorManager(@NonNull UUID targetUserId, @NonNull UUID actorUserId) {
+    public void promoteToFloorManager(@NonNull UUID targetUserId, @NonNull UUID actorUserId, @NonNull String reason) {
+        String normalizedReason = normalizeReason(reason);
         DormUser target = findUser(targetUserId);
         DormUser actor = findUser(actorUserId);
         ensureUserIsActive(target);
@@ -78,9 +84,12 @@ public class AdminMutationService {
         userRole.setGrantedAt(OffsetDateTime.now(clock));
         userRole.setGrantedBy(actor);
         userRoleRepository.save(userRole);
+
+        recordRoleAudit("ADMIN_ROLE_PROMOTE", targetUserId, actorUserId, normalizedReason);
     }
 
-    public void demoteFloorManager(@NonNull UUID targetUserId) {
+    public void demoteFloorManager(@NonNull UUID targetUserId, @NonNull UUID actorUserId, @NonNull String reason) {
+        String normalizedReason = normalizeReason(reason);
         findUser(targetUserId);
         ensureNoActiveInspection(targetUserId);
 
@@ -92,9 +101,12 @@ public class AdminMutationService {
 
         floorManagerRole.setRevokedAt(OffsetDateTime.now(clock));
         userRoleRepository.save(floorManagerRole);
+
+        recordRoleAudit("ADMIN_ROLE_DEMOTE", targetUserId, actorUserId, normalizedReason);
     }
 
-    public void deactivateUser(@NonNull UUID targetUserId) {
+    public void deactivateUser(@NonNull UUID targetUserId, @NonNull UUID actorUserId, @NonNull String reason) {
+        String normalizedReason = normalizeReason(reason);
         DormUser target = findUser(targetUserId);
         if (target.getStatus() == DormUserStatus.INACTIVE) {
             return;
@@ -115,6 +127,18 @@ public class AdminMutationService {
             session.setRevokedAt(now);
             session.setRevokedReason("ACCOUNT_DEACTIVATED");
         });
+
+        auditLogService.record(new AuditLogService.AuditLogCommand(
+                "ADMIN_USER_DEACTIVATED",
+                "ADMIN_USER",
+                targetUserId.toString(),
+                actorUserId,
+                null,
+                Map.of(
+                        "reason", normalizedReason,
+                        "status", DormUserStatus.INACTIVE.name()
+                )
+        ));
     }
 
     public void updatePolicies(@NonNull UpdatePoliciesCommand command) {
@@ -154,6 +178,28 @@ public class AdminMutationService {
         if (hasActive) {
             throw new ProblemException(HttpStatus.CONFLICT, "admin.active_inspection_exists", "진행 중인 검사 세션이 있어 작업을 완료할 수 없습니다.");
         }
+    }
+
+    private void recordRoleAudit(String actionType, UUID targetUserId, UUID actorUserId, String reason) {
+        auditLogService.record(new AuditLogService.AuditLogCommand(
+                actionType,
+                "ADMIN_USER_ROLE",
+                targetUserId.toString(),
+                actorUserId,
+                null,
+                Map.of(
+                        "role", "FLOOR_MANAGER",
+                        "reason", reason
+                )
+        ));
+    }
+
+    private String normalizeReason(String reason) {
+        String normalized = reason == null ? "" : reason.trim();
+        if (normalized.isEmpty()) {
+            throw new ProblemException(HttpStatus.BAD_REQUEST, "admin.reason_required", "사유를 입력해야 합니다.");
+        }
+        return normalized;
     }
 
     private void validatePolicyValues(UpdatePoliciesCommand command) {

@@ -129,6 +129,31 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/InspectionSessionResponse'
+  '/fridge/inspections/{sessionId}/actions/{actionId}':
+    delete:
+      tags:
+        - inspection-controller
+      operationId: deleteAction
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: actionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/InspectionSessionResponse'
   /fridge/inspection-schedules:
     get:
       tags:
@@ -333,6 +358,12 @@ paths:
           schema:
             type: string
             format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleChangeRequest'
+        required: true
       responses:
         '200':
           description: OK
@@ -347,6 +378,12 @@ paths:
           schema:
             type: string
             format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleChangeRequest'
+        required: true
       responses:
         '200':
           description: OK
@@ -889,6 +926,38 @@ paths:
           schema:
             type: string
             default: ACTIVE
+        - name: floor
+          in: query
+          required: false
+          schema:
+            type: string
+            description: "층 번호 또는 'ALL'"
+        - name: search
+          in: query
+          required: false
+          schema:
+            type: string
+            description: "이름 또는 호실(예: 205)"
+        - name: floorManagerOnly
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
       responses:
         '200':
           description: OK
@@ -896,18 +965,6 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/AdminUsersResponse'
-  /admin/resources:
-    get:
-      tags:
-        - admin-dashboard-controller
-      operationId: getResources
-      responses:
-        '200':
-          description: OK
-          content:
-            '*/*':
-              schema:
-                $ref: '#/components/schemas/AdminResourceResponse'
   /admin/fridge/compartments:
     get:
       tags:
@@ -995,8 +1052,50 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/AdminDashboardResponse'
+  /admin/fridge/issues:
+    get:
+      tags:
+        - admin-dashboard-controller
+      operationId: getFridgeOwnershipIssues
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+        - name: ownerId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/AdminFridgeOwnershipIssuesResponse'
 components:
   schemas:
+    RoleChangeRequest:
+      required:
+        - reason
+      type: object
+      properties:
+        reason:
+          maxLength: 200
+          minLength: 2
+          type: string
     NotificationPolicy:
       required:
         - batchTime
@@ -1777,9 +1876,14 @@ components:
     UpdateUserStatusRequest:
       required:
         - status
+        - reason
       type: object
       properties:
         status:
+          type: string
+        reason:
+          maxLength: 200
+          minLength: 2
           type: string
     UpdateCompartmentConfigRequest:
       type: object
@@ -1977,6 +2081,23 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/User'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+        availableFloors:
+          type: array
+          items:
+            type: integer
+            format: int32
     User:
       type: object
       properties:
@@ -2007,38 +2128,6 @@ components:
         penalties:
           type: integer
           format: int32
-    AdminResourceResponse:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/Resource'
-    Resource:
-      type: object
-      properties:
-        id:
-          type: string
-        facility:
-          type: string
-        name:
-          type: string
-        location:
-          type: string
-        status:
-          type: string
-        capacity:
-          type: string
-        manager:
-          type: string
-        rooms:
-          type: string
-        labelRange:
-          type: string
-        issue:
-          type: string
-        lastInspection:
-          type: string
     AdminPoliciesResponse:
       type: object
       properties:
@@ -2096,3 +2185,72 @@ components:
           type: string
         detail:
           type: string
+    AdminFridgeOwnershipIssuesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminFridgeOwnershipIssue'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    AdminFridgeOwnershipIssue:
+      type: object
+      properties:
+        bundleId:
+          type: string
+          format: uuid
+        bundleName:
+          type: string
+        labelNumber:
+          type: integer
+          format: int32
+        ownerUserId:
+          type: string
+          format: uuid
+        ownerName:
+          type: string
+        ownerLoginId:
+          type: string
+        roomId:
+          type: string
+          format: uuid
+        roomNumber:
+          type: string
+        roomFloor:
+          type: integer
+          format: int32
+        personalNo:
+          type: integer
+          format: int32
+        fridgeCompartmentId:
+          type: string
+          format: uuid
+        slotIndex:
+          type: integer
+          format: int32
+        compartmentType:
+          type: string
+        fridgeFloorNo:
+          type: integer
+          format: int32
+        fridgeDisplayName:
+          type: string
+        issueType:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time

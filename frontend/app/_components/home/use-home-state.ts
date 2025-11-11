@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react"
 import type { AuthUser } from "@/lib/auth"
-import { fetchProfile, getCurrentUser, logout as doLogout, subscribeAuth } from "@/lib/auth"
+import { fetchProfile, getCurrentUser, subscribeAuth } from "@/lib/auth"
 import { fetchNextInspectionSchedule } from "@/features/inspections/api"
+import { useLogoutRedirect } from "@/hooks/use-logout-redirect"
 
 export type NextInspection = { dday: string; label: string } | null
 
@@ -39,11 +40,16 @@ export function useHomeState() {
   }, [])
 
   useEffect(() => {
-    if (!mounted) return
+    if (!mounted || !isLoggedIn) return
     void fetchProfile()
-  }, [mounted])
+  }, [mounted, isLoggedIn])
 
   useEffect(() => {
+    if (!mounted || !isLoggedIn) {
+      setNextInspection(null)
+      return
+    }
+
     let cancelled = false
     const loadNextInspection = async () => {
       try {
@@ -69,11 +75,9 @@ export function useHomeState() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [mounted, isLoggedIn])
 
-  const logout = async () => {
-    await doLogout()
-  }
+  const logout = useLogoutRedirect()
 
   return {
     mounted,

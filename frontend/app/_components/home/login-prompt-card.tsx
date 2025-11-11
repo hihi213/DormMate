@@ -6,6 +6,7 @@ import { useState } from "react"
 
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { redirectToLogin } from "@/lib/auth"
 
 export default function LoginPromptCard() {
   const [dismissed, setDismissed] = useState(false)
@@ -16,8 +17,9 @@ export default function LoginPromptCard() {
   }
 
   const handleLoginClick = () => {
-    const redirect = typeof window !== "undefined" ? window.location.pathname : "/"
-    router.push(`/auth/login?redirect=${encodeURIComponent(redirect)}`)
+    const redirect =
+      typeof window !== "undefined" ? window.location.pathname + window.location.search : undefined
+    router.push(redirectToLogin({ redirect }))
   }
 
   return (

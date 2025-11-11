@@ -1,14 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ArrowLeft, DoorOpen, Search, Plus, Clock, CheckCircle, MoreVertical, Edit3, Trash2 } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { getCurrentUserId } from "@/lib/auth"
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { DoorOpen } from "lucide-react"
+import { getCurrentUser } from "@/lib/auth"
 import BottomNav from "@/components/bottom-nav"
 import AuthGuard from "@/features/auth/components/auth-guard"
+import UserServiceHeader from "@/app/_components/home/user-service-header"
+import { ComingSoonCard } from "@/components/coming-soon-card"
+import { useLogoutRedirect } from "@/hooks/use-logout-redirect"
 
 type StudyRoomItem = {
   id: string
@@ -32,22 +31,35 @@ export default function StudyPage() {
 }
 
 function StudyInner() {
+  const currentUser = getCurrentUser()
+  const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
+  const [mounted, setMounted] = useState(false)
+  const logoutAndRedirect = useLogoutRedirect()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   return (
     <main className="min-h-[100svh] bg-white">
-      {/* Main page header (no back) */}
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-        <div className="mx-auto max-w-screen-sm px-2 py-3 flex items-center">
-          <div className="flex-1 text-center">
-            <div className="inline-flex items-center gap-2">
-              <DoorOpen className="size-4 text-teal-700" />
-              <h1 className="text-base font-semibold leading-none">{"스터디룸"}</h1>
-            </div>
-          </div>
-        </div>
-      </header>
+      <UserServiceHeader
+        service="study"
+        mounted={mounted}
+        user={currentUser}
+        isAdmin={isAdmin}
+        onLogout={() => {
+          void logoutAndRedirect()
+        }}
+      />
 
       <div className="mx-auto max-w-screen-sm px-4 py-8 pb-28">
-        <p className="text-sm text-muted-foreground">{"스터디룸 모듈은 곧 도입 예정입니다."}</p>
+        <ComingSoonCard
+          badge="스터디룸"
+          title="스터디룸 모듈 (준비 중)"
+          description="예약 캘린더와 노쇼 처리 기능을 준비하고 있습니다."
+          icon={<DoorOpen className="size-4" aria-hidden />}
+          note="향후 Beta 테스트에 참가하고 싶다면 운영팀에 알려 주세요."
+        />
       </div>
     </main>
   )

@@ -1,12 +1,10 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useState } from "react"
 import { usePathname } from "next/navigation"
-import { BookOpen, DoorOpen, Home, Settings2, ShieldCheck, Shirt, Snowflake } from "lucide-react"
+import { BookOpen, DoorOpen, Home, Shirt, Snowflake } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 
-import type { AuthUser } from "@/lib/auth"
-import { getCurrentUser, subscribeAuth } from "@/lib/auth"
 import { cn } from "@/lib/utils"
 
 type NavItem = {
@@ -27,32 +25,10 @@ const BASE_ITEMS: NavItem[] = [
 export default function BottomNav() {
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
-  const [user, setUser] = useState<AuthUser | null>(null)
 
   useEffect(() => {
     setMounted(true)
-    const current = getCurrentUser()
-    setUser(current)
-    const unsubscribe = subscribeAuth(setUser)
-    return () => unsubscribe()
   }, [])
-
-  const items = useMemo(() => {
-    const isAdmin = user?.roles?.includes("ADMIN")
-    if (!isAdmin) return BASE_ITEMS
-    const adminItems = BASE_ITEMS.map((item) =>
-      item.key === "home"
-        ? { ...item, label: "관리자 홈", icon: ShieldCheck, href: "/admin" }
-        : item,
-    )
-    adminItems.push({
-      key: "manage",
-      label: "관리 허브",
-      icon: Settings2,
-      href: "/admin/manage",
-    })
-    return adminItems
-  }, [user])
 
   const currentPath = mounted ? pathname : "/"
 
@@ -62,7 +38,7 @@ export default function BottomNav() {
       className={cn("fixed inset-x-0 bottom-0 z-40 border-t bg-white/90 backdrop-blur")}
     >
       <ul className="mx-auto flex max-w-screen-sm">
-        {items.map((item) => {
+        {BASE_ITEMS.map((item) => {
           const active = item.href === "/" ? currentPath === "/" : currentPath.startsWith(item.href)
           const Icon = item.icon
           return (

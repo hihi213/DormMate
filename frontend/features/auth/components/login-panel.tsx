@@ -7,18 +7,17 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
-import { getCurrentUser, loginWithCredentials } from "@/lib/auth"
+import { ensureValidAccessToken, getCurrentUser, loginWithCredentials } from "@/lib/auth"
 import type { AuthUser } from "@/lib/auth"
 
 type LoginPanelProps = {
   redirectTo: string
-  onSwitchToSignup: () => void
 }
 
 const inputStyle =
   "h-11 rounded-xl border border-slate-200 bg-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:border-emerald-500 transition"
 
-export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
+export function LoginPanel({ redirectTo }: LoginPanelProps) {
   const router = useRouter()
   const params = useSearchParams()
   const { toast } = useToast()
@@ -26,15 +25,6 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
   // redirect query 우선 사용
   const explicitRedirect = useMemo(() => params.get("redirect"), [params])
   const finalRedirect = useMemo(() => explicitRedirect ?? redirectTo ?? "/", [explicitRedirect, redirectTo])
-  const reason = params.get("reason")
-  const sessionMessage = useMemo(() => {
-    switch (reason) {
-      case "sessionExpired":
-        return "세션이 만료되어 다시 로그인해 주세요."
-      default:
-        return ""
-    }
-  }, [reason])
 
   const [loginId, setLoginId] = useState("")
   const [password, setPassword] = useState("")
@@ -48,9 +38,10 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
   const resolveTarget = useCallback(
     (current: AuthUser | null) => {
       if (current?.isAdmin) {
-        if (!explicitRedirect || explicitRedirect === "/" || explicitRedirect === null) {
-          return "/admin"
+        if (explicitRedirect && explicitRedirect.startsWith("/admin")) {
+          return explicitRedirect
         }
+        return "/admin"
       }
       return finalRedirect || "/"
     },
@@ -58,9 +49,19 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
   )
 
   useEffect(() => {
-    const current = getCurrentUser()
-    if (current) {
-      router.replace(resolveTarget(current))
+    let cancelled = false
+    const maybeRedirect = async () => {
+      const current = getCurrentUser()
+      if (!current) return
+      const accessToken = await ensureValidAccessToken()
+      if (!accessToken || cancelled) {
+        return
+      }
+      router.replace(resolveTarget(getCurrentUser()))
+    }
+    void maybeRedirect()
+    return () => {
+      cancelled = true
     }
   }, [router, resolveTarget])
 
@@ -107,12 +108,6 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
         handleSubmit()
       }}
     >
-      {sessionMessage && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          {sessionMessage}
-        </div>
-      )}
-
       <div className="space-y-2">
         <label htmlFor="login-id" className="text-sm font-medium text-gray-800">
           {"아이디"}
@@ -188,13 +183,6 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
         {"계정을 발급받지 않았다면 기숙사 관리자에게 문의해 주세요."}
       </p>
 
-      <button
-        type="button"
-        onClick={onSwitchToSignup}
-        className="w-full text-center text-sm font-medium text-emerald-700 hover:underline"
-      >
-        {"계정이 없으신가요? 회원가입하기"}
-      </button>
     </form>
   )
 }

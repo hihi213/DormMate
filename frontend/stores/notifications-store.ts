@@ -15,6 +15,7 @@ import type {
   NotificationState,
   NotificationStateFilter,
 } from "@/features/notifications/types"
+import { subscribeAuth } from "@/lib/auth"
 
 const DEFAULT_PAGE_SIZE = 20
 
@@ -53,6 +54,7 @@ export type NotificationStoreActions = {
   ) => Promise<NotificationActionResult<NotificationPreference>>
   resetError: () => void
   resetPreferenceError: () => void
+  resetStore: () => void
 }
 
 export type NotificationStore = NotificationStoreState & {
@@ -100,10 +102,19 @@ function decrementUnread(source: NotificationStoreState, amount = 1): number {
   return Math.max(source.unreadCount - amount, 0)
 }
 
-export const useNotificationStore = create<NotificationStore>((set, get) => ({
-  ...initialState,
-  actions: {
-    async load(params) {
+export const useNotificationStore = create<NotificationStore>((set, get) => {
+  const resetState = () => {
+    const { actions } = get()
+    set({
+      ...initialState,
+      actions,
+    })
+  }
+
+  return {
+    ...initialState,
+    actions: {
+      async load(params) {
       const current = get()
       const merged: { state: NotificationStateFilter; page: number; size: number } = {
         state: params?.state ?? current.query.state ?? current.filter,
@@ -298,8 +309,18 @@ export const useNotificationStore = create<NotificationStore>((set, get) => ({
         preferenceError: undefined,
       }))
     },
+    resetStore: resetState,
   },
-}))
+}
+})
+
+if (typeof window !== "undefined") {
+  subscribeAuth((user) => {
+    if (!user) {
+      useNotificationStore.getState().actions.resetStore()
+    }
+  })
+}
 
 export function selectNotificationState<T>(selector: (state: NotificationStore) => T): T {
   return selector(useNotificationStore.getState())

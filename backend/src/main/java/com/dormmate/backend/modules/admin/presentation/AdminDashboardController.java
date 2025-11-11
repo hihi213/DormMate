@@ -27,10 +27,11 @@ import com.dormmate.backend.modules.admin.application.AdminMutationService;
 import com.dormmate.backend.modules.admin.application.AdminMutationService.UpdatePoliciesCommand;
 import com.dormmate.backend.modules.admin.application.AdminReadService;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminDashboardResponse;
+import com.dormmate.backend.modules.admin.presentation.dto.AdminFridgeOwnershipIssuesResponse;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminPoliciesResponse;
-import com.dormmate.backend.modules.admin.presentation.dto.AdminResourceResponse;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminUsersResponse;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminUserStatusFilter;
+import com.dormmate.backend.modules.admin.presentation.dto.RoleChangeRequest;
 import com.dormmate.backend.modules.admin.presentation.dto.UpdateAdminPoliciesRequest;
 import com.dormmate.backend.modules.admin.presentation.dto.UpdateUserStatusRequest;
 
@@ -54,14 +55,23 @@ public class AdminDashboardController {
         return ResponseEntity.ok(adminReadService.getDashboard());
     }
 
-    @GetMapping("/resources")
-    public ResponseEntity<AdminResourceResponse> getResources() {
-        return ResponseEntity.ok(adminReadService.getResources());
+    @GetMapping("/fridge/issues")
+    public ResponseEntity<AdminFridgeOwnershipIssuesResponse> getFridgeOwnershipIssues(
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size,
+            @RequestParam(name = "ownerId", required = false) UUID ownerId
+    ) {
+        return ResponseEntity.ok(adminReadService.getFridgeOwnershipIssues(page, size, ownerId));
     }
 
     @GetMapping("/users")
     public ResponseEntity<AdminUsersResponse> getUsers(
-            @RequestParam(name = "status", defaultValue = "ACTIVE") String status
+            @RequestParam(name = "status", defaultValue = "ACTIVE") String status,
+            @RequestParam(name = "floor", required = false) String floor,
+            @RequestParam(name = "floorManagerOnly", defaultValue = "false") boolean floorManagerOnly,
+            @RequestParam(name = "search", required = false) String search,
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size
     ) {
         AdminUserStatusFilter filter;
         try {
@@ -69,18 +79,33 @@ public class AdminDashboardController {
         } catch (IllegalArgumentException ex) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, ex.getMessage(), ex);
         }
-        return ResponseEntity.ok(adminReadService.getUsers(filter));
+        Integer floorFilter = parseFloor(floor);
+        AdminReadService.AdminUsersQuery query = new AdminReadService.AdminUsersQuery(
+                filter,
+                floorFilter,
+                floorManagerOnly,
+                search,
+                page,
+                size
+        );
+        return ResponseEntity.ok(adminReadService.getUsers(query));
     }
 
     @PostMapping("/users/{userId}/roles/floor-manager")
-    public ResponseEntity<Void> promoteFloorManager(@PathVariable UUID userId) {
-        adminMutationService.promoteToFloorManager(userId, SecurityUtils.getCurrentUserId());
+    public ResponseEntity<Void> promoteFloorManager(
+            @PathVariable UUID userId,
+            @Valid @RequestBody RoleChangeRequest request
+    ) {
+        adminMutationService.promoteToFloorManager(userId, SecurityUtils.getCurrentUserId(), request.reason());
         return ResponseEntity.noContent().build();
     }
 
     @DeleteMapping("/users/{userId}/roles/floor-manager")
-    public ResponseEntity<Void> demoteFloorManager(@PathVariable UUID userId) {
-        adminMutationService.demoteFloorManager(userId);
+    public ResponseEntity<Void> demoteFloorManager(
+            @PathVariable UUID userId,
+            @Valid @RequestBody RoleChangeRequest request
+    ) {
+        adminMutationService.demoteFloorManager(userId, SecurityUtils.getCurrentUserId(), request.reason());
         return ResponseEntity.noContent().build();
     }
 
@@ -93,7 +118,7 @@ public class AdminDashboardController {
         if (!"INACTIVE".equals(normalized)) {
             throw new ProblemException(HttpStatus.BAD_REQUEST, "admin.unsupported_status", "지원하지 않는 상태 변경입니다.");
         }
-        adminMutationService.deactivateUser(userId);
+        adminMutationService.deactivateUser(userId, SecurityUtils.getCurrentUserId(), request.reason());
         return ResponseEntity.noContent().build();
     }
 
@@ -124,5 +149,21 @@ public class AdminDashboardController {
                 penaltySettings.template()
         ));
         return ResponseEntity.noContent().build();
+    }
+
+    private Integer parseFloor(String floor) {
+        if (floor == null || floor.isBlank()) {
+            return null;
+        }
+        String normalized = floor.trim();
+        if ("ALL".equalsIgnoreCase(normalized)) {
+            return null;
+        }
+        try {
+            int parsed = Integer.parseInt(normalized);
+            return parsed;
+        } catch (NumberFormatException ex) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "층 파라미터가 올바르지 않습니다.", ex);
+        }
     }
 }

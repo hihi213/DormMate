@@ -38,12 +38,15 @@ import org.springframework.web.server.ResponseStatusException;
 public class NotificationService {
 
     private static final String KIND_INSPECTION_RESULT = "FRIDGE_RESULT";
+    public static final String KIND_FRIDGE_RESULT_ADMIN = "FRIDGE_RESULT_ADMIN";
     public static final String KIND_FRIDGE_SCHEDULE = "FRIDGE_SCHEDULE";
     public static final String KIND_FRIDGE_EXPIRY = "FRIDGE_EXPIRY";
     public static final String KIND_FRIDGE_EXPIRED = "FRIDGE_EXPIRED";
     private static final int DEFAULT_TTL_HOURS = 24 * 7;
     public static final int DEFAULT_SCHEDULE_TTL_HOURS = 24 * 3;
     private static final String DEDUPE_PREFIX = "FRIDGE_RESULT:";
+    private static final String ADMIN_DEDUPE_PREFIX = "FRIDGE_RESULT_ADMIN:";
+    private static final String ADMIN_ROLE_CODE = "ADMIN";
 
     private static final List<PreferenceDefinition> SUPPORTED_PREFERENCES = List.of(
             new PreferenceDefinition(
@@ -51,28 +54,40 @@ public class NotificationService {
                     "냉장고 검사 결과",
                     "검사 조치 및 벌점 알림",
                     true,
-                    true
+                    true,
+                    PreferenceAudience.ALL
             ),
             new PreferenceDefinition(
                     KIND_FRIDGE_SCHEDULE,
                     "냉장고 검사 일정",
                     "다가오는 검사 일정을 안내합니다",
                     true,
-                    true
+                    true,
+                    PreferenceAudience.ALL
             ),
             new PreferenceDefinition(
                     KIND_FRIDGE_EXPIRY,
                     "냉장고 임박 알림",
                     "유통기한 3일 이내 물품 안내",
                     true,
-                    false
+                    false,
+                    PreferenceAudience.ALL
             ),
             new PreferenceDefinition(
                     KIND_FRIDGE_EXPIRED,
                     "냉장고 만료 알림",
                     "유통기한이 지난 물품 경고",
                     true,
-                    true
+                    true,
+                    PreferenceAudience.ALL
+            ),
+            new PreferenceDefinition(
+                    KIND_FRIDGE_RESULT_ADMIN,
+                    "검사 조치 보고",
+                    "검사 제출 시 경고/폐기 조치가 포함되면 관리자에게 알림",
+                    true,
+                    true,
+                    PreferenceAudience.ADMIN_ONLY
             )
     );
 
@@ -121,14 +136,11 @@ public class NotificationService {
         Notification notification = notificationRepository.findByIdAndUserId(notificationId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "NOTIFICATION_NOT_FOUND"));
 
-        if (notification.getState() == NotificationState.EXPIRED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "NOTIFICATION_EXPIRED");
-        }
-
         if (notification.getState() == NotificationState.UNREAD) {
             notification.markRead(OffsetDateTime.now(clock));
             notificationRepository.save(notification);
         }
+        // 이미 EXPIRED 혹은 READ 상태라면 아무 동작 없이 성공으로 간주해 idempotent 하게 처리한다.
     }
 
     public int markAllNotificationsRead(UUID userId) {
@@ -141,7 +153,9 @@ public class NotificationService {
         Map<String, NotificationPreference> existing = notificationPreferenceRepository.findByIdUserId(userId).stream()
                 .collect(Collectors.toMap(pref -> pref.getId().getKindCode(), pref -> pref));
 
-        List<NotificationPreferenceItem> items = SUPPORTED_PREFERENCES.stream()
+        List<PreferenceDefinition> availableDefinitions = resolvePreferenceDefinitions(userId);
+
+        List<NotificationPreferenceItem> items = availableDefinitions.stream()
                 .map(definition -> {
                     NotificationPreference preference = existing.get(definition.kindCode());
                     boolean enabled = preference != null ? preference.isEnabled() : definition.defaultEnabled();
@@ -160,10 +174,7 @@ public class NotificationService {
     }
 
     public NotificationPreferenceItem updatePreference(UUID userId, String kindCode, boolean enabled, boolean allowBackground) {
-        PreferenceDefinition definition = PREFERENCE_BY_CODE.get(kindCode);
-        if (definition == null) {
-            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "PREFERENCE_NOT_FOUND");
-        }
+        PreferenceDefinition definition = requireAccessiblePreference(userId, kindCode);
 
         NotificationPreference preference = notificationPreferenceRepository
                 .findByIdUserIdAndIdKindCode(userId, kindCode)
@@ -190,6 +201,8 @@ public class NotificationService {
         }
 
         Map<DormUser, UserInspectionSummary> summaries = new java.util.LinkedHashMap<>();
+        int totalWarnCount = 0;
+        int totalDisposalCount = 0;
         for (InspectionAction action : session.getActions()) {
             DormUser target = action.getTargetUser();
             if (target == null) {
@@ -203,6 +216,13 @@ public class NotificationService {
 
             summaries.computeIfAbsent(target, key -> new UserInspectionSummary())
                     .increment(type);
+
+            switch (type) {
+                case WARN_INFO_MISMATCH, WARN_STORAGE_POOR -> totalWarnCount++;
+                case DISPOSE_EXPIRED, UNREGISTERED_DISPOSE -> totalDisposalCount++;
+                default -> {
+                }
+            }
         }
 
         Map<UUID, List<InspectionAction>> actionsByUser = session.getActions().stream()
@@ -213,7 +233,7 @@ public class NotificationService {
                 return;
             }
 
-            if (!isEnabled(user.getId(), KIND_INSPECTION_RESULT)) {
+            if (!isEnabled(user, KIND_INSPECTION_RESULT)) {
                 return;
             }
 
@@ -273,25 +293,37 @@ public class NotificationService {
                     session.getId()
             );
         });
+
+        if (totalWarnCount + totalDisposalCount > 0) {
+            sendAdministratorInspectionSummaryNotification(session, totalWarnCount, totalDisposalCount);
+        }
     }
 
-    private boolean isEnabled(UUID userId, String kindCode) {
+    private boolean isEnabled(DormUser user, String kindCode) {
+        UUID userId = user.getId();
         NotificationPreferenceId id = new NotificationPreferenceId(userId, kindCode);
         Optional<NotificationPreference> preference = notificationPreferenceRepository.findById(id);
         if (preference.isPresent()) {
             return preference.get().isEnabled();
         }
         PreferenceDefinition definition = PREFERENCE_BY_CODE.get(kindCode);
+        if (definition != null && definition.audience() == PreferenceAudience.ADMIN_ONLY && !isAdminUser(user)) {
+            return false;
+        }
         return definition == null || definition.defaultEnabled();
     }
 
-    private boolean resolveBackgroundPreference(UUID userId, String kindCode) {
+    private boolean resolveBackgroundPreference(DormUser user, String kindCode) {
+        UUID userId = user.getId();
         NotificationPreferenceId id = new NotificationPreferenceId(userId, kindCode);
         Optional<NotificationPreference> preference = notificationPreferenceRepository.findById(id);
         if (preference.isPresent()) {
             return preference.get().isAllowBackground();
         }
         PreferenceDefinition definition = PREFERENCE_BY_CODE.get(kindCode);
+        if (definition != null && definition.audience() == PreferenceAudience.ADMIN_ONLY && !isAdminUser(user)) {
+            return false;
+        }
         return definition == null || definition.defaultAllowBackground();
     }
 
@@ -320,7 +352,7 @@ public class NotificationService {
             int ttlHours,
             UUID correlationId
     ) {
-        if (!isEnabled(user.getId(), kindCode)) {
+        if (!isEnabled(user, kindCode)) {
             return Optional.empty();
         }
 
@@ -340,10 +372,42 @@ public class NotificationService {
         notification.setTtlAt(now.plusHours(ttlHours));
         notification.setCorrelationId(correlationId);
         notification.setMetadata(metadata == null ? Map.of() : metadata);
-        notification.setAllowBackground(resolveBackgroundPreference(user.getId(), kindCode));
+        notification.setAllowBackground(resolveBackgroundPreference(user, kindCode));
 
         notificationRepository.save(notification);
         return Optional.of(new NotificationDelivery(notification, notification.isAllowBackground()));
+    }
+
+    private void sendAdministratorInspectionSummaryNotification(
+            InspectionSession session,
+            int warnCount,
+            int disposalCount
+    ) {
+        List<UUID> adminIds = dormUserRepository.findActiveAdminIds();
+        if (adminIds.isEmpty()) {
+            return;
+        }
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("sessionId", session.getId());
+        metadata.put("warnCount", warnCount);
+        metadata.put("disposalCount", disposalCount);
+
+        String title = "[검사] 조치 보고";
+        String body = String.format("경고 %d건 · 폐기 %d건이 기록되었습니다.", warnCount, disposalCount);
+
+        for (UUID adminId : adminIds) {
+            String dedupeKey = ADMIN_DEDUPE_PREFIX + session.getId() + ":" + adminId;
+            sendNotification(
+                    adminId,
+                    KIND_FRIDGE_RESULT_ADMIN,
+                    title,
+                    body,
+                    dedupeKey,
+                    metadata,
+                    DEFAULT_TTL_HOURS,
+                    session.getId()
+            );
+        }
     }
 
     public Notification createFailureNotification(
@@ -382,6 +446,46 @@ public class NotificationService {
         notificationRepository.saveAll(expirable);
     }
 
+    private List<PreferenceDefinition> resolvePreferenceDefinitions(UUID userId) {
+        boolean adminUser = isAdminUser(userId);
+        return SUPPORTED_PREFERENCES.stream()
+                .filter(definition -> adminUser
+                        ? definition.audience() == PreferenceAudience.ADMIN_ONLY
+                        : definition.audience() == PreferenceAudience.ALL)
+                .toList();
+    }
+
+    private PreferenceDefinition requireAccessiblePreference(UUID userId, String kindCode) {
+        PreferenceDefinition definition = PREFERENCE_BY_CODE.get(kindCode);
+        if (definition == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "PREFERENCE_NOT_FOUND");
+        }
+        boolean adminUser = isAdminUser(userId);
+        if (definition.audience() == PreferenceAudience.ADMIN_ONLY && !adminUser) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "PREFERENCE_NOT_FOUND");
+        }
+        if (definition.audience() == PreferenceAudience.ALL && adminUser) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "PREFERENCE_NOT_FOUND");
+        }
+        return definition;
+    }
+
+    private boolean isAdminUser(UUID userId) {
+        return dormUserRepository.existsActiveAdminRole(userId);
+    }
+
+    private boolean isAdminUser(DormUser user) {
+        if (user == null) {
+            return false;
+        }
+        if (user.getRoles() != null && user.getRoles().stream()
+                .filter(role -> role.getRevokedAt() == null)
+                .anyMatch(role -> role.getRole() != null && ADMIN_ROLE_CODE.equalsIgnoreCase(role.getRole().getCode()))) {
+            return true;
+        }
+        return isAdminUser(user.getId());
+    }
+
     public enum NotificationFilterState {
         ALL,
         UNREAD,
@@ -414,7 +518,8 @@ public class NotificationService {
             String displayName,
             String description,
             boolean defaultEnabled,
-            boolean defaultAllowBackground
+            boolean defaultAllowBackground,
+            PreferenceAudience audience
     ) {
     }
 
@@ -422,6 +527,11 @@ public class NotificationService {
             Notification notification,
             boolean allowBackground
     ) {
+    }
+
+    private enum PreferenceAudience {
+        ALL,
+        ADMIN_ONLY
     }
 
     private static final class UserInspectionSummary {

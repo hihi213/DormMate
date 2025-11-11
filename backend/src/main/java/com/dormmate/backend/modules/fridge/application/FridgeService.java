@@ -263,7 +263,8 @@ public class FridgeService {
                 .map(bundle -> FridgeDtoMapper.toSummary(
                         bundle,
                         ownerAssignments.get(bundle.getOwner().getId()),
-                        bundle.getOwner().getId().equals(currentUserId)
+                        bundle.getOwner().getId().equals(currentUserId),
+                        true
                 ))
                 .toList();
 
@@ -303,7 +304,8 @@ public class FridgeService {
                 .map(bundle -> FridgeDtoMapper.toSummary(
                         bundle,
                         ownerAssignments.get(bundle.getOwner().getId()),
-                        bundle.getOwner().getId().equals(currentUserId)
+                        bundle.getOwner().getId().equals(currentUserId),
+                        false
                 ))
                 .toList();
 

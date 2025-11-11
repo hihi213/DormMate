@@ -9,7 +9,7 @@ const storagePath =
 const browser = await chromium.launch()
 const page = await browser.newPage()
 
-await page.goto(`${adminBaseUrl}/auth/login`)
+await page.goto(`${adminBaseUrl}/auth?mode=login`)
 await page.getByLabel("이메일").fill(adminEmail)
 await page.getByLabel("비밀번호").fill(adminPassword)
 await page.getByRole("button", { name: "로그인" }).click()

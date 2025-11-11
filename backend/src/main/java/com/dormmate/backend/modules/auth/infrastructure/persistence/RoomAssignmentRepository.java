@@ -27,4 +27,13 @@ public interface RoomAssignmentRepository extends JpaRepository<RoomAssignment, 
                and du.id in :userIds
             """)
     List<RoomAssignment> findActiveAssignmentsByUserIds(@Param("userIds") Iterable<UUID> userIds);
+
+    @Query("""
+            select distinct r.floor
+              from RoomAssignment ra
+              join ra.room r
+             where ra.releasedAt is null
+             order by r.floor asc
+            """)
+    List<Short> findDistinctActiveFloors();
 }

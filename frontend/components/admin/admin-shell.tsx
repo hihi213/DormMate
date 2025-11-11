@@ -8,36 +8,22 @@ import {
   type SVGProps,
   useEffect,
   useMemo,
-  useRef,
   useState,
 } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import {
-  BellDot,
-  BookOpen,
-  CalendarDays,
-  FileBarChart2,
-  Info,
-  LayoutDashboard,
-  Search,
-  Settings2,
-  ShieldCheck,
-  Snowflake,
-  Users,
-  Waves,
-} from "lucide-react"
+import { BellDot, BookOpen, CalendarDays, FileBarChart2, Info, LayoutDashboard, ShieldCheck, Snowflake, Users, Waves } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { Input } from "@/components/ui/input"
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
-import { getCurrentUser, logout, subscribeAuth, type AuthUser } from "@/lib/auth"
+import { getCurrentUser, logout, redirectToLogin, subscribeAuth, type AuthUser } from "@/lib/auth"
 import HeaderNotifications from "@/components/admin/header-notifications"
 import { useToast } from "@/hooks/use-toast"
 import { resetDemoDataset } from "@/lib/demo-seed"
+import AdminBottomNav from "@/components/admin/admin-bottom-nav"
 
 type NavItem = {
   label: string
@@ -72,18 +58,11 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "운영 도구",
     items: [
+      { label: "권한·계정", href: "/admin/users", icon: Users },
       { label: "알림·정책", href: "/admin/notifications", icon: BellDot },
-      { label: "시스템 설정", href: "/admin/system", icon: Settings2 },
-      { label: "감사 로그 & 리포트", href: "/admin/audit", icon: FileBarChart2 },
+      { label: "감사 로그", href: "/admin/audit", icon: FileBarChart2 },
     ],
   },
-]
-
-const MOBILE_NAV_ITEMS: NavItem[] = [
-  { label: "대시보드", href: "/admin", icon: LayoutDashboard },
-  { label: "냉장고", href: "/admin/fridge", icon: Snowflake },
-  { label: "사용자", href: "/admin/users", icon: Users },
-  { label: "알림", href: "/admin/notifications", icon: BellDot },
 ]
 
 function useAuthUser() {
@@ -152,10 +131,7 @@ export default function AdminShell({ children }: AdminShellProps) {
   const router = useRouter()
   const pathname = usePathname()
   const user = useAuthUser()
-  const [searchKeyword, setSearchKeyword] = useState("")
   const [railSheetOpen, setRailSheetOpen] = useState(false)
-  const desktopSearchRef = useRef<HTMLInputElement | null>(null)
-  const mobileSearchRef = useRef<HTMLInputElement | null>(null)
   const [isResettingDemo, setIsResettingDemo] = useState(false)
   const { toast } = useToast()
 
@@ -184,28 +160,6 @@ export default function AdminShell({ children }: AdminShellProps) {
       railContent: rail,
     }
   }, [children])
-
-  // 검색은 추후 API 연동 예정 — 현재는 콘솔 로그만 남긴다.
-  const handleSearchSubmit = (event: React.FormEvent<HTMLFormElement>) => {
-    event.preventDefault()
-    if (searchKeyword.trim().length === 0) return
-    console.info("[AdminSearch] 검색 시도:", searchKeyword.trim())
-  }
-
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
-        event.preventDefault()
-        if (window.matchMedia("(min-width: 1024px)").matches) {
-          desktopSearchRef.current?.focus()
-        } else {
-          mobileSearchRef.current?.focus()
-        }
-      }
-    }
-    window.addEventListener("keydown", handler)
-    return () => window.removeEventListener("keydown", handler)
-  }, [])
 
   const handleDemoReset = async () => {
     if (isResettingDemo) {
@@ -258,7 +212,7 @@ export default function AdminShell({ children }: AdminShellProps) {
 
   const handleLogout = async () => {
     await logout()
-    router.push("/auth/login?redirect=/admin")
+    router.push(redirectToLogin({ reason: "logout", redirect: "/admin" }))
   }
 
   return (
@@ -297,21 +251,6 @@ export default function AdminShell({ children }: AdminShellProps) {
                   <p className="text-xs text-slate-500">운영 허브</p>
                 </div>
               </div>
-              <form
-                onSubmit={handleSearchSubmit}
-                className="relative hidden w-full max-w-xl items-center lg:flex"
-                role="search"
-                aria-label="관리자 전역 검색"
-              >
-                <Search className="pointer-events-none absolute left-3 size-4 text-slate-400" aria-hidden />
-                <Input
-                  ref={desktopSearchRef}
-                  value={searchKeyword}
-                  onChange={(event) => setSearchKeyword(event.target.value)}
-                  className="h-10 rounded-full border-slate-200 bg-slate-50 pl-10 pr-4 text-sm shadow-inner focus:border-emerald-500 focus:ring-emerald-500"
-                  placeholder="호실, 사용자, 스티커 코드 검색"
-                />
-              </form>
               <div className="ml-auto flex items-center gap-3">
                 <HeaderNotifications />
                 <DropdownMenu>
@@ -348,6 +287,9 @@ export default function AdminShell({ children }: AdminShellProps) {
                     <DropdownMenuItem asChild>
                       <Link href="/admin/notifications">알림 정책</Link>
                     </DropdownMenuItem>
+                    <DropdownMenuItem asChild>
+                      <Link href="/admin/audit">감사 로그</Link>
+                    </DropdownMenuItem>
                     <DropdownMenuItem
                       onSelect={(event) => {
                         event.preventDefault()
@@ -362,18 +304,6 @@ export default function AdminShell({ children }: AdminShellProps) {
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>
-            </div>
-            <div className="px-6 pb-4 lg:hidden">
-              <form onSubmit={handleSearchSubmit} className="relative" role="search" aria-label="관리자 전역 검색(모바일)">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" aria-hidden />
-                <Input
-                  ref={mobileSearchRef}
-                  value={searchKeyword}
-                  onChange={(event) => setSearchKeyword(event.target.value)}
-                  className="h-10 rounded-full border-slate-200 bg-slate-50 pl-10 pr-4 text-sm shadow-inner focus:border-emerald-500 focus:ring-emerald-500"
-                  placeholder="호실, 사용자, 스티커 코드 검색"
-                />
-              </form>
             </div>
           </header>
 
@@ -420,30 +350,7 @@ export default function AdminShell({ children }: AdminShellProps) {
           </div>
         </div>
       </div>
-      <nav className="fixed bottom-0 left-0 right-0 z-30 border-t border-slate-200 bg-white/95 backdrop-blur lg:hidden">
-        <ul className="grid grid-cols-4">
-          {MOBILE_NAV_ITEMS.map((item) => {
-            const Icon = item.icon
-            const isActive =
-              pathname === item.href ||
-              (item.href !== "/admin" && pathname.startsWith(`${item.href}/`))
-            return (
-              <li key={item.href}>
-                <Link
-                  href={item.href}
-                  className={cn(
-                    "flex flex-col items-center justify-center gap-1 py-3 text-xs font-medium transition",
-                    isActive ? "text-emerald-600" : "text-slate-500 hover:text-emerald-600",
-                  )}
-                >
-                  <Icon className={cn("size-5", isActive ? "text-emerald-600" : "text-slate-400")} aria-hidden />
-                  <span>{item.label}</span>
-                </Link>
-              </li>
-            )
-          })}
-        </ul>
-      </nav>
+      <AdminBottomNav className="lg:hidden" />
     </div>
   )
 }

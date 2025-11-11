@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback } from "react"
+import { useCallback, useMemo, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { User } from "lucide-react"
 
@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { AuthUser } from "@/lib/auth"
+import { redirectToLogin } from "@/lib/auth"
 
 type Props = {
   mounted: boolean
@@ -22,6 +23,9 @@ type Props = {
   isAdmin: boolean
   onOpenInfo: () => void
   onLogout: () => void
+  title?: string
+  subtitle?: string | null
+  contextSlot?: ReactNode
 }
 
 export default function HomeHeader({
@@ -31,26 +35,67 @@ export default function HomeHeader({
   isAdmin,
   onOpenInfo,
   onLogout,
+  title = "OO기숙사",
+  subtitle,
+  contextSlot,
 }: Props) {
   const router = useRouter()
+  const residentIdentifier = useMemo(() => {
+    const roomNumberRaw = user?.roomDetails?.roomNumber?.trim()
+    const floorNo =
+      typeof user?.roomDetails?.floor === "number" ? user?.roomDetails?.floor : null
+    const personalNo =
+      typeof user?.roomDetails?.personalNo === "number" ? user?.roomDetails?.personalNo : null
+
+    let combinedRoom = roomNumberRaw ?? ""
+    if (floorNo != null && combinedRoom) {
+      combinedRoom = combinedRoom.startsWith(String(floorNo))
+        ? combinedRoom
+        : `${floorNo}${combinedRoom}`
+    } else if (floorNo != null && !combinedRoom) {
+      combinedRoom = String(floorNo)
+    }
+
+    const roomWithPerson =
+      combinedRoom && personalNo != null ? `${combinedRoom}-${personalNo}` : combinedRoom
+
+    if (roomWithPerson) {
+      return `${user?.name ?? ""} ${roomWithPerson}`.trim()
+    }
+    if (user?.room) return `${user?.name ?? ""} ${user.room}`.trim()
+    return user?.name ?? ""
+  }, [
+    user?.room,
+    user?.name,
+    user?.roomDetails?.roomNumber,
+    user?.roomDetails?.personalNo,
+    user?.roomDetails?.floor,
+  ])
 
   const navigateToLogin = useCallback(() => {
-    const redirect = typeof window !== "undefined" ? window.location.pathname : "/"
-    router.push(`/auth/login?redirect=${encodeURIComponent(redirect)}`)
+    const redirect =
+      typeof window !== "undefined" ? window.location.pathname + window.location.search : undefined
+    const target = redirectToLogin({ redirect })
+    router.push(target)
   }, [router])
 
   return (
     <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
-      <div className="mx-auto max-w-screen-sm px-4 py-3 flex items-center gap-3">
-        <div className="flex-1">
-          <h1 className="text-lg font-semibold leading-none">{"OO기숙사"}</h1>
-          {mounted && isLoggedIn ? (
-            <p className="text-xs text-muted-foreground leading-tight">{`${user?.name ?? ""} - ${user?.room ?? ""}`}</p>
+      <div className="mx-auto grid max-w-screen-sm grid-cols-[1fr_auto_1fr] items-center gap-3 px-4 py-3">
+        <div className="min-w-0">
+          <h1 className="text-lg font-semibold leading-none">{title}</h1>
+          {subtitle ? (
+            <p className="text-xs text-muted-foreground leading-tight">{subtitle}</p>
+          ) : mounted && isLoggedIn ? (
+            <p className="text-xs text-muted-foreground leading-tight">{residentIdentifier}</p>
           ) : (
             <p className="text-xs text-muted-foreground leading-tight">{"로그인이 필요합니다"}</p>
           )}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-center text-center">
+          {contextSlot ? contextSlot : null}
+        </div>
+        <div className="flex items-center justify-end gap-2">
           <NotificationBell
             size={12}
             disabled={!mounted || !isLoggedIn}
@@ -74,6 +119,7 @@ export default function HomeHeader({
                     <DropdownMenuItem onClick={() => router.push("/admin")}>{"관리자 센터"}</DropdownMenuItem>
                   )}
                   {isAdmin && <DropdownMenuSeparator />}
+                  <DropdownMenuItem onClick={() => router.push("/notifications")}>{"알림 센터"}</DropdownMenuItem>
                   <DropdownMenuItem onClick={onOpenInfo}>{"내정보"}</DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={onLogout}>{"로그아웃"}</DropdownMenuItem>

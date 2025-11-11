@@ -61,7 +61,11 @@ class AdminManageIntegrationTest extends AbstractPostgresIntegrationTest {
         UUID targetId = target.getId();
 
         mockMvc.perform(post("/admin/users/{id}/roles/floor-manager", targetId)
-                        .header("Authorization", "Bearer " + adminToken))
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason":"테스트 승격"}
+                                """))
                 .andExpect(status().isNoContent());
 
         boolean hasRoleAfterPromotion = userRoleRepository.findActiveRoles(targetId).stream()
@@ -69,7 +73,11 @@ class AdminManageIntegrationTest extends AbstractPostgresIntegrationTest {
         assertThat(hasRoleAfterPromotion).isTrue();
 
         mockMvc.perform(delete("/admin/users/{id}/roles/floor-manager", targetId)
-                        .header("Authorization", "Bearer " + adminToken))
+                        .header("Authorization", "Bearer " + adminToken)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"reason":"테스트 해제"}
+                                """))
                 .andExpect(status().isNoContent());
 
         boolean hasRoleAfterDemotion = userRoleRepository.findActiveRoles(targetId).stream()
@@ -87,7 +95,7 @@ class AdminManageIntegrationTest extends AbstractPostgresIntegrationTest {
                             .header("Authorization", "Bearer " + adminToken)
                             .contentType(MediaType.APPLICATION_JSON)
                             .content("""
-                                    {"status":"INACTIVE"}
+                                    {"status":"INACTIVE","reason":"테스트 비활성화"}
                                     """))
                     .andExpect(status().isNoContent());
 

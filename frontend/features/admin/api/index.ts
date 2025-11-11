@@ -1,19 +1,21 @@
 import { safeApiCall } from "@/lib/api-client"
-import { mockQuickActions, mockResources, mockSummaryCards, mockTimelineEvents } from "../utils/mock-data"
-import type {
-  AdminQuickAction,
-  AdminResource,
-  AdminSummaryCard,
-  AdminTimelineEvent,
-  AdminUser,
-} from "../types"
+import { mockQuickActions, mockSummaryCards, mockTimelineEvents } from "../utils/mock-data"
+import type { AdminQuickAction, AdminSummaryCard, AdminTimelineEvent, AdminUser } from "../types"
 
 const DASHBOARD_ENDPOINT = "/admin/dashboard"
-const RESOURCES_ENDPOINT = "/admin/resources"
 const USERS_ENDPOINT = "/admin/users"
 const POLICIES_ENDPOINT = "/admin/policies"
 
 export type AdminUserStatusFilter = "ACTIVE" | "INACTIVE" | "ALL"
+
+export type FetchAdminUsersParams = {
+  status?: AdminUserStatusFilter
+  floor?: string
+  search?: string
+  floorManagerOnly?: boolean
+  page?: number
+  size?: number
+}
 
 export type AdminDashboardResponse = {
   summary: AdminSummaryCard[]
@@ -32,52 +34,61 @@ export async function fetchAdminDashboard(): Promise<AdminDashboardResponse> {
   )
 }
 
-export type AdminResourceResponse = {
-  items: AdminResource[]
-}
-
-export async function fetchAdminResources(): Promise<AdminResourceResponse> {
-  const { data } = await safeApiCall<AdminResourceResponse>(RESOURCES_ENDPOINT)
-  return data ?? { items: mockResources }
-}
-
 export type AdminUsersResponse = {
   items: AdminUser[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+  availableFloors?: number[]
 }
 
-export async function fetchAdminUsers(
-  status: AdminUserStatusFilter = "ACTIVE",
-): Promise<AdminUsersResponse> {
+export async function fetchAdminUsers(params: FetchAdminUsersParams = {}): Promise<AdminUsersResponse> {
   const query = new URLSearchParams()
-  if (status) {
-    query.set("status", status)
-  }
+  if (params.status) query.set("status", params.status)
+  if (params.floor && params.floor !== "ALL") query.set("floor", params.floor)
+  if (params.search) query.set("search", params.search)
+  if (params.floorManagerOnly) query.set("floorManagerOnly", "true")
+  if (typeof params.page === "number") query.set("page", String(params.page))
+  if (typeof params.size === "number") query.set("size", String(params.size))
+
   const url = query.toString().length > 0 ? `${USERS_ENDPOINT}?${query.toString()}` : USERS_ENDPOINT
   const { data, error } = await safeApiCall<AdminUsersResponse>(url)
   if (error) {
     throw error
   }
-  return data ?? { items: [] }
+  return (
+    data ?? {
+      items: [],
+      page: params.page ?? 0,
+      size: params.size ?? 0,
+      totalElements: 0,
+      totalPages: 0,
+      availableFloors: [],
+    }
+  )
 }
 
-export async function promoteAdminFloorManager(userId: string) {
+export async function promoteAdminFloorManager(userId: string, reason: string) {
   const { error } = await safeApiCall<void>(`${USERS_ENDPOINT}/${userId}/roles/floor-manager`, {
     method: "POST",
+    body: { reason },
   })
   if (error) throw error
 }
 
-export async function demoteAdminFloorManager(userId: string) {
+export async function demoteAdminFloorManager(userId: string, reason: string) {
   const { error } = await safeApiCall<void>(`${USERS_ENDPOINT}/${userId}/roles/floor-manager`, {
     method: "DELETE",
+    body: { reason },
   })
   if (error) throw error
 }
 
-export async function deactivateAdminUser(userId: string) {
+export async function deactivateAdminUser(userId: string, reason: string) {
   const { error } = await safeApiCall<void>(`${USERS_ENDPOINT}/${userId}/status`, {
     method: "PATCH",
-    body: { status: "INACTIVE" },
+    body: { status: "INACTIVE", reason },
   })
   if (error) throw error
 }
@@ -130,7 +141,5 @@ export async function updateAdminPolicies(payload: UpdateAdminPoliciesPayload) {
   })
   if (error) throw error
 }
-
-export * from "./fridge"
 
 export * from "./fridge"

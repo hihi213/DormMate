@@ -21,6 +21,13 @@ import type { components } from "@/lib/api-types"
 type RaisedError = Error & { status?: number; code?: string }
 type FridgeSlotDto = components["schemas"]["FridgeSlot"]
 
+export type SlotFetchOptions = {
+  floor?: number | null
+  page?: number
+  size?: number
+  view?: string
+}
+
 function raiseFridgeError(error: ApiError | undefined, fallbackMessage: string): never {
   const message = error?.message ?? fallbackMessage
   const richError: RaisedError = Object.assign(new Error(message), {
@@ -30,8 +37,15 @@ function raiseFridgeError(error: ApiError | undefined, fallbackMessage: string):
   throw richError
 }
 
-export async function fetchFridgeSlots(): Promise<Slot[]> {
-  const search = new URLSearchParams({ view: "full", page: "0", size: "200" })
+export async function fetchFridgeSlots(options: SlotFetchOptions = {}): Promise<Slot[]> {
+  const search = new URLSearchParams()
+  search.set("view", options.view ?? "full")
+  search.set("page", String(options.page ?? 0))
+  const normalizedSize = Math.min(Math.max(options.size ?? 200, 1), 200)
+  search.set("size", String(normalizedSize))
+  if (typeof options.floor === "number" && Number.isFinite(options.floor)) {
+    search.set("floor", String(options.floor))
+  }
   const { data, error } = await safeApiCall<FridgeSlotListResponseDto>(`/fridge/slots?${search.toString()}`, {
     method: "GET",
   })
@@ -75,27 +89,15 @@ export async function fetchFridgeInventory(
     return { bundles: [], units: [] }
   }
 
-  const detailResults = await Promise.all(
-    summaries.map((summary) =>
-      safeApiCall<FridgeBundleDto>(`/fridge/bundles/${summary.bundleId}`, {
-        method: "GET",
-      }),
-    ),
-  )
-
   const bundles: Bundle[] = []
   const units: ItemUnit[] = []
 
-  detailResults.forEach((result, index) => {
-      if (result.error || !result.data) {
-        const fallbackId = summaries[index]?.bundleId
-        const message = result.error?.message ?? "포장 상세 정보를 불러오지 못했습니다."
-        raiseFridgeError(
-          result.error,
-          fallbackId ? `${message} (bundleId=${fallbackId})` : message,
-        )
-      }
-    const { bundle, units: mappedUnits } = mapBundleFromDto(result.data, currentUserId)
+  summaries.forEach((summary) => {
+    const detailDto: FridgeBundleDto = {
+      ...summary,
+      items: summary.items ?? [],
+    }
+    const { bundle, units: mappedUnits } = mapBundleFromDto(detailDto, currentUserId)
     bundles.push(bundle)
     units.push(...mappedUnits)
   })

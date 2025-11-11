@@ -1,14 +1,13 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ArrowLeft, Plus, Clock, CheckCircle, XCircle, MoreVertical, Edit3, Trash2, Shirt } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { getCurrentUserId } from "@/lib/auth"
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { Shirt } from "lucide-react"
+import { getCurrentUser } from "@/lib/auth"
 import BottomNav from "@/components/bottom-nav"
 import AuthGuard from "@/features/auth/components/auth-guard"
+import UserServiceHeader from "@/app/_components/home/user-service-header"
+import { ComingSoonCard } from "@/components/coming-soon-card"
+import { useLogoutRedirect } from "@/hooks/use-logout-redirect"
 
 type LaundryItem = {
   id: string
@@ -33,22 +32,35 @@ export default function LaundryPage() {
 }
 
 function LaundryInner() {
+  const currentUser = getCurrentUser()
+  const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
+  const [mounted, setMounted] = useState(false)
+  const logoutAndRedirect = useLogoutRedirect()
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   return (
     <main className="min-h-[100svh] bg-white">
-      {/* Main page header (no back) */}
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-        <div className="mx-auto max-w-screen-sm px-2 py-3 flex items-center">
-          <div className="flex-1 text-center">
-            <div className="inline-flex items-center gap-2">
-              <Shirt className="size-4 text-teal-700" />
-              <h1 className="text-base font-semibold leading-none">{"세탁기 현황"}</h1>
-            </div>
-          </div>
-        </div>
-      </header>
+      <UserServiceHeader
+        service="laundry"
+        mounted={mounted}
+        user={currentUser}
+        isAdmin={isAdmin}
+        onLogout={() => {
+          void logoutAndRedirect()
+        }}
+      />
 
       <div className="mx-auto max-w-screen-sm px-4 py-8 pb-28">
-        <p className="text-sm text-muted-foreground">{"세탁 모듈은 곧 도입 예정입니다."}</p>
+        <ComingSoonCard
+          badge="세탁실"
+          title="세탁실 모듈 (준비 중)"
+          description="기기별 예약, 노쇼 신고, 알림 연동 기능은 QA 중입니다."
+          icon={<Shirt className="size-4" aria-hidden />}
+          note="현재는 관리자에게 예약 상황을 문의해 주세요."
+        />
       </div>
     </main>
   )

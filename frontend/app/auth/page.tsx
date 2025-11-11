@@ -5,9 +5,9 @@ import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { ArrowLeft, Sparkles } from "lucide-react"
 
-import { cn } from "@/lib/utils"
+import { Button } from "@/components/ui/button"
 import { LoginPanel } from "@/features/auth/components/login-panel"
-import { SignupPanel } from "@/features/auth/components/signup-panel"
+import { getAuthReasonMessage } from "@/features/auth/utils/messages"
 
 type Mode = "login" | "signup"
 
@@ -54,6 +54,8 @@ function AuthPortalContent() {
   const [mode, setMode] = useState<Mode>(queryMode)
 
   const redirectTo = useMemo(() => params.get("redirect") ?? "/", [params])
+  const reasonKey = params.get("reason")
+  const reasonMessage = useMemo(() => getAuthReasonMessage(reasonKey), [reasonKey])
 
   useEffect(() => {
     setMode(queryMode)
@@ -72,7 +74,7 @@ function AuthPortalContent() {
   const activeDescription =
     mode === "login"
       ? "기숙사 공용 시설 관리를 한곳에서."
-      : "DormMate 계정을 만들고 냉장고 관리를 시작하세요."
+      : "온라인 회원가입은 일시 중단되었습니다. 관리자에게 문의해 주세요."
 
   return (
     <div className="relative w-full max-w-[440px]">
@@ -102,30 +104,45 @@ function AuthPortalContent() {
             </Link>
           </header>
 
+          {reasonMessage && (
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-800">
+              {reasonMessage}
+            </div>
+          )}
+
           <div className="relative min-h-[420px]">
-            <div
-              className={cn(
-                "transition-opacity duration-200",
-                mode === "login" ? "opacity-100 relative" : "pointer-events-none absolute inset-0 opacity-0",
-              )}
-            >
-              {mode === "login" && (
-                <LoginPanel redirectTo={redirectTo} onSwitchToSignup={() => updateQuery("signup")} />
-              )}
-            </div>
-            <div
-              className={cn(
-                "transition-opacity duration-200",
-                mode === "signup" ? "opacity-100 relative" : "pointer-events-none absolute inset-0 opacity-0",
-              )}
-            >
-              {mode === "signup" && (
-                <SignupPanel redirectTo={redirectTo} onSwitchToLogin={() => updateQuery("login")} />
-              )}
-            </div>
+            {mode === "login" && <LoginPanel redirectTo={redirectTo} />}
+            {mode === "signup" && <SignupDisabledPanel onBackToLogin={() => updateQuery("login")} />}
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+type SignupDisabledPanelProps = {
+  onBackToLogin: () => void
+}
+
+function SignupDisabledPanel({ onBackToLogin }: SignupDisabledPanelProps) {
+  return (
+    <div className="flex h-full flex-col justify-between rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/70 px-6 py-8 text-center text-sm text-emerald-900">
+      <div className="space-y-3">
+        <p className="text-base font-semibold text-emerald-800">온라인 회원가입 준비 중</p>
+        <p className="text-sm leading-relaxed text-emerald-700">
+          DormMate 계정 발급은 현재 기숙사 행정실을 통해서만 처리됩니다.
+          <br />
+          관리자에게 문의해 계정을 발급받은 뒤 로그인해 주세요.
+        </p>
+      </div>
+      <Button
+        type="button"
+        variant="outline"
+        className="mt-6 w-full rounded-xl border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+        onClick={onBackToLogin}
+      >
+        로그인 화면으로 이동
+      </Button>
     </div>
   )
 }
