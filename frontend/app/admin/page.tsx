@@ -7,7 +7,10 @@ import {
   ArrowUpRight,
   BellDot,
   ClipboardList,
+  FileText,
+  ShieldCheck,
 } from "lucide-react"
+import type { LucideIcon } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -17,6 +20,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { cn } from "@/lib/utils"
 import { getCurrentUser } from "@/lib/auth"
 import { useAdminDashboard } from "@/features/admin/hooks/use-admin-dashboard"
+import type { AdminQuickAction } from "@/features/admin/types"
 
 type WatchlistItem = {
   id: string
@@ -113,6 +117,37 @@ const moduleSnapshots = [
   },
 ]
 
+const defaultQuickActions = [
+  {
+    id: "compartment",
+    title: "냉장고 칸 운영",
+    description: "냉장고 관제실에서 허용량·잠금을 조정",
+    href: "/admin/fridge",
+    icon: "clipboard",
+  },
+  {
+    id: "promote",
+    title: "층별장 임명",
+    description: "권한·계정 화면에서 승격/복귀 처리",
+    href: "/admin/users",
+    icon: "shield",
+  },
+  {
+    id: "policy",
+    title: "알림 정책 편집",
+    description: "09:00 배치, 상한, dedupe 키를 즉시 변경",
+    href: "/admin/notifications",
+    icon: "bell",
+  },
+  {
+    id: "report",
+    title: "보고서 내려받기",
+    description: "검사·알림·벌점 통합 리포트를 확인",
+    href: "/admin/audit",
+    icon: "file",
+  },
+] satisfies AdminQuickAction[]
+
 type MetricTone = "ok" | "warn" | "critical" | "medium"
 
 const toneClassMap: Record<MetricTone, string> = {
@@ -120,6 +155,13 @@ const toneClassMap: Record<MetricTone, string> = {
   warn: "text-amber-600",
   critical: "text-red-600",
   medium: "text-sky-600",
+}
+
+const quickActionIcons: Record<string, LucideIcon> = {
+  clipboard: ClipboardList,
+  shield: ShieldCheck,
+  bell: BellDot,
+  file: FileText,
 }
 
 export default function AdminPage() {
@@ -132,6 +174,7 @@ function AdminDashboard() {
 
   const timeline = data?.timeline ?? []
   const watchlistItems = defaultWatchlist
+  const quickActions = data?.quickActions ?? defaultQuickActions
 
   return (
     <>
@@ -250,6 +293,31 @@ function AdminDashboard() {
       </div>
 
       <div data-admin-slot="rail" className="space-y-6">
+        {quickActions.length > 0 && (
+          <section className="space-y-3">
+            <h2 className="text-sm font-semibold text-slate-800">빠른 작업</h2>
+            <ul className="space-y-2">
+              {quickActions.map((action) => {
+                const Icon = quickActionIcons[action.icon] ?? ArrowUpRight
+                return (
+                  <li key={action.id}>
+                    <Link
+                      href={action.href}
+                      className="flex items-center justify-between rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-left shadow-sm transition hover:border-emerald-200 hover:shadow-md"
+                    >
+                      <div className="flex flex-1 flex-col">
+                        <span className="text-sm font-semibold text-slate-900">{action.title}</span>
+                        <span className="text-xs text-slate-500">{action.description}</span>
+                      </div>
+                      <Icon className="ml-3 size-4 text-emerald-600" aria-hidden />
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </section>
+        )}
+
         <section className="space-y-3">
           <h2 className="text-sm font-semibold text-slate-800">운영 런북</h2>
           <ul className="space-y-2 text-xs text-slate-600">
