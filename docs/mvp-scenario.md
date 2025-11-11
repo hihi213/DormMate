@@ -36,7 +36,7 @@
 ## 3. 시연 흐름
 
 ### 🚀 Dormmate: 최종 시연 시나리오 (A+B)
-
+폴링을 시연을 위하여 6초로 단축했음을 말씀드리기
 #### 1단계: 데모 초기 칸 사용 + 즉시 정책 조정 [검증완료]
 > 목표: 데모 리셋 시 모든 냉장 칸의 허용량이 10으로 초기화된 상태(점유 수는 층 배정 데이터에 따라 8~10개로 달라질 수 있음)에서 거주자 등록 실패 → 관리자 증량 → 라벨 발급·수정·삭제 → 잘못된 하향 조정 차단까지 연속 확인.  
 > 핵심 API/검증: `GET /fridge/slots?view=full`, `POST /fridge/bundles`, `PATCH /fridge/bundles/{bundleId}`, `DELETE /fridge/bundles/{bundleId}`, `PATCH /admin/fridge/compartments/{id}` → `CAPACITY_EXCEEDED`, `bundle_label_sequence`, `CAPACITY_BELOW_ACTIVE`.
@@ -69,7 +69,8 @@
     *(층별장 화면에서 '검사 시작' 클릭)*
 
     "이 순간, `InspectionService`가 호출되어 냉장고 칸이 30분간 'IN_INSPECTION' 상태로 변경됩니다. 요청 본문에 `scheduleId`를 전달하면 해당 '검사 일정(`InspectionSchedule`)'과 즉시 연결되고, 30분 내 검사를 완료하지 않으면 스케줄러가 세션을 `CANCELLED` 처리해 냉장고가 무한정 잠기는 것을 방지합니다."
-
+    검사 도중 임시저장을 누르고 뒤로가기 눌르고 돌아가면 상태 임시 저장됨
+    해당 그날에 모든 검사를 다 못마쳐도 날짜를 뒤로미루면 아직 검사하지 않은 칸들만 뒤로 미루어짐
 #### 3단계: 시스템의 견고성 (어-어 패스 1)
 > 목표: 잠금 상태에서 거주자 변경 차단.  
 > 핵심 API/검증: `POST /fridge/bundles` → `ensureCompartmentNotLocked` = 423 Locked / `COMPARTMENT_LOCKED`, `COMPARTMENT_UNDER_INSPECTION`.
@@ -185,6 +186,6 @@
     > **운영 노트**  
     > "현재 access token TTL은 45초, refresh 토큰은 5분으로 운용해 사용자가 거의 즉시 `/auth/refresh`를 거치도록 강제하고 있습니다. refresh 시마다 `deviceId`를 재검증해 두 세션을 동시에 끊고, 추후에는 IP/위치 검증과 세션·하드웨어 인증을 연계해 방어를 확장할 계획입니다."
     >
-    > 데모에서 `DEVICE_MISMATCH`를 재현하려면 브라우저마다 서로 다른 `deviceId`(로컬 스토리지 `dm.auth.deviceId`)를 유지한 상태에서 한쪽의 `refreshToken`만 다른 기기에 붙여 넣고 `/auth/refresh`를 호출하면 됩니다. 토큰과 기기 ID가 묶여 있기 때문에 refresh 토큰만 탈취해도 서버가 즉시 모든 세션을 폐기합니다.
+> 데모에서 `DEVICE_MISMATCH`를 재현하려면 브라우저마다 서로 다른 `deviceId`(로컬 스토리지 `dm.device.id`)를 유지한 상태에서 한쪽의 `refreshToken`만 다른 기기에 붙여 넣고 `/auth/refresh`를 호출하면 됩니다. 토큰과 기기 ID가 묶여 있기 때문에 refresh 토큰만 탈취해도 서버가 즉시 모든 세션을 폐기합니다.
 
-브라우저 A에서 로그인한 뒤 개발자 도구 → Application → Local Storage → 해당 도메인으로 가보면 `dm.auth.tokens`와 `dm.auth.deviceId` 항목이 있습니다. refresh 토큰만 다른 기기에 붙여 저장하고 새로고침하면 서버가 `deviceId` 불일치를 감지하고 두 세션을 동시에 끊습니다.
+브라우저 A에서 로그인한 뒤 개발자 도구 → Application → Local Storage → 해당 도메인으로 가보면 `dm.auth.tokens`와 `dm.device.id` 항목이 있습니다. refresh 토큰만 다른 기기에 붙여 저장하고 새로고침하면 서버가 `deviceId` 불일치를 감지하고 두 세션을 동시에 끊습니다.

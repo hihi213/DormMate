@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, type ReactNode } from "react"
+import { useCallback, useMemo, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
 import { User } from "lucide-react"
 
@@ -40,6 +40,37 @@ export default function HomeHeader({
   contextSlot,
 }: Props) {
   const router = useRouter()
+  const residentIdentifier = useMemo(() => {
+    const roomNumberRaw = user?.roomDetails?.roomNumber?.trim()
+    const floorNo =
+      typeof user?.roomDetails?.floor === "number" ? user?.roomDetails?.floor : null
+    const personalNo =
+      typeof user?.roomDetails?.personalNo === "number" ? user?.roomDetails?.personalNo : null
+
+    let combinedRoom = roomNumberRaw ?? ""
+    if (floorNo != null && combinedRoom) {
+      combinedRoom = combinedRoom.startsWith(String(floorNo))
+        ? combinedRoom
+        : `${floorNo}${combinedRoom}`
+    } else if (floorNo != null && !combinedRoom) {
+      combinedRoom = String(floorNo)
+    }
+
+    const roomWithPerson =
+      combinedRoom && personalNo != null ? `${combinedRoom}-${personalNo}` : combinedRoom
+
+    if (roomWithPerson) {
+      return `${user?.name ?? ""} ${roomWithPerson}`.trim()
+    }
+    if (user?.room) return `${user?.name ?? ""} ${user.room}`.trim()
+    return user?.name ?? ""
+  }, [
+    user?.room,
+    user?.name,
+    user?.roomDetails?.roomNumber,
+    user?.roomDetails?.personalNo,
+    user?.roomDetails?.floor,
+  ])
 
   const navigateToLogin = useCallback(() => {
     const redirect =
@@ -56,7 +87,7 @@ export default function HomeHeader({
           {subtitle ? (
             <p className="text-xs text-muted-foreground leading-tight">{subtitle}</p>
           ) : mounted && isLoggedIn ? (
-            <p className="text-xs text-muted-foreground leading-tight">{`${user?.name ?? ""} - ${user?.room ?? ""}`}</p>
+            <p className="text-xs text-muted-foreground leading-tight">{residentIdentifier}</p>
           ) : (
             <p className="text-xs text-muted-foreground leading-tight">{"로그인이 필요합니다"}</p>
           )}

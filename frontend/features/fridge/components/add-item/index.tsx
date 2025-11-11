@@ -48,7 +48,7 @@ export default function AddItemDialog({
   slots?: Slot[]
   currentSlotId?: string
 }) {
-  const { addBundle, bundles } = useFridge()
+  const { addBundle, bundles, refreshSlots } = useFridge()
   const { toast } = useToast()
   const currentUser = getCurrentUser()
   const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
@@ -129,6 +129,13 @@ export default function AddItemDialog({
   const [showTopShadow, setShowTopShadow] = useState(false)
   const [showBottomShadow, setShowBottomShadow] = useState(false)
   const previousEntryCountRef = useRef(entries.length)
+  const handleSlotChange = useCallback(
+    (slotId: string) => {
+      setMetadataSlot(slotId)
+      void refreshSlots()
+    },
+    [setMetadataSlot, refreshSlots],
+  )
 
   const updateScrollIndicators = useCallback(() => {
     const el = listRef.current
@@ -420,7 +427,7 @@ export default function AddItemDialog({
                     slotId={metadataSlot}
                     packName={packName}
                     packMemo={packMemo}
-                    onChangeSlot={setMetadataSlot}
+                    onChangeSlot={handleSlotChange}
                     onChangeName={setPackName}
                     onChangeMemo={setPackMemo}
                     slotCapacity={slotCapacity}
@@ -499,46 +506,35 @@ function MetadataFields({
 }) {
   const capacityKnown = slotCapacity != null
   const remainingText = remainingCapacity != null ? remainingCapacity : 0
+  const capacityBadge = slotId && isSlotFull ? (
+    <span
+      className={cn(
+        "inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[11px] font-semibold",
+        "border-rose-300 bg-rose-50 text-rose-700",
+      )}
+      role="status"
+      aria-live="polite"
+    >
+      <AlertTriangle className="h-3 w-3" aria-hidden />
+      <span className="tracking-tight">용량 초과</span>
+    </span>
+  ) : null
 
   return (
     <div className="space-y-4 pb-4">
-      <div className="space-y-2">
-        <p className="text-sm font-medium text-gray-700">보관 칸</p>
-        <SlotSelector
-          value={slotId}
-          onChange={onChangeSlot}
-          slots={slots}
-          isSelectable={isSlotSelectable}
-          getDisabledDescription={describeDisabledSlot}
-        />
-        {capacityKnown && (
-          <div
-            className={cn(
-              "mt-2 rounded-md border px-3 py-2",
-              isSlotFull
-                ? "border-rose-300 bg-rose-50 text-rose-800"
-                : "border-emerald-200 bg-emerald-50 text-emerald-800",
-            )}
-            role="status"
-            aria-live="polite"
-          >
-            <div className="flex items-center gap-2 text-sm font-semibold">
-              {isSlotFull ? (
-                <AlertTriangle className="h-4 w-4" aria-hidden />
-              ) : (
-                <Info className="h-4 w-4" aria-hidden />
-              )}
-              <span>{isSlotFull ? "용량 초과" : "남은 용량"}</span>
-            </div>
-            <p className="mt-1 text-sm leading-relaxed">
-              {slotLabel} 칸은 최대 <strong>{slotCapacity}</strong>개 포장을 보관할 수 있으며 현재{" "}
-              <strong>{currentBundleCount}</strong>개가 등록돼 있습니다.
-              {isSlotFull
-                ? " 다른 칸을 선택해 주세요."
-                : ` 추가로 ${remainingText}개 묶음까지 등록할 수 있습니다.`}
-            </p>
-          </div>
-        )}
+      <div className="space-y-1 sm:space-y-0 sm:flex sm:flex-wrap sm:items-center sm:gap-3">
+        <p className="text-sm font-medium text-gray-700 sm:w-auto">보관 칸</p>
+        <div className="w-full sm:flex-1 sm:min-w-[220px]">
+          <SlotSelector
+            value={slotId}
+            onChange={onChangeSlot}
+            slots={slots}
+            isSelectable={isSlotSelectable}
+            getDisabledDescription={describeDisabledSlot}
+            className="w-full"
+            statusBadge={capacityBadge}
+          />
+        </div>
       </div>
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-700">포장 이름</p>
@@ -546,7 +542,13 @@ function MetadataFields({
       </div>
       <div className="space-y-2">
         <p className="text-sm font-medium text-gray-700">메모</p>
-        <Textarea value={packMemo} onChange={(e) => onChangeMemo(e.target.value)} placeholder="예: 냉장실 앞쪽" rows={3} />
+        <Textarea
+          value={packMemo}
+          onChange={(e) => onChangeMemo(e.target.value)}
+          placeholder="예: 냉장실 앞쪽"
+          rows={1}
+          className="resize-none min-h-[56px] sm:min-h-[64px]"
+        />
         <small className="text-xs text-muted-foreground">메모는 작성자 본인만 확인할 수 있는 개인 기록입니다.</small>
       </div>
     </div>

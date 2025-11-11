@@ -75,6 +75,14 @@ public class InspectionController {
         return ResponseEntity.noContent().build();
     }
 
+    @DeleteMapping("/{sessionId}/actions/{actionId}")
+    public ResponseEntity<InspectionSessionResponse> deleteAction(
+            @PathVariable("sessionId") UUID sessionId,
+            @PathVariable("actionId") Long actionId
+    ) {
+        return ResponseEntity.ok(inspectionService.revertAction(sessionId, actionId));
+    }
+
     @PostMapping("/{sessionId}/actions")
     public ResponseEntity<InspectionSessionResponse> recordActions(
             @PathVariable("sessionId") UUID sessionId,

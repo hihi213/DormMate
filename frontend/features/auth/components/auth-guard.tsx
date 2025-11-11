@@ -39,7 +39,10 @@ export default function AuthGuard({ children, fallback }: AuthGuardProps) {
       return <>{fallback}</>
     }
 
-    const redirectTo = typeof window !== "undefined" ? window.location.pathname : "/"
+    const redirectTo =
+      typeof window !== "undefined"
+        ? `${window.location.pathname}${window.location.search ?? ""}${window.location.hash ?? ""}`
+        : "/"
 
     return (
       <main className="min-h-[100svh] bg-white">

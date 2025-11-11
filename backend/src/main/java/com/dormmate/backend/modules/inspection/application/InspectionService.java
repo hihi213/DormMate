@@ -430,6 +430,35 @@ public class InspectionService {
         return mapSession(saved, currentUser);
     }
 
+    public InspectionSessionResponse revertAction(UUID sessionId, Long actionId) {
+        InspectionSession session = inspectionSessionRepository.findById(sessionId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "SESSION_NOT_FOUND"));
+        ensureManagerRole();
+        if (session.getStatus() != InspectionStatus.IN_PROGRESS) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "SESSION_NOT_ACTIVE");
+        }
+
+        InspectionAction action = session.getActions().stream()
+                .filter(candidate -> candidate.getId() != null && candidate.getId().equals(actionId))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "ACTION_NOT_FOUND"));
+
+        if (action.getActionType() == InspectionActionType.DISPOSE_EXPIRED) {
+            for (InspectionActionItem item : action.getItems()) {
+                FridgeItem fridgeItem = item.getFridgeItem();
+                if (fridgeItem != null) {
+                    fridgeItem.setStatus(FridgeItemStatus.ACTIVE);
+                    fridgeItem.setDeletedAt(null);
+                    fridgeItemRepository.save(fridgeItem);
+                }
+            }
+        }
+
+        session.getActions().remove(action);
+        InspectionSession saved = inspectionSessionRepository.save(session);
+        return mapSession(saved, loadCurrentUser());
+    }
+
     public InspectionSessionResponse updateSession(UUID sessionId, UpdateInspectionSessionRequest request) {
         ensureAdminRole();
         if (request == null) {

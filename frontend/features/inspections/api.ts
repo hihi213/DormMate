@@ -213,6 +213,19 @@ export async function recordInspectionActions(
   return mapInspectionSessionDto(data)
 }
 
+export async function deleteInspectionAction(sessionId: string, actionId: number): Promise<InspectionSession> {
+  const { data, error } = await safeApiCall<InspectionSessionDto>(
+    `/fridge/inspections/${sessionId}/actions/${actionId}`,
+    {
+      method: "DELETE",
+    },
+  )
+  if (error || !data) {
+    throw new Error(error?.message ?? "검사 조치를 되돌리지 못했습니다.")
+  }
+  return mapInspectionSessionDto(data)
+}
+
 export async function submitInspection(sessionId: string, payload: InspectionSubmitPayload): Promise<InspectionSession> {
   const { data, error } = await safeApiCall<InspectionSessionDto>(
     `/fridge/inspections/${sessionId}/submit`,

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -18,17 +18,20 @@ import { ExpiryInput } from "@/components/shared/expiry-input"
 import { formatStickerLabel } from "@/features/fridge/utils/labels"
 import { formatShortDate } from "@/lib/date-utils"
 import { cn } from "@/lib/utils"
+import { WARNING_EXPIRY_DAYS } from "@/features/fridge/components/add-item/constants"
 
 export default function BundleDetailSheet({
   open = false,
   onOpenChange = () => {},
   bundleId = "",
   initialEdit = false,
+  initialUnitId = null,
 }: {
   open?: boolean
   onOpenChange?: (v: boolean) => void
   bundleId?: string
   initialEdit?: boolean
+  initialUnitId?: string | null
 }) {
   const {
     items,
@@ -75,7 +78,10 @@ export default function BundleDetailSheet({
       ? `${ownerInfo} 물품입니다. 메모는 비공개예요.`
       : "다른 사람 물품이라 가려졌어요~"
   const canEditBundle = isOwner && slotEditable
-  const totalItemCount = group.length
+  const totalItemCount = useMemo(
+    () => group.reduce((sum, item) => sum + (item.quantity ?? 1), 0),
+    [group],
+  )
   const totalCountLabel = useMemo(() => `총 ${totalItemCount.toLocaleString()}개`, [totalItemCount])
   const identificationLabel = useMemo(() => {
     if (bundleMeta?.labelDisplay) return bundleMeta.labelDisplay
@@ -103,6 +109,8 @@ export default function BundleDetailSheet({
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [editingUnitId, setEditingUnitId] = useState<string | null>(null)
   const [itemDraft, setItemDraft] = useState<{ name: string; expiryDate: string; quantity: number } | null>(null)
+  const [highlightUnitId, setHighlightUnitId] = useState<string | null>(null)
+  const highlightRef = useRef<HTMLDivElement | null>(null)
 
 useEffect(() => {
   if (!infoEditing) {
@@ -117,19 +125,23 @@ useEffect(() => {
 }, [representativeMemo, infoEditing])
 
 useEffect(() => {
-  if (initialEdit && sorted.length > 0) {
-    setEditingUnitId(sorted[0].unitId)
-    const initialQuantity = sorted[0].quantity ?? 1
+  if (initialEdit) {
+    if (sorted.length === 0) return
+    const target = initialUnitId
+      ? sorted.find((unit) => unit.unitId === initialUnitId) ?? sorted[0]
+      : sorted[0]
+    const initialQuantity = target.quantity ?? 1
+    setEditingUnitId(target.unitId)
     setItemDraft({
-      name: splitDetail(sorted[0].name, bundleName)[0],
-      expiryDate: sorted[0].expiryDate,
+      name: splitDetail(target.name, bundleName)[0],
+      expiryDate: target.expiryDate,
       quantity: initialQuantity > 0 ? initialQuantity : 1,
     })
-  } else if (!initialEdit) {
+  } else {
     setEditingUnitId(null)
     setItemDraft(null)
   }
-}, [initialEdit, sorted, bundleName])
+}, [initialEdit, initialUnitId, sorted, bundleName])
 
 useEffect(() => {
   if (!open) {
@@ -137,8 +149,25 @@ useEffect(() => {
     setInfoSaving(false)
     setEditingUnitId(null)
     setItemDraft(null)
+    setHighlightUnitId(null)
+    highlightRef.current = null
   }
 }, [open])
+
+useEffect(() => {
+  if (!open) return
+  if (initialUnitId) {
+    setHighlightUnitId(initialUnitId)
+  } else {
+    setHighlightUnitId(null)
+    highlightRef.current = null
+  }
+}, [open, initialUnitId])
+
+useEffect(() => {
+  if (!open || !highlightRef.current) return
+  highlightRef.current.scrollIntoView({ block: "center", behavior: "smooth" })
+}, [open, highlightUnitId])
 
 const startInfoEdit = () => {
   if (!slotEditable) {
@@ -355,16 +384,20 @@ const renderItemCard = (
     it.displayLabel ??
     `${it.bundleLabelDisplay ?? formatStickerLabel(it.slotIndex, it.labelNumber)}-${String(it.seqNo).padStart(2, "0")}`
   const showItemMemo = isOwner && it.memo && it.memo !== representativeMemo
+  const isHighlighted = highlightUnitId === it.unitId
   const wrapperClass = cn(
     "space-y-3 border",
     variant === "single"
       ? "rounded-xl border-emerald-200 bg-emerald-50/50 p-4 shadow-sm"
-      : "rounded-md p-3",
+      : cn(
+          "rounded-md p-3",
+          isHighlighted && "border-emerald-300 bg-emerald-50/80 shadow-sm",
+        ),
   )
   const headerClass = cn("font-semibold truncate", variant === "single" ? "text-lg" : "text-base")
 
   return (
-    <div key={it.unitId} className={wrapperClass}>
+    <div key={it.unitId} ref={isHighlighted ? highlightRef : undefined} className={wrapperClass}>
       <div className={cn("flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between", variant === "single" && "gap-4")}>
         <div className="min-w-0 flex-1 space-y-2">
           {isEditing ? (
@@ -386,24 +419,21 @@ const renderItemCard = (
                   }
                 />
               </div>
-              <div>
-                <Label className="text-xs text-muted-foreground">{"유통기한"}</Label>
-                <ExpiryInput
-                  id={`bundle-edit-expiry-${it.unitId}`}
-                  label={undefined}
-                  value={draftExpiry}
-                  onChange={(next) =>
-                    setItemDraft((prev) =>
-                      prev
-                        ? { ...prev, expiryDate: next }
-                        : { name: draftName, expiryDate: next, quantity: draftQuantity },
-                    )
-                  }
-                  presets={[]}
-                  warningThresholdDays={3}
-                  showStatusBadge={false}
-                />
-              </div>
+              <ExpiryInput
+                id={`bundle-edit-expiry-${it.unitId}`}
+                value={draftExpiry}
+                onChange={(next) =>
+                  setItemDraft((prev) =>
+                    prev
+                      ? { ...prev, expiryDate: next }
+                      : { name: draftName, expiryDate: next, quantity: draftQuantity },
+                  )
+                }
+                warningThresholdDays={WARNING_EXPIRY_DAYS}
+                emphasizeToday
+                className="max-w-sm"
+                inputClassName="w-32"
+              />
               <div>
                 <Label className="text-xs text-muted-foreground">{"수량"}</Label>
                 <Input
@@ -445,6 +475,9 @@ const renderItemCard = (
             </div>
           )}
         </div>
+        {isHighlighted && !isEditing && (
+          <p className="text-xs text-emerald-700">{"선택된 물품"}</p>
+        )}
         {canEditBundle && (
           <div className="shrink-0 flex items-center gap-1 self-start">
             {isEditing ? (
@@ -628,11 +661,6 @@ const renderItemCard = (
                 <CardContent className="py-3 space-y-3">
                   {sorted.length === 0 ? (
                     <p className="text-sm text-muted-foreground">{"등록된 물품이 없습니다."}</p>
-                  ) : isSingleItem ? (
-                    <div className="space-y-3">
-                      <p className="text-xs text-muted-foreground">{"이 묶음에는 1개의 물품이 있습니다."}</p>
-                      {renderItemCard(sorted[0], "single")}
-                    </div>
                   ) : (
                     sorted.map((it) => renderItemCard(it))
                   )}

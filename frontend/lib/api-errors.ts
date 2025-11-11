@@ -140,10 +140,6 @@ export const defaultCodeDictionary: Record<string, ApiErrorTemplate> = {
     code: "NOTIFICATION_NOT_FOUND",
     message: "알림을 찾을 수 없습니다.",
   },
-  NOTIFICATION_EXPIRED: {
-    code: "NOTIFICATION_EXPIRED",
-    message: "이미 만료된 알림입니다.",
-  },
   DEVICE_MISMATCH: {
     code: "DEVICE_MISMATCH",
     message: "등록된 기기 정보와 일치하지 않습니다. 다시 로그인해 주세요.",

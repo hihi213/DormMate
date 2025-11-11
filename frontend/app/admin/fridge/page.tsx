@@ -1404,10 +1404,11 @@ export default function AdminFridgePage() {
         target.displayName ??
         `${target.floorNo}F`
 
-      toast({
-        title: "칸 설정이 저장되었습니다",
-        description: `${resolvedLabel} 설정을 갱신했습니다.`,
-      })
+    toast({
+      title: "칸 설정이 저장되었습니다",
+      description: `${resolvedLabel} 설정을 갱신했습니다.`,
+      duration: 2500,
+    })
       resetSlotConfigDialog()
     } catch (error) {
       toast({

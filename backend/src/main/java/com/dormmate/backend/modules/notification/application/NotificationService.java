@@ -121,14 +121,11 @@ public class NotificationService {
         Notification notification = notificationRepository.findByIdAndUserId(notificationId, userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "NOTIFICATION_NOT_FOUND"));
 
-        if (notification.getState() == NotificationState.EXPIRED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "NOTIFICATION_EXPIRED");
-        }
-
         if (notification.getState() == NotificationState.UNREAD) {
             notification.markRead(OffsetDateTime.now(clock));
             notificationRepository.save(notification);
         }
+        // 이미 EXPIRED 혹은 READ 상태라면 아무 동작 없이 성공으로 간주해 idempotent 하게 처리한다.
     }
 
     public int markAllNotificationsRead(UUID userId) {

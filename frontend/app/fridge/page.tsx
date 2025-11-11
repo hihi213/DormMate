@@ -16,14 +16,12 @@ import { formatKoreanDate } from "./utils-fridge-page"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import { useToast } from "@/hooks/use-toast"
 import { fetchNextInspectionSchedule, fetchInspectionSchedules } from "@/features/inspections/api"
-import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
 import type { InspectionSchedule } from "@/features/inspections/types"
 import type { Slot } from "@/features/fridge/types"
 import UserServiceHeader from "@/app/_components/home/user-service-header"
 import { useLogoutRedirect } from "@/hooks/use-logout-redirect"
 
 // Lazy load heavier bottom sheets
-const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
 const BundleDetailSheet = dynamic(() => import("@/features/fridge/components/bundle-detail-sheet"), { ssr: false })
 
 export default function FridgePage() {
@@ -36,7 +34,7 @@ export default function FridgePage() {
 }
 
 function FridgeInner() {
-  const { items, slots, bundles, initialLoadError } = useFridge()
+  const { items, slots, initialLoadError } = useFridge()
   const { toast } = useToast()
   const router = useRouter()
   const pathname = usePathname()
@@ -49,40 +47,16 @@ function FridgeInner() {
   const [selectedSlotId, setSelectedSlotId] = useState<string>("")
   const [addOpen, setAddOpen] = useState(false)
   const [nextScheduleText, setNextScheduleText] = useState<string>("")
-  const [itemSheet, setItemSheet] = useState<{ open: boolean; id: string; edit?: boolean }>({
+  const [bundleSheet, setBundleSheet] = useState<{ open: boolean; id: string; edit?: boolean; unitId?: string | null }>({
     open: false,
     id: "",
     edit: false,
-  })
-  const [bundleSheet, setBundleSheet] = useState<{ open: boolean; id: string; edit?: boolean }>({
-    open: false,
-    id: "",
-    edit: false,
+    unitId: null,
   })
   const uid = getCurrentUserId()
   const logoutAndRedirect = useLogoutRedirect()
 
   const restrictSlotViewToOwnership = !isAdmin
-
-  useEffect(() => {
-    const itemParam = searchParams.get("item")
-    const editParam = searchParams.get("itemEdit") === "1"
-    if (itemParam) {
-      setItemSheet({ open: true, id: itemParam, edit: editParam })
-    } else {
-      setItemSheet((prev) => (prev.open ? { ...prev, open: false, id: prev.id } : prev))
-    }
-  }, [searchParams])
-
-  useEffect(() => {
-    const bundleParam = searchParams.get("bundle")
-    const editParam = searchParams.get("bundleEdit") === "1"
-    if (bundleParam) {
-      setBundleSheet({ open: true, id: bundleParam, edit: editParam })
-    } else {
-      setBundleSheet((prev) => (prev.open ? { ...prev, open: false, id: prev.id } : prev))
-    }
-  }, [searchParams])
 
   const replaceQuery = useCallback(
     (mutation: (params: URLSearchParams) => void) => {
@@ -99,6 +73,42 @@ function FridgeInner() {
     [pathname, router, searchParams],
   )
 
+  useEffect(() => {
+    const bundleParam = searchParams.get("bundle")
+    const editParam = searchParams.get("bundleEdit") === "1"
+    const bundleUnitParam = searchParams.get("bundleUnit")
+    const itemParam = searchParams.get("item")
+    const itemEditParam = searchParams.get("itemEdit") === "1"
+
+    if (itemParam) {
+      const target =
+        items.find((candidate) => candidate.id === itemParam) ||
+        items.find((candidate) => candidate.unitId === itemParam)
+      if (!target) {
+        return
+      }
+      setBundleSheet({ open: true, id: target.bundleId, edit: itemEditParam, unitId: target.unitId })
+      replaceQuery((params) => {
+        params.set("bundle", target.bundleId)
+        if (itemEditParam) {
+          params.set("bundleEdit", "1")
+        } else {
+          params.delete("bundleEdit")
+        }
+        params.set("bundleUnit", target.unitId)
+        params.delete("item")
+        params.delete("itemEdit")
+      })
+      return
+    }
+
+    if (bundleParam) {
+      setBundleSheet({ open: true, id: bundleParam, edit: editParam, unitId: bundleUnitParam })
+    } else {
+      setBundleSheet((prev) => (prev.open ? { ...prev, open: false } : prev))
+    }
+  }, [items, replaceQuery, searchParams])
+
   const clearItemQuery = useCallback(() => {
     replaceQuery((params) => {
       params.delete("item")
@@ -110,6 +120,7 @@ function FridgeInner() {
     replaceQuery((params) => {
       params.delete("bundle")
       params.delete("bundleEdit")
+      params.delete("bundleUnit")
     })
   }, [replaceQuery])
 
@@ -132,19 +143,34 @@ function FridgeInner() {
 
     const formatScheduleSummary = (schedule: InspectionSchedule | null): string => {
       if (!schedule) return restrictSlotViewToOwnership ? "내 칸 일정 없음" : "예정 없음"
-      const dateText = formatKoreanDate(new Date(schedule.scheduledAt))
-      const linkedSlot = schedule.fridgeCompartmentId
-        ? slots.find((slot) => slot.slotId === schedule.fridgeCompartmentId)
-        : null
-      let slotText: string | null = null
-      if (linkedSlot) {
-        const slotLabel = formatSlotDisplayName(linkedSlot)
-        slotText = linkedSlot.floorNo ? `${linkedSlot.floorNo}F ${slotLabel}` : slotLabel
-      } else if (schedule.slotLetter) {
-        const floorPrefix = schedule.floorNo ? `${schedule.floorNo}F ` : ""
-        slotText = `${floorPrefix}칸 ${schedule.slotLetter}`
+      return formatKoreanDate(new Date(schedule.scheduledAt))
+    }
+
+    const matchesResidentSlot = (
+      schedule: InspectionSchedule,
+      permittedIdsLocal: string[],
+    ): boolean => {
+      if (schedule.fridgeCompartmentId && permittedIdsLocal.includes(schedule.fridgeCompartmentId)) {
+        return true
       }
-      return slotText ? `${dateText} · ${slotText}` : dateText
+      const byIndex =
+        typeof schedule.slotIndex === "number"
+          ? slots.find(
+              (slot) =>
+                slot.slotIndex === schedule.slotIndex &&
+                (typeof schedule.floorNo === "number" ? slot.floorNo === schedule.floorNo : true),
+            )
+          : null
+      if (byIndex) return true
+      if (schedule.slotLetter) {
+        const byLetter = slots.find(
+          (slot) =>
+            slot.slotLetter === schedule.slotLetter &&
+            (typeof schedule.floorNo === "number" ? slot.floorNo === schedule.floorNo : true),
+        )
+        if (byLetter) return true
+      }
+      return false
     }
 
     const loadResidentSchedule = async () => {
@@ -161,10 +187,7 @@ function FridgeInner() {
         })
         if (cancelled) return
         const relevant = schedules
-          .filter(
-            (schedule) =>
-              schedule.fridgeCompartmentId && permittedIds.includes(schedule.fridgeCompartmentId),
-          )
+          .filter((schedule) => matchesResidentSlot(schedule, permittedIds))
           .sort(
             (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
           )
@@ -275,23 +298,9 @@ function FridgeInner() {
   }, [selectedSlot])
 
   // Stable handlers
-  const handleOpenItem = useCallback(
-    (id: string, opts?: { edit?: boolean }) => {
-      setItemSheet({ open: true, id, edit: !!opts?.edit })
-      replaceQuery((params) => {
-        params.set("item", id)
-        if (opts?.edit) {
-          params.set("itemEdit", "1")
-        } else {
-          params.delete("itemEdit")
-        }
-      })
-    },
-    [replaceQuery],
-  )
   const handleOpenBundle = useCallback(
-    (bid: string, opts?: { edit?: boolean }) => {
-      setBundleSheet({ open: true, id: bid, edit: !!opts?.edit })
+    (bid: string, opts?: { edit?: boolean; unitId?: string }) => {
+      setBundleSheet({ open: true, id: bid, edit: !!opts?.edit, unitId: opts?.unitId ?? null })
       replaceQuery((params) => {
         params.set("bundle", bid)
         if (opts?.edit) {
@@ -299,6 +308,13 @@ function FridgeInner() {
         } else {
           params.delete("bundleEdit")
         }
+        if (opts?.unitId) {
+          params.set("bundleUnit", opts.unitId)
+        } else {
+          params.delete("bundleUnit")
+        }
+        params.delete("item")
+        params.delete("itemEdit")
       })
     },
     [replaceQuery],
@@ -355,7 +371,7 @@ function FridgeInner() {
         )}
         <div>
           <div className="rounded-md border bg-slate-50 px-3 py-2.5 text-sm text-slate-700 flex items-center gap-2">
-            <span className="font-medium">{"다음 점검일"}</span>
+            <span className="font-medium">{"다음 점검"}</span>
             <span className="text-slate-900 font-medium">{nextScheduleText}</span>
             <a
               href="/fridge/inspections"
@@ -404,7 +420,7 @@ function FridgeInner() {
               </CardContent>
             </Card>
           ) : (
-            <ItemsList items={filtered} onOpenItem={handleOpenItem} onOpenBundle={handleOpenBundle} />
+            <ItemsList items={filtered} onOpenBundle={handleOpenBundle} />
           )}
         </section>
       </div>
@@ -412,27 +428,18 @@ function FridgeInner() {
       <AddItemDialog open={addOpen} onOpenChange={setAddOpen} slots={slots} currentSlotId={selectedSlotId} />
 
       {/* Bottom sheets for quick detail (lazy-loaded) */}
-      <ItemDetailSheet
-        open={itemSheet.open}
-        onOpenChange={(v) => {
-          setItemSheet((s) => ({ ...s, open: v }))
-          if (!v) {
-            clearItemQuery()
-          }
-        }}
-        itemId={itemSheet.id}
-        initialEdit={!!itemSheet.edit}
-      />
       <BundleDetailSheet
         open={bundleSheet.open}
         onOpenChange={(v) => {
-          setBundleSheet((s) => ({ ...s, open: v }))
+          setBundleSheet((s) => ({ ...s, open: v, unitId: v ? s.unitId : null, edit: v ? s.edit : false }))
           if (!v) {
             clearBundleQuery()
+            clearItemQuery()
           }
         }}
         bundleId={bundleSheet.id}
         initialEdit={!!bundleSheet.edit}
+        initialUnitId={bundleSheet.unitId ?? null}
       />
     </main>
   )

@@ -129,6 +129,31 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/InspectionSessionResponse'
+  '/fridge/inspections/{sessionId}/actions/{actionId}':
+    delete:
+      tags:
+        - inspection-controller
+      operationId: deleteAction
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: actionId
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/InspectionSessionResponse'
   /fridge/inspection-schedules:
     get:
       tags:

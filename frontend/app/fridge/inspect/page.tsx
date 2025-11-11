@@ -2,18 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import {
-  ClipboardCheck,
-  Copy,
-  Filter,
-  Loader2,
-  Search,
-  Tag,
-  Trash2,
-  X,
-  Check,
-  RotateCcw,
-} from "lucide-react"
+import { ClipboardCheck, Filter, Loader2, Search, Tag, Trash2, X, Check, RotateCcw } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -33,6 +22,7 @@ import {
   fetchInspectionSlots,
   recordInspectionActions,
   submitInspection,
+  deleteInspectionAction,
 } from "@/features/inspections/api"
 import { getCurrentUser } from "@/lib/auth"
 import { daysLeft, ddayLabel, formatShortDate } from "@/lib/date-utils"
@@ -44,6 +34,7 @@ type ResultEntry = {
   id: string
   time: number
   action: InspectionAction
+  actionRecordId?: number | null
   itemId?: string
   bundleId?: string
   bundleLabel?: string
@@ -560,9 +551,11 @@ function InspectInner() {
       const correlationId = newAction?.correlationId ?? null
       const penaltyCount = newAction?.penalties?.length ?? 0
       const recordedAt = newAction?.recordedAt
+      const actionRecordId = newAction?.actionId ?? null
       if (payload.item) {
         addResult({
           action: payload.action,
+          actionRecordId,
           itemId: payload.item.unitId,
           bundleId: payload.item.bundleId,
           bundleLabel: payload.item.bundleLabelDisplay ?? formatStickerLabel(payload.item.slotIndex, payload.item.labelNumber),
@@ -573,6 +566,7 @@ function InspectInner() {
           correlationId,
           penaltyCount,
           recordedAt,
+          actionRecordId,
         })
       } else {
         addResult({
@@ -609,6 +603,39 @@ function InspectInner() {
     setStickerDialogOpen(false)
   }
 
+  const handleRestartEntry = useCallback(
+    async (entry: ResultEntry) => {
+      if (!session) return
+      if (!entry.actionRecordId) {
+        toast({
+          title: "되돌릴 수 없습니다.",
+          description: "삭제할 조치 정보를 찾지 못했습니다.",
+          variant: "destructive",
+        })
+        return
+      }
+      try {
+        const response = await deleteInspectionAction(session.sessionId, entry.actionRecordId)
+        setSession(response)
+        setResults((prev) => prev.filter((candidate) => candidate.id !== entry.id))
+        toast({
+          title: entry.itemId ? "검사 결과를 되돌렸습니다." : "조치가 삭제되었습니다.",
+          description: entry.name ?? ACTION_LABEL[entry.action],
+        })
+        if (entry.itemId) {
+          setTab("before")
+        }
+      } catch (error) {
+        toast({
+          title: "되돌리기에 실패했습니다.",
+          description: error instanceof Error ? error.message : "잠시 후 다시 시도해 주세요.",
+          variant: "destructive",
+        })
+      }
+    },
+    [session, toast],
+  )
+
   const summaryMetrics = useMemo(() => {
     const summaryList = session?.summary ?? []
     const findCount = (action: InspectionAction): number =>
@@ -642,26 +669,6 @@ function InspectInner() {
       : summaryMetrics.bundleDelta < 0
         ? "text-emerald-700"
         : "text-slate-700"
-
-  const copyCorrelationId = useCallback(
-    async (value: string) => {
-      try {
-        await navigator.clipboard.writeText(value)
-        toast({
-          title: "Correlation ID를 복사했습니다.",
-          description: value,
-        })
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "알 수 없는 오류"
-        toast({
-          title: "복사에 실패했습니다.",
-          description: message,
-          variant: "destructive",
-        })
-      }
-    },
-    [toast],
-  )
 
   const finalizeInspection = async () => {
     if (!session) return
@@ -894,19 +901,6 @@ function InspectInner() {
                     {summaryFromServer.reduce((sum, entry) => sum + entry.count, 0)}건
                   </Badge>
                 </CardTitle>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setTab("before")
-                    if (typeof window !== "undefined") {
-                      window.scrollTo({ top: 0, behavior: "smooth" })
-                    }
-                  }}
-                >
-                  {"검사 취소"}
-                </Button>
               </div>
             </CardHeader>
             <CardContent className="space-y-3">
@@ -957,7 +951,7 @@ function InspectInner() {
                             key={entry.id}
                             entry={entry}
                             compact
-                            onCopyCorrelation={copyCorrelationId}
+                            onRestart={entry.actionRecordId ? handleRestartEntry : undefined}
                           />
                         ))}
                       </div>
@@ -967,7 +961,7 @@ function InspectInner() {
                     <ResultEntryView
                       key={entry.id}
                       entry={entry}
-                      onCopyCorrelation={copyCorrelationId}
+                      onRestart={entry.actionRecordId ? handleRestartEntry : undefined}
                     />
                   ))}
                 </div>
@@ -1002,22 +996,6 @@ function InspectInner() {
                               </span>
                               <span className="font-medium text-slate-900">{recordedLabel}</span>
                             </div>
-                            {action.correlationId && (
-                              <div className="inline-flex items-center gap-2 text-[11px] text-slate-500">
-                                <span className="font-medium text-slate-600">Correlation</span>
-                                <code className="rounded bg-slate-100 px-2 py-[2px] text-[11px] text-slate-700">
-                                  {action.correlationId}
-                                </code>
-                                <button
-                                  type="button"
-                                  onClick={() => void copyCorrelationId(action.correlationId!)}
-                                  className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-                                >
-                                  <Copy className="size-3" aria-hidden />
-                                  <span className="sr-only">Correlation ID 복사</span>
-                                </button>
-                              </div>
-                            )}
                           </div>
                           {action.note && (
                             <p className="mt-2 text-[13px] text-slate-700 whitespace-pre-wrap">{action.note}</p>
@@ -1142,11 +1120,16 @@ function InspectInner() {
                 {"기록된 조치가 없습니다. 그래도 제출하시겠습니까?"}
               </p>
             )}
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+              {remainingItems > 0 && (
+                <p className="text-xs text-rose-600">
+                  {"검사하지 않은 물품이 남아 있어 제출할 수 없습니다."}
+                </p>
+              )}
               <Button variant="outline" onClick={() => setSubmitDialogOpen(false)} disabled={submitting}>
                 {"돌아가기"}
               </Button>
-              <Button onClick={() => void finalizeInspection()} disabled={submitting}>
+              <Button onClick={() => void finalizeInspection()} disabled={submitting || remainingItems > 0}>
                 {submitting ? <Loader2 className="mr-1 size-4 animate-spin" aria-hidden /> : <Check className="mr-1 size-4" />}
                 {"제출"}
               </Button>
@@ -1281,11 +1264,11 @@ function InspectionItemCard({
 function ResultEntryView({
   entry,
   compact = false,
-  onCopyCorrelation,
+  onRestart,
 }: {
   entry: ResultEntry
   compact?: boolean
-  onCopyCorrelation?: (value: string) => void
+  onRestart?: (entry: ResultEntry) => void
 }) {
   const actionStyle = ACTION_ICON_COLOR[entry.action]
   const recordedDate = entry.recordedAt ? new Date(entry.recordedAt) : new Date(entry.time)
@@ -1295,19 +1278,21 @@ function ResultEntryView({
     minute: "2-digit",
   })}`
 
-  const handleCopy = () => {
-    if (entry.correlationId && onCopyCorrelation) {
-      void onCopyCorrelation(entry.correlationId)
-    }
-  }
-
   return (
-    <div
-      className={`rounded-md border ${compact ? "px-3 py-2" : "px-3 py-3"} text-sm`}
-      role="listitem"
-    >
-      <div className="flex items-center justify-between gap-2">
-        <div className="min-w-0">
+    <div className={`rounded-md border ${compact ? "px-3 py-2" : "px-3 py-3"} text-sm`} role="listitem">
+      <div className="flex items-start gap-3">
+        {onRestart ? (
+          <Button
+            variant={entry.itemId ? "outline" : "destructive"}
+            size="icon"
+            className={entry.itemId ? "h-8 w-8 shrink-0 border-amber-300 text-amber-600" : "h-8 w-8 shrink-0"}
+            aria-label={entry.itemId ? "검사 전에 상태로 되돌리기" : "조치를 삭제"}
+            onClick={() => onRestart(entry)}
+          >
+            {entry.itemId ? <RotateCcw className="size-4" /> : <Trash2 className="size-4" />}
+          </Button>
+        ) : null}
+        <div className="min-w-0 flex-1">
           <div className="font-semibold text-gray-900 truncate">
             {entry.name ?? ACTION_LABEL[entry.action]}
           </div>
@@ -1315,6 +1300,10 @@ function ResultEntryView({
             {recordedLabel}
             {entry.bundleLabel && !compact ? ` · ${entry.bundleLabel}` : ""}
           </div>
+          {entry.note && <p className="mt-1 text-xs text-muted-foreground">{entry.note}</p>}
+          {typeof entry.penaltyCount === "number" && entry.penaltyCount > 0 && (
+            <p className="mt-1 text-xs text-rose-600">{`벌점 ${entry.penaltyCount}건`}</p>
+          )}
         </div>
         <span
           className={`inline-flex shrink-0 items-center rounded-md px-2 py-1 text-xs font-medium ${actionStyle.bg} ${actionStyle.text}`}
@@ -1322,28 +1311,6 @@ function ResultEntryView({
           {ACTION_LABEL[entry.action]}
         </span>
       </div>
-      {entry.note && <p className="mt-1 text-xs text-muted-foreground">{entry.note}</p>}
-      {typeof entry.penaltyCount === "number" && entry.penaltyCount > 0 && (
-        <p className="mt-1 text-xs text-rose-600">{`벌점 ${entry.penaltyCount}건`}</p>
-      )}
-      {entry.correlationId && (
-        <div className="mt-2 inline-flex items-center gap-2 text-[11px] text-slate-500">
-          <span className="font-medium text-slate-600">Correlation</span>
-          <code className="rounded bg-slate-100 px-2 py-[2px] text-[11px] text-slate-700">
-            {entry.correlationId}
-          </code>
-          {onCopyCorrelation && (
-            <button
-              type="button"
-              onClick={handleCopy}
-              className="inline-flex h-6 w-6 items-center justify-center rounded-full border border-slate-200 text-slate-500 transition hover:bg-slate-100 hover:text-slate-700"
-            >
-              <Copy className="size-3" aria-hidden />
-              <span className="sr-only">Correlation ID 복사</span>
-            </button>
-          )}
-        </div>
-      )}
     </div>
   )
 }
