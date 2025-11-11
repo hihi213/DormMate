@@ -5,6 +5,7 @@ import type React from "react"
 import { useEffect, useMemo, useState } from "react"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { CalendarDays, Loader2, Pencil, Trash2, X } from "lucide-react"
 import { Label } from "@/components/ui/label"
@@ -43,6 +44,26 @@ export default function ItemDetailSheet({
   const ownerInfo =
     [it?.ownerRoomNumber, it?.ownerDisplayName].filter(Boolean).join(" • ") || "소유자 정보 없음"
   const ownerLabel = isOwner ? "내 물품" : isAdmin ? ownerInfo : "타인"
+  const bundleItemCount = useMemo(
+    () => (it ? items.filter((candidate) => candidate.bundleId === it.bundleId).length : 0),
+    [items, it?.bundleId],
+  )
+  const headerMemo = useMemo(() => {
+    if (!it) return ""
+    const memo = it.bundleMemo?.trim()
+    if (isOwner) {
+      return memo && memo.length > 0 ? memo : "대표 메모가 없습니다."
+    }
+    if (isAdmin) {
+      return `${ownerInfo} 물품입니다. 대표 메모는 비공개예요.`
+    }
+    return "대표 메모는 소유자만 볼 수 있습니다."
+  }, [it, isOwner, isAdmin, ownerInfo])
+  const totalCountLabel = useMemo(() => {
+    if (!it) return ""
+    const count = bundleItemCount > 0 ? bundleItemCount : 0
+    return `총 ${count.toLocaleString()}개`
+  }, [bundleItemCount, it])
 
   const [form, setForm] = useState({ name: "", expiryDate: "" })
   const [saving, setSaving] = useState(false)
@@ -77,18 +98,10 @@ export default function ItemDetailSheet({
             <Button variant="ghost" size="icon" aria-label="닫기" onClick={() => onOpenChange(false)}>
               <X className="size-5" />
             </Button>
-            <div className="text-sm font-semibold truncate">{it ? `${it.bundleName} 세부` : "상세 정보"}</div>
+            <div className="text-sm font-semibold truncate">
+              {it ? it.displayLabel || it.bundleLabelDisplay || "식별번호 없음" : "상세 정보"}
+            </div>
             <div className="inline-flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="icon"
-                aria-label="수정"
-                onClick={() => setEdit((v) => !v)}
-                disabled={!canEdit}
-                title={canEdit ? "수정" : "소유자만 수정"}
-              >
-                <Pencil className="size-5" />
-              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -126,14 +139,33 @@ export default function ItemDetailSheet({
             <>
               {/* Summary */}
               <Card className="border-emerald-200">
-                <CardContent className="py-3">
-                    <div className="text-sm">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <Field label="보관 칸" value={getSlotLabel(it.slotId, it.slotIndex)} />
-                        <Field label="스티커" value={formatStickerLabel(it.slotIndex, it.labelNumber)} />
-                        <Field
-                          label="유통기한"
-                          value={
+                <CardContent className="py-3 space-y-3">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-base font-semibold text-gray-900 flex-1 min-w-0 truncate">
+                      {it.bundleName}
+                    </p>
+                    <Badge variant="outline" className="border-emerald-200 text-emerald-800">
+                      {totalCountLabel}
+                    </Badge>
+                    {canEdit && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="text-xs"
+                        onClick={() => setEdit((prev) => !prev)}
+                      >
+                        {edit ? "편집 닫기" : "정보 수정"}
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-sm text-slate-600 line-clamp-2">{headerMemo}</p>
+                  <div className="text-sm">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <Field label="보관 칸" value={getSlotLabel(it.slotId, it.slotIndex)} />
+                      <Field label="스티커" value={formatStickerLabel(it.slotIndex, it.labelNumber)} />
+                      <Field
+                        label="유통기한"
+                        value={
                           <span className="inline-flex items-center gap-2">
                             <span>{formatShortDate(it.expiryDate)}</span>
                             <span className={`inline-flex items-center gap-1 text-sm ${statusColor}`}>
@@ -143,21 +175,21 @@ export default function ItemDetailSheet({
                           </span>
                         }
                       />
-                        <Field label="등록일" value={formatShortDate(it.createdAt)} />
-                        <Field label="소유자" value={ownerLabel} />
-                        <Field
-                          label="메모"
-                          value={
-                            isOwner
-                              ? it.memo && it.memo.length > 0
-                                ? it.memo
-                                : "메모가 없습니다."
-                              : isAdmin
-                                ? `${ownerInfo} 물품입니다. 메모는 비공개예요.`
-                                : "다른 사람 물품이라 가려졌어요~"
-                          }
-                          className="sm:col-span-2"
-                        />
+                      <Field label="등록일" value={formatShortDate(it.createdAt)} />
+                      <Field label="소유자" value={ownerLabel} />
+                      <Field
+                        label="메모"
+                        value={
+                          isOwner
+                            ? it.memo && it.memo.length > 0
+                              ? it.memo
+                              : "메모가 없습니다."
+                            : isAdmin
+                              ? `${ownerInfo} 물품입니다. 메모는 비공개예요.`
+                              : "다른 사람 물품이라 가려졌어요~"
+                        }
+                        className="sm:col-span-2"
+                      />
                     </div>
                   </div>
                 </CardContent>
