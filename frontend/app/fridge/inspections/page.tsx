@@ -67,7 +67,6 @@ import {
   updateInspectionSchedule,
 } from "@/features/inspections/api"
 
-const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
 const BundleDetailSheet = dynamic(() => import("@/features/fridge/components/bundle-detail-sheet"), { ssr: false })
 
 const STATUS_BADGE: Record<NormalizedInspectionStatus, { label: string; className: string }> = {
@@ -159,8 +158,11 @@ function InspectionsInner() {
   } | null>(null)
   const [residentActionLoadingId, setResidentActionLoadingId] = useState<string | null>(null)
   const [focusedAction, setFocusedAction] = useState<InspectionActionDetail | null>(null)
-  const [itemSheet, setItemSheet] = useState<{ open: boolean; id: string }>({ open: false, id: "" })
-  const [bundleSheet, setBundleSheet] = useState<{ open: boolean; id: string }>({ open: false, id: "" })
+  const [bundleSheet, setBundleSheet] = useState<{ open: boolean; id: string; unitId?: string | null }>({
+    open: false,
+    id: "",
+    unitId: null,
+  })
   const minScheduleInputValue = useMemo(() => formatDateTimeInputValue(new Date()), [])
 
   const currentUser = getCurrentUser()
@@ -257,8 +259,8 @@ function InspectionsInner() {
     (action: InspectionActionDetail) => {
       if (isWarningAction(action.actionType)) {
         const targetItem = action.items?.find((item) => item.fridgeItemId)
-        if (targetItem?.fridgeItemId) {
-          setItemSheet({ open: true, id: targetItem.fridgeItemId })
+        if (targetItem?.fridgeItemId && action.bundleId) {
+          setBundleSheet({ open: true, id: action.bundleId, unitId: targetItem.fridgeItemId })
           return
         }
         if (action.bundleId) {
@@ -335,15 +337,20 @@ function InspectionsInner() {
   }, [isFloorManager, toast])
 
   useEffect(() => {
-    if (typeof window === "undefined") return
-    const intervalId = window.setInterval(() => {
-      void refreshSlotList()
-      void refreshActiveSession()
-    }, 45000)
+    if (typeof window === "undefined" || !mounted) return
+    const POLLING_INTERVAL_MS = 6000
+    const tick = () => {
+      void Promise.allSettled([
+        refreshSlotList(),
+        refreshActiveSession(),
+        refreshSchedules({ silent: true }),
+      ])
+    }
+    const intervalId = window.setInterval(tick, POLLING_INTERVAL_MS)
     return () => {
       window.clearInterval(intervalId)
     }
-  }, [refreshActiveSession, refreshSlotList])
+  }, [mounted, refreshActiveSession, refreshSchedules, refreshSlotList])
 
   const scheduleGroups = useMemo(() => groupSchedules(schedules), [schedules])
   const groupStartSlots = useMemo(
@@ -893,17 +900,14 @@ function InspectionsInner() {
 
         {residentNotice}
 
-        <ItemDetailSheet
-          open={itemSheet.open}
-          onOpenChange={(open) => setItemSheet((prev) => ({ ...prev, open }))}
-          itemId={itemSheet.id}
-          initialEdit={false}
-        />
         <BundleDetailSheet
           open={bundleSheet.open}
-          onOpenChange={(open) => setBundleSheet((prev) => ({ ...prev, open }))}
+          onOpenChange={(open) =>
+            setBundleSheet((prev) => ({ ...prev, open, unitId: open ? prev.unitId : null }))
+          }
           bundleId={bundleSheet.id}
           initialEdit={false}
+          initialUnitId={bundleSheet.unitId ?? null}
         />
 
         <Dialog
@@ -1431,15 +1435,25 @@ function groupSchedules(list: InspectionSchedule[]): ScheduleGroup[] {
 function getGroupSlots(group: ScheduleGroup, slots: Slot[]): Slot[] {
   const unique = new Map<string, Slot>()
   group.schedules.forEach((schedule) => {
-    let slot = slots.find((candidate) => candidate.slotId === schedule.fridgeCompartmentId)
-    if (!slot && typeof schedule.slotIndex === "number") {
-      slot = slots.find((candidate) => candidate.slotIndex === schedule.slotIndex)
-    }
+    let slot =
+      slots.find((candidate) => candidate.slotId === schedule.fridgeCompartmentId) ??
+      slots.find(
+        (candidate) =>
+          typeof schedule.slotIndex === "number" &&
+          candidate.slotIndex === schedule.slotIndex &&
+          (typeof schedule.floorNo === "number" ? candidate.floorNo === schedule.floorNo : true),
+      ) ??
+      slots.find(
+        (candidate) =>
+          !!schedule.slotLetter &&
+          candidate.slotLetter === schedule.slotLetter &&
+          (typeof schedule.floorNo === "number" ? candidate.floorNo === schedule.floorNo : true),
+      )
     if (slot) {
       unique.set(slot.slotId, slot)
     }
   })
-  return Array.from(unique.values())
+  return Array.from(unique.values()).sort((a, b) => a.slotIndex - b.slotIndex)
 }
 
 function formatGroupSlotSummary(slots: Slot[]): string {

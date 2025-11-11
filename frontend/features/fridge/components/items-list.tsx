@@ -13,11 +13,10 @@ import { earliestDays, resolveStatus } from "@/lib/fridge-logic"
 
 type ItemsListProps = {
   items?: Item[]
-  onOpenItem?: (id: string, opts?: { edit?: boolean }) => void
-  onOpenBundle?: (bundleId: string, opts?: { edit?: boolean }) => void
+  onOpenBundle?: (bundleId: string, opts?: { edit?: boolean; unitId?: string }) => void
 }
 
-export default function ItemsList({ items = [], onOpenItem, onOpenBundle }: ItemsListProps) {
+export default function ItemsList({ items = [], onOpenBundle }: ItemsListProps) {
   const grouped = useMemo(() => {
     const map = new Map<string, Item[]>()
     for (const it of items) {
@@ -44,7 +43,7 @@ export default function ItemsList({ items = [], onOpenItem, onOpenBundle }: Item
 
   return (
     <div className="space-y-3">
-      <MergedByUrgency singles={singles} bundles={bundles} onOpenItem={onOpenItem} onOpenBundle={onOpenBundle} />
+      <MergedByUrgency singles={singles} bundles={bundles} onOpenBundle={onOpenBundle} />
     </div>
   )
 }
@@ -56,13 +55,11 @@ export default function ItemsList({ items = [], onOpenItem, onOpenBundle }: Item
 function MergedByUrgency({
   singles,
   bundles,
-  onOpenItem,
   onOpenBundle,
 }: {
   singles: Item[]
   bundles: Item[][]
-  onOpenItem?: (id: string, opts?: { edit?: boolean }) => void
-  onOpenBundle?: (bundleId: string, opts?: { edit?: boolean }) => void
+  onOpenBundle?: (bundleId: string, opts?: { edit?: boolean; unitId?: string }) => void
 }) {
   const { deleteBundle, isSlotActive } = useFridge()
   const { toast } = useToast()
@@ -102,7 +99,7 @@ function MergedByUrgency({
           return (
             <SwipeableCard
               key={it.unitId}
-              onClick={() => onOpenItem?.(it.id)}
+              onClick={() => it.bundleId && onOpenBundle?.(it.bundleId, { unitId: it.unitId })}
               className="rounded-md border bg-white"
               revealWidth={56}
               actions={

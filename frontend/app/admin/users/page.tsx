@@ -70,6 +70,8 @@ export default function AdminUsersPage() {
     [filters.status, filters.floor, filters.floorManagerOnly, filters.search, page, pageSize],
   )
   const { data, loading, error, refetch } = useAdminUsers(fetchParams)
+  const isInitialLoading = loading && !data
+  const isPageTransitionLoading = loading && !!data
   const userItems = useMemo(() => data?.items ?? [], [data?.items])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [drawerUser, setDrawerUser] = useState<AdminUser | null>(null)
@@ -660,7 +662,7 @@ export default function AdminUsersPage() {
                 </div>
               </div>
             </CardHeader>
-            <CardContent className="space-y-3">
+            <CardContent className="relative space-y-3">
               {paginated.length === 0 && !loading ? (
                 <p className="text-center text-xs text-muted-foreground">표시할 사용자가 없습니다.</p>
               ) : (
@@ -748,7 +750,7 @@ export default function AdminUsersPage() {
                     size="sm"
                     variant="outline"
                     onClick={() => setPage((current) => Math.max(1, current - 1))}
-                    disabled={page <= 1}
+                    disabled={page <= 1 || isPageTransitionLoading}
                   >
                     이전
                   </Button>
@@ -760,13 +762,19 @@ export default function AdminUsersPage() {
                     size="sm"
                     variant="outline"
                     onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
-                    disabled={page >= totalPages}
+                    disabled={page >= totalPages || isPageTransitionLoading}
                   >
                     다음
                   </Button>
                 </div>
               ) : null}
-              {loading && paginated.length === 0 ? (
+              {isPageTransitionLoading ? (
+                <div className="pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-2 rounded-2xl bg-white/80 text-xs text-muted-foreground">
+                  <Loader2 className="h-5 w-5 animate-spin text-emerald-500" />
+                  <span>다음 페이지 데이터를 불러오는 중입니다…</span>
+                </div>
+              ) : null}
+              {isInitialLoading && paginated.length === 0 ? (
                 <p className="mt-4 text-xs text-muted-foreground">사용자 데이터를 불러오는 중입니다…</p>
               ) : null}
             </CardContent>

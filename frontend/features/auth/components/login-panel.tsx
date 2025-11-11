@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
-import { getCurrentUser, loginWithCredentials } from "@/lib/auth"
+import { ensureValidAccessToken, getCurrentUser, loginWithCredentials } from "@/lib/auth"
 import type { AuthUser } from "@/lib/auth"
 
 type LoginPanelProps = {
@@ -49,9 +49,19 @@ export function LoginPanel({ redirectTo }: LoginPanelProps) {
   )
 
   useEffect(() => {
-    const current = getCurrentUser()
-    if (current) {
-      router.replace(resolveTarget(current))
+    let cancelled = false
+    const maybeRedirect = async () => {
+      const current = getCurrentUser()
+      if (!current) return
+      const accessToken = await ensureValidAccessToken()
+      if (!accessToken || cancelled) {
+        return
+      }
+      router.replace(resolveTarget(getCurrentUser()))
+    }
+    void maybeRedirect()
+    return () => {
+      cancelled = true
     }
   }, [router, resolveTarget])
 

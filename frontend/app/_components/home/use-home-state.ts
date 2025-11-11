@@ -40,11 +40,16 @@ export function useHomeState() {
   }, [])
 
   useEffect(() => {
-    if (!mounted) return
+    if (!mounted || !isLoggedIn) return
     void fetchProfile()
-  }, [mounted])
+  }, [mounted, isLoggedIn])
 
   useEffect(() => {
+    if (!mounted || !isLoggedIn) {
+      setNextInspection(null)
+      return
+    }
+
     let cancelled = false
     const loadNextInspection = async () => {
       try {
@@ -70,7 +75,7 @@ export function useHomeState() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [mounted, isLoggedIn])
 
   const logout = useLogoutRedirect()
 

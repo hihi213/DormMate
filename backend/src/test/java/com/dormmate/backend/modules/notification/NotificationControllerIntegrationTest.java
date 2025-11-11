@@ -116,6 +116,21 @@ class NotificationControllerIntegrationTest extends AbstractPostgresIntegrationT
     }
 
     @Test
+    void markExpiredNotificationStillReturnsNoContent() throws Exception {
+        Notification expired = createNotification(NotificationState.EXPIRED, OffsetDateTime.now().minusDays(1));
+        notificationRepository.save(expired);
+
+        mockMvc.perform(
+                        patch("/notifications/{id}/read", expired.getId())
+                                .header("Authorization", "Bearer " + residentToken)
+                )
+                .andExpect(status().isNoContent());
+
+        Notification stored = notificationRepository.findById(expired.getId()).orElseThrow();
+        assertThat(stored.getState()).isEqualTo(NotificationState.EXPIRED);
+    }
+
+    @Test
     void markAllNotificationsReadUpdatesUnreadCount() throws Exception {
         notificationRepository.save(createNotification(NotificationState.UNREAD, OffsetDateTime.now().plusDays(1)));
         notificationRepository.save(createNotification(NotificationState.UNREAD, OffsetDateTime.now().plusDays(1)));
