@@ -45,6 +45,7 @@ import { formatCompartmentLabel, formatSlotDisplayName } from "@/features/fridge
 import type { Slot } from "@/features/fridge/types"
 import type {
   InspectionAction,
+  InspectionActionDetail,
   InspectionSchedule,
   InspectionSession,
   NormalizedInspectionStatus,
@@ -54,6 +55,7 @@ import {
   cancelInspection,
   createInspectionSchedule,
   fetchActiveInspection,
+  fetchInspection,
   fetchInspectionHistory,
   fetchInspectionSlots,
   fetchInspectionSchedules,
@@ -79,6 +81,18 @@ const STATUS_BADGE: Record<NormalizedInspectionStatus, { label: string; classNam
 
 const getStatusMeta = (status: InspectionSession["status"]) =>
   STATUS_BADGE[normalizeInspectionStatus(status)]
+
+const RESIDENT_WARNING_ACTIONS: InspectionAction[] = ["WARN_INFO_MISMATCH", "WARN_STORAGE_POOR"]
+const RESIDENT_DISPOSAL_ACTIONS: InspectionAction[] = ["DISPOSE_EXPIRED", "UNREGISTERED_DISPOSE"]
+
+const RESIDENT_ACTION_TYPES: InspectionAction[] = [
+  ...RESIDENT_WARNING_ACTIONS,
+  ...RESIDENT_DISPOSAL_ACTIONS,
+]
+
+const isResidentActionType = (action: InspectionAction) => RESIDENT_ACTION_TYPES.includes(action)
+const isWarningAction = (action: InspectionAction) => RESIDENT_WARNING_ACTIONS.includes(action)
+const isDisposalAction = (action: InspectionAction) => RESIDENT_DISPOSAL_ACTIONS.includes(action)
 
 type ScheduleFormState = {
   scheduledAt: string
@@ -132,6 +146,12 @@ function InspectionsInner() {
   const [starting, setStarting] = useState(false)
   const [canceling, setCanceling] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [residentActionDialog, setResidentActionDialog] = useState<{
+    session: InspectionSession
+    actions: InspectionActionDetail[]
+  } | null>(null)
+  const [residentActionLoadingId, setResidentActionLoadingId] = useState<string | null>(null)
+  const [focusedAction, setFocusedAction] = useState<InspectionActionDetail | null>(null)
   const minScheduleInputValue = useMemo(() => formatDateTimeInputValue(new Date()), [])
 
   const currentUser = getCurrentUser()
@@ -181,6 +201,42 @@ function InspectionsInner() {
       }
     },
     [toast],
+  )
+
+  const handleHistorySelect = useCallback(
+    async (session: InspectionSession) => {
+      if (!currentUser?.userId) return
+      setResidentActionLoadingId(session.sessionId)
+      try {
+        let detail = session
+        if (!detail.actions || detail.actions.length === 0) {
+          detail = await fetchInspection(session.sessionId)
+        }
+        const personalActions =
+          detail.actions?.filter(
+            (action) => action.targetUserId === currentUser.userId && isResidentActionType(action.actionType),
+          ) ?? []
+
+        if (!personalActions.length) {
+          toast({
+            title: "조치 없음",
+            description: "해당 검사에서 본인에게 내려진 경고나 폐기 기록이 없습니다.",
+          })
+          return
+        }
+
+        setResidentActionDialog({ session: detail, actions: personalActions })
+      } catch (error) {
+        toast({
+          title: "조치 타임라인을 불러오지 못했습니다.",
+          description: error instanceof Error ? error.message : "조치 정보를 확인하는 중 문제가 발생했습니다.",
+          variant: "destructive",
+        })
+      } finally {
+        setResidentActionLoadingId(null)
+      }
+    },
+    [currentUser?.userId, toast],
   )
 
   useEffect(() => {
@@ -767,7 +823,12 @@ function InspectionsInner() {
           <Card>
             <CardContent>
               {history.length ? (
-                <HistoryList history={history} getSlotLabel={getSlotLabel} />
+                <HistoryList
+                  history={history}
+                  getSlotLabel={getSlotLabel}
+                  onSelect={handleHistorySelect}
+                  pendingSessionId={residentActionLoadingId}
+                />
               ) : loading ? (
                 <p className="text-sm text-muted-foreground">검사 기록을 불러오는 중입니다…</p>
               ) : (
@@ -778,6 +839,69 @@ function InspectionsInner() {
         </section>
 
         {residentNotice}
+
+        <Dialog
+          open={Boolean(residentActionDialog)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setResidentActionDialog(null)
+              setFocusedAction(null)
+            }
+          }}
+        >
+          <DialogContent className="max-w-xl">
+            {residentActionDialog ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{"내 경고·폐기 타임라인"}</DialogTitle>
+                  <DialogDescription>
+                    {`${getSlotLabel(
+                      residentActionDialog.session.slotId,
+                      residentActionDialog.session.slotIndex,
+                    )} · ${formatDateTimeLabel(residentActionDialog.session.startedAt)}`}
+                  </DialogDescription>
+                </DialogHeader>
+                <ResidentActionTimeline
+                  detail={residentActionDialog}
+                  onSelectAction={(action) => {
+                    setFocusedAction(action)
+                  }}
+                />
+                <DialogFooter className="pt-2">
+                  <Button type="button" variant="outline" onClick={() => setResidentActionDialog(null)}>
+                    {"닫기"}
+                  </Button>
+                </DialogFooter>
+              </>
+            ) : null}
+          </DialogContent>
+        </Dialog>
+
+        <Dialog
+          open={Boolean(focusedAction)}
+          onOpenChange={(open) => {
+            if (!open) {
+              setFocusedAction(null)
+            }
+          }}
+        >
+          <DialogContent className="max-w-lg">
+            {focusedAction ? (
+              <>
+                <DialogHeader>
+                  <DialogTitle>{friendlyActionLabel(focusedAction.actionType)}</DialogTitle>
+                  <DialogDescription>{formatDateTimeLabel(focusedAction.recordedAt)}</DialogDescription>
+                </DialogHeader>
+                <ResidentActionDetail action={focusedAction} />
+                <DialogFooter className="pt-2">
+                  <Button type="button" variant="outline" onClick={() => setFocusedAction(null)}>
+                    {"닫기"}
+                  </Button>
+                </DialogFooter>
+              </>
+            ) : null}
+          </DialogContent>
+        </Dialog>
 
         <Dialog open={startDialogOpen} onOpenChange={handleStartDialogChange}>
           <DialogContent>
@@ -942,9 +1066,13 @@ function friendlyActionLabel(action: InspectionAction): string {
 function HistoryList({
   history,
   getSlotLabel,
+  onSelect,
+  pendingSessionId,
 }: {
   history: InspectionSession[]
   getSlotLabel: (slotId?: string, slotIndex?: number) => string
+  onSelect?: (session: InspectionSession) => void
+  pendingSessionId?: string | null
 }) {
   if (!history.length) {
     return <p className="text-sm text-muted-foreground">최근 검사 기록이 없습니다.</p>
@@ -954,8 +1082,8 @@ function HistoryList({
     <div className="space-y-4">
       {history.map((session) => {
         const badgeMeta = getStatusMeta(session.status)
-        return (
-          <div key={session.sessionId} className="rounded-lg border border-slate-200 p-4 space-y-2">
+        const content = (
+          <div className="space-y-2">
             <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
               <span>{getSlotLabel(session.slotId, session.slotIndex)}</span>
               <Badge variant="outline" className={badgeMeta?.className ?? ""}>
@@ -978,7 +1106,197 @@ function HistoryList({
             {session.notes && <p className="text-xs text-slate-600 whitespace-pre-wrap">{session.notes}</p>}
           </div>
         )
+
+        if (!onSelect) {
+          return (
+            <div key={session.sessionId} className="rounded-lg border border-slate-200 p-4">
+              {content}
+            </div>
+          )
+        }
+
+        const pending = pendingSessionId === session.sessionId
+
+        return (
+          <button
+            key={session.sessionId}
+            type="button"
+            onClick={() => onSelect(session)}
+            disabled={pending}
+            className="relative w-full rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500 disabled:cursor-wait disabled:opacity-75"
+            aria-label="검사 기록 상세 보기"
+          >
+            {content}
+            <span className="mt-2 block text-[11px] text-emerald-700">
+              {"내 경고·폐기 기록 보기"}
+            </span>
+            {pending ? (
+              <Loader2 className="absolute right-4 top-4 size-4 animate-spin text-emerald-600" aria-hidden />
+            ) : null}
+          </button>
+        )
       })}
+    </div>
+  )
+}
+
+type ResidentActionDialogState = {
+  session: InspectionSession
+  actions: InspectionActionDetail[]
+}
+
+function ResidentActionTimeline({
+  detail,
+  onSelectAction,
+}: {
+  detail: ResidentActionDialogState
+  onSelectAction?: (action: InspectionActionDetail) => void
+}) {
+  const warningCount = detail.actions.filter((action) => isWarningAction(action.actionType)).length
+  const disposalCount = detail.actions.filter((action) => isDisposalAction(action.actionType)).length
+
+  return (
+    <div className="space-y-4 text-xs text-slate-600">
+      <div className="flex flex-wrap gap-2">
+        {warningCount > 0 ? (
+          <Badge className="bg-amber-100 px-3 py-0.5 text-[11px] font-semibold text-amber-800">
+            {`경고 ${warningCount}`}
+          </Badge>
+        ) : null}
+        {disposalCount > 0 ? (
+          <Badge className="bg-rose-100 px-3 py-0.5 text-[11px] font-semibold text-rose-700">
+            {`폐기 ${disposalCount}`}
+          </Badge>
+        ) : null}
+      </div>
+      <div className="max-h-[340px] space-y-2 overflow-y-auto pr-1">
+        {detail.actions.map((action, index) => {
+          const key = action.actionId ?? action.correlationId ?? `${action.recordedAt ?? "action"}-${index}`
+          const note = action.note?.trim()
+          const badgeClass = isDisposalAction(action.actionType)
+            ? "border-rose-200 bg-rose-50 text-rose-700"
+            : "border-amber-200 bg-amber-50 text-amber-700"
+          const itemCount = action.items?.length ?? 0
+          const penaltyCount = action.penalties?.length ?? 0
+
+          return (
+            <button
+              type="button"
+              key={key}
+              onClick={() => onSelectAction?.(action)}
+              className="w-full rounded-md border border-slate-200 bg-white p-3 text-left transition hover:border-emerald-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500"
+            >
+              <div className="flex flex-wrap items-center gap-2 text-[11px] font-semibold text-slate-800">
+                <Badge
+                  variant="outline"
+                  className={`px-2 py-0.5 text-[11px] font-semibold ${badgeClass}`}
+                >
+                  {friendlyActionLabel(action.actionType)}
+                </Badge>
+                <span className="text-slate-500">{formatDateTimeLabel(action.recordedAt)}</span>
+                {itemCount > 0 ? <span className="text-slate-500">{`물품 ${itemCount}개`}</span> : null}
+                {penaltyCount > 0 ? (
+                  <span className="text-amber-700">{`벌점 ${penaltyCount}건`}</span>
+                ) : null}
+              </div>
+
+              {action.items && action.items.length > 0 ? (
+                <ul className="mt-2 space-y-1 text-[11px] text-slate-600">
+                  {action.items.map((item) => (
+                    <li key={item.id} className="rounded-md bg-slate-50 px-2 py-1 leading-snug">
+                      {formatResidentActionItem(item)}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+
+              {action.penalties && action.penalties.length > 0 ? (
+                <div className="mt-2 space-y-1 rounded-md border border-amber-100 bg-amber-50/60 px-2 py-1 text-amber-800">
+                  {action.penalties.map((penalty) => (
+                    <p key={penalty.id}>
+                      {`벌점 ${penalty.points}점`}
+                      {penalty.expiresAt ? ` · 만료 ${formatShortDate(penalty.expiresAt)}` : ""}
+                    </p>
+                  ))}
+                </div>
+              ) : null}
+
+              {note ? <p className="mt-2 text-[11px] text-slate-500">“{note}”</p> : null}
+              <span className="mt-2 block text-[11px] font-medium text-emerald-700">{"자세히 보기"}</span>
+            </button>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+function ResidentActionDetail({ action }: { action: InspectionActionDetail }) {
+  const note = action.note?.trim()
+  const isDisposal = isDisposalAction(action.actionType)
+
+  return (
+    <div className="space-y-4 text-xs text-slate-600">
+      <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge
+            variant="outline"
+            className={`px-2 py-0.5 text-[11px] font-semibold ${
+              isDisposal ? "border-rose-200 bg-rose-50 text-rose-700" : "border-amber-200 bg-amber-50 text-amber-700"
+            }`}
+          >
+            {friendlyActionLabel(action.actionType)}
+          </Badge>
+          <span className="text-slate-500">{formatDateTimeLabel(action.recordedAt)}</span>
+          {action.items?.length ? <span>{`물품 ${action.items.length}개`}</span> : null}
+          {action.penalties?.length ? <span className="text-amber-700">{`벌점 ${action.penalties.length}건`}</span> : null}
+        </div>
+      </div>
+
+      {action.items && action.items.length > 0 ? (
+        <section className="space-y-2">
+          <h3 className="text-[11px] font-semibold text-slate-800">{"기록된 물품"}</h3>
+          <div className="space-y-2">
+            {action.items.map((item) => (
+              <div key={item.id} className="rounded-md border border-slate-200 bg-white px-3 py-2">
+                <p className="font-medium text-slate-900">{item.snapshotName ?? "이름 미상"}</p>
+                <p className="text-[11px] text-slate-600">{formatResidentActionItem(item)}</p>
+                {item.snapshotExpiresOn ? (
+                  <p className="text-[11px] text-slate-500">{`유통기한: ${formatShortDate(item.snapshotExpiresOn)}`}</p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {action.penalties && action.penalties.length > 0 ? (
+        <section className="space-y-2">
+          <h3 className="text-[11px] font-semibold text-slate-800">{"벌점 내역"}</h3>
+          <div className="space-y-2">
+            {action.penalties.map((penalty) => (
+              <div key={penalty.id} className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                <p className="font-semibold">{`벌점 ${penalty.points}점`}</p>
+                {penalty.reason ? <p className="text-[11px]">{penalty.reason}</p> : null}
+                <p className="text-[11px] opacity-80">
+                  {`발급 ${formatDateTimeLabel(penalty.issuedAt)}${
+                    penalty.expiresAt ? ` · 만료 ${formatDateTimeLabel(penalty.expiresAt)}` : ""
+                  }`}
+                </p>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {note ? (
+        <section className="space-y-2">
+          <h3 className="text-[11px] font-semibold text-slate-800">{"메모"}</h3>
+          <p className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600">
+            {note}
+          </p>
+        </section>
+      ) : null}
     </div>
   )
 }
@@ -998,6 +1316,22 @@ function formatDateTimeInputValue(date: Date): string {
   const hours = String(date.getHours()).padStart(2, "0")
   const minutes = String(date.getMinutes()).padStart(2, "0")
   return `${year}-${month}-${day}T${hours}:${minutes}`
+}
+
+function formatResidentActionItem(
+  item: NonNullable<InspectionActionDetail["items"]>[number],
+): string {
+  const parts: string[] = []
+  if (item.snapshotName) {
+    parts.push(item.snapshotName)
+  }
+  if (item.quantityAtAction && item.quantityAtAction > 0) {
+    parts.push(`${item.quantityAtAction}개`)
+  }
+  if (item.snapshotExpiresOn) {
+    parts.push(`유통 ${formatShortDate(item.snapshotExpiresOn)}`)
+  }
+  return parts.length > 0 ? parts.join(" · ") : "기록된 물품"
 }
 
 function getDefaultScheduleFormState(): ScheduleFormState {

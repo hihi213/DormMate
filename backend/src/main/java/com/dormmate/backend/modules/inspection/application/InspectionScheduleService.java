@@ -321,8 +321,8 @@ public class InspectionScheduleService {
         if (compartment == null || compartment.getFridgeUnit() == null) {
             return false;
         }
-        Integer floor = compartment.getFridgeUnit().getFloorNo();
-        return floor != null && floor.intValue() == floorFilter;
+        short floor = compartment.getFridgeUnit().getFloorNo();
+        return floor == floorFilter;
     }
 
     private boolean matchesCompartmentFilter(InspectionSchedule schedule, Set<UUID> compartmentFilter) {
