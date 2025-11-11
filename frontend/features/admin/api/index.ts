@@ -1,15 +1,8 @@
 import { safeApiCall } from "@/lib/api-client"
-import { mockQuickActions, mockResources, mockSummaryCards, mockTimelineEvents } from "../utils/mock-data"
-import type {
-  AdminQuickAction,
-  AdminResource,
-  AdminSummaryCard,
-  AdminTimelineEvent,
-  AdminUser,
-} from "../types"
+import { mockQuickActions, mockSummaryCards, mockTimelineEvents } from "../utils/mock-data"
+import type { AdminQuickAction, AdminSummaryCard, AdminTimelineEvent, AdminUser } from "../types"
 
 const DASHBOARD_ENDPOINT = "/admin/dashboard"
-const RESOURCES_ENDPOINT = "/admin/resources"
 const USERS_ENDPOINT = "/admin/users"
 const POLICIES_ENDPOINT = "/admin/policies"
 
@@ -39,15 +32,6 @@ export async function fetchAdminDashboard(): Promise<AdminDashboardResponse> {
       quickActions: mockQuickActions,
     }
   )
-}
-
-export type AdminResourceResponse = {
-  items: AdminResource[]
-}
-
-export async function fetchAdminResources(): Promise<AdminResourceResponse> {
-  const { data } = await safeApiCall<AdminResourceResponse>(RESOURCES_ENDPOINT)
-  return data ?? { items: mockResources }
 }
 
 export type AdminUsersResponse = {
@@ -155,7 +139,5 @@ export async function updateAdminPolicies(payload: UpdateAdminPoliciesPayload) {
   })
   if (error) throw error
 }
-
-export * from "./fridge"
 
 export * from "./fridge"
