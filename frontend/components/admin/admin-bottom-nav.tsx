@@ -22,7 +22,11 @@ const NAV_ITEMS: NavItem[] = [
   { key: "notifications", label: "알림", href: "/admin/notifications", icon: BellDot },
 ]
 
-export default function AdminBottomNav() {
+type AdminBottomNavProps = {
+  className?: string
+}
+
+export default function AdminBottomNav({ className }: AdminBottomNavProps) {
   const pathname = usePathname()
   const [mounted, setMounted] = useState(false)
 
@@ -35,7 +39,10 @@ export default function AdminBottomNav() {
   return (
     <nav
       aria-label="관리자 하단 내비게이션"
-      className="fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur"
+      className={cn(
+        "fixed inset-x-0 bottom-0 z-40 border-t border-slate-200 bg-white/95 backdrop-blur",
+        className,
+      )}
     >
       <ul className="mx-auto flex max-w-screen-md">
         {NAV_ITEMS.map((item) => {
