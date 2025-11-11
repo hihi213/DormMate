@@ -12,19 +12,7 @@ import {
 } from "react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
-import {
-  BellDot,
-  BookOpen,
-  Boxes,
-  CalendarDays,
-  FileBarChart2,
-  Info,
-  LayoutDashboard,
-  ShieldCheck,
-  Snowflake,
-  Users,
-  Waves,
-} from "lucide-react"
+import { BellDot, BookOpen, CalendarDays, FileBarChart2, Info, LayoutDashboard, ShieldCheck, Snowflake, Users, Waves } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -70,7 +58,6 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "운영 도구",
     items: [
-      { label: "자원 관리", href: "/admin/resources", icon: Boxes },
       { label: "권한·계정", href: "/admin/users", icon: Users },
       { label: "알림·정책", href: "/admin/notifications", icon: BellDot },
       { label: "감사 로그", href: "/admin/audit", icon: FileBarChart2 },

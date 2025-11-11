@@ -20,20 +20,6 @@ export type AdminQuickAction = {
   icon: string
 }
 
-export type AdminResource = {
-  id: string
-  facility: "fridge" | "laundry" | "library" | "multipurpose"
-  name: string
-  location: string
-  status: "ACTIVE" | "SUSPENDED" | "REPORTED" | "RETIRED"
-  capacity: string
-  manager: string
-  rooms: string
-  labelRange?: string
-  issue?: string
-  lastInspection?: string
-}
-
 export type AdminUserRole = "RESIDENT" | "FLOOR_MANAGER" | "ADMIN"
 
 export type AdminUser = {
