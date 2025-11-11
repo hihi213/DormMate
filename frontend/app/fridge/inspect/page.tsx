@@ -571,6 +571,7 @@ function InspectInner() {
       } else {
         addResult({
           action: payload.action,
+          actionRecordId,
           note: payload.note,
           correlationId,
           penaltyCount,
@@ -643,32 +644,20 @@ function InspectInner() {
 
     const passCount = findCount("PASS")
     const warnCount = findCount("WARN_INFO_MISMATCH") + findCount("WARN_STORAGE_POOR")
-    const disposalCount = findCount("DISPOSE_EXPIRED") + findCount("UNREGISTERED_DISPOSE")
+    const registeredDisposalCount = findCount("DISPOSE_EXPIRED")
+    const unregisteredDisposalCount = findCount("UNREGISTERED_DISPOSE")
+    const disposalCount = registeredDisposalCount + unregisteredDisposalCount
     const totalActions = summaryList.reduce((acc, entry) => acc + (entry.count ?? 0), 0)
-    const totalBundleCount = session?.totalBundleCount ?? session?.bundles?.length ?? 0
-    const initialBundleCount = session?.initialBundleCount ?? session?.bundles?.length ?? 0
-    const bundleDelta = totalBundleCount - initialBundleCount
 
     return {
       passCount,
       warnCount,
+      registeredDisposalCount,
+      unregisteredDisposalCount,
       disposalCount,
       totalActions,
-      initialBundleCount,
-      totalBundleCount,
-      bundleDelta,
     }
   }, [session])
-
-  const bundleDeltaLabel = summaryMetrics.bundleDelta > 0
-    ? `+${summaryMetrics.bundleDelta}`
-    : summaryMetrics.bundleDelta.toString()
-  const bundleDeltaClass =
-    summaryMetrics.bundleDelta > 0
-      ? "text-rose-700"
-      : summaryMetrics.bundleDelta < 0
-        ? "text-emerald-700"
-        : "text-slate-700"
 
   const finalizeInspection = async () => {
     if (!session) return
@@ -1087,32 +1076,20 @@ function InspectInner() {
           <div className="space-y-4">
             <div className="rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-800">
               <div className="flex items-center justify-between py-0.5">
-                <span>{"검사 시작 포장 수"}</span>
-                <span className="font-semibold text-slate-700">{`${summaryMetrics.initialBundleCount}개`}</span>
-              </div>
-              <div className="flex items-center justify-between py-0.5">
-                <span>{"제출 시 포장 수"}</span>
-                <span className="font-semibold text-slate-700">{`${summaryMetrics.totalBundleCount}개`}</span>
-              </div>
-              <div className="flex items-center justify-between py-0.5">
-                <span>{"증감"}</span>
-                <span className={`font-semibold ${bundleDeltaClass}`}>{`${bundleDeltaLabel}개`}</span>
-              </div>
-              <div className="flex items-center justify-between py-0.5">
                 <span>{"경고 조치"}</span>
                 <span className="font-semibold text-amber-700">{`${summaryMetrics.warnCount}건`}</span>
               </div>
               <div className="flex items-center justify-between py-0.5">
-                <span>{"폐기 조치"}</span>
-                <span className="font-semibold text-rose-700">{`${summaryMetrics.disposalCount}건`}</span>
+                <span>{"등록 폐기"}</span>
+                <span className="font-semibold text-rose-700">{`${summaryMetrics.registeredDisposalCount}건`}</span>
+              </div>
+              <div className="flex items-center justify-between py-0.5">
+                <span>{"미등록 폐기"}</span>
+                <span className="font-semibold text-rose-700">{`${summaryMetrics.unregisteredDisposalCount}건`}</span>
               </div>
               <div className="flex items-center justify-between py-0.5">
                 <span>{"통과"}</span>
                 <span className="font-semibold text-emerald-700">{`${summaryMetrics.passCount}건`}</span>
-              </div>
-              <div className="mt-2 flex items-center justify-between border-t border-slate-200 pt-2">
-                <span>{"기록된 총 조치"}</span>
-                <span className="font-semibold">{`${summaryMetrics.totalActions}건`}</span>
               </div>
             </div>
             {summaryMetrics.totalActions === 0 && (

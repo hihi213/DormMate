@@ -29,6 +29,15 @@ const NOTIFICATION_KIND_MAP: Record<string, NotificationKindMeta> = {
     icon: ShieldAlert,
     accentClassName: "text-rose-600",
   },
+  FRIDGE_RESULT_ADMIN: {
+    kindCode: "FRIDGE_RESULT_ADMIN",
+    module: "관리자",
+    label: "검사 조치 보고",
+    description: "경고/폐기 조치가 포함된 검사 제출 시 관리자에게 전달됩니다.",
+    href: "/admin/fridge",
+    icon: ShieldAlert,
+    accentClassName: "text-indigo-600",
+  },
   FRIDGE_EXPIRY: {
     kindCode: "FRIDGE_EXPIRY",
     module: "냉장고",

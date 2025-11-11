@@ -89,6 +89,10 @@ export default function AdminNotificationsPage() {
     updatePreference,
     resetPreferenceError,
   } = useNotificationPreferences()
+  const adminPreferences = useMemo(
+    () => preferences.filter((item) => item.kindCode === "FRIDGE_RESULT_ADMIN"),
+    [preferences],
+  )
 
   const [batchTime, setBatchTime] = useState("09:00")
   const [dailyLimit, setDailyLimit] = useState("20")
@@ -258,49 +262,6 @@ export default function AdminNotificationsPage() {
           </div>
         </header>
 
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-          <Card className="shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">미읽음 알림</CardTitle>
-              <Bell className="size-4 text-emerald-600" aria-hidden />
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-slate-900">{unreadCount}</p>
-              <p className="text-xs text-slate-500">읽음 처리하면 요약 패널에서 사라집니다.</p>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">총 알림 수</CardTitle>
-              <Inbox className="size-4 text-slate-500" aria-hidden />
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-slate-900">{totalElements}</p>
-              <p className="text-xs text-slate-500">현재 페이지 {page + 1}/{totalPages}</p>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">배치 시각</CardTitle>
-              <Sparkles className="size-4 text-emerald-600" aria-hidden />
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-slate-900">{batchTime}</p>
-              <p className="text-xs text-slate-500">임박/만료 알림 기본 배치 시각</p>
-            </CardContent>
-          </Card>
-          <Card className="shadow-sm">
-            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-              <CardTitle className="text-sm font-medium">일일 발송 상한</CardTitle>
-              <ShieldAlert className="size-4 text-emerald-600" aria-hidden />
-            </CardHeader>
-            <CardContent>
-              <p className="text-2xl font-bold text-slate-900">{dailyLimit}</p>
-              <p className="text-xs text-slate-500">체크 후 Sandbox에서 검증하세요.</p>
-            </CardContent>
-          </Card>
-        </div>
-
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]">
           <Card className="shadow-sm">
             <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -466,12 +427,12 @@ export default function AdminNotificationsPage() {
                     <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
                     알림 설정을 불러오는 중입니다…
                   </div>
-                ) : preferences.length === 0 ? (
+                ) : adminPreferences.length === 0 ? (
                   <div className="rounded-lg border border-dashed border-slate-200 p-4 text-sm text-slate-500">
                     표시할 알림 설정이 없습니다.
                   </div>
                 ) : (
-                  preferences.map((preference) => {
+                  adminPreferences.map((preference) => {
                     const meta = resolveNotificationMeta(preference.kindCode)
                     return (
                       <div key={preference.kindCode} className="rounded-xl border border-slate-200 p-4 shadow-sm">

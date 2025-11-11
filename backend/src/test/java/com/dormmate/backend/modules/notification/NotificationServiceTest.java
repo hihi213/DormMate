@@ -3,6 +3,8 @@ package com.dormmate.backend.modules.notification;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -77,6 +79,11 @@ class NotificationServiceTest {
         } catch (ReflectiveOperationException ex) {
             throw new IllegalStateException(ex);
         }
+
+        lenient().when(notificationPreferenceRepository.findById(any(NotificationPreferenceId.class)))
+                .thenReturn(Optional.empty());
+        lenient().when(dormUserRepository.findActiveAdminIds()).thenReturn(List.of());
+        lenient().when(dormUserRepository.existsActiveAdminRole(any())).thenReturn(false);
     }
 
     @Test
@@ -135,6 +142,7 @@ class NotificationServiceTest {
     void getPreferencesIncludesAllKindsWithDefaults() {
         UUID userId = UUID.fromString("00000000-0000-0000-0000-000000000303");
         when(notificationPreferenceRepository.findByIdUserId(userId)).thenReturn(List.of());
+        when(dormUserRepository.existsActiveAdminRole(userId)).thenReturn(false);
 
         NotificationService.NotificationPreferenceView view = notificationService.getPreferences(userId);
 
@@ -166,6 +174,45 @@ class NotificationServiceTest {
                 .orElseThrow();
         assertThat(expiredPref.enabled()).isTrue();
         assertThat(expiredPref.allowBackground()).isTrue();
+    }
+
+    @Test
+    @DisplayName("관리자는 검사 조치 보고 알림 선호만 노출된다")
+    void adminPreferencesIncludeAdminKindOnly() {
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000909");
+        when(notificationPreferenceRepository.findByIdUserId(adminId)).thenReturn(List.of());
+        when(dormUserRepository.existsActiveAdminRole(adminId)).thenReturn(true);
+
+        NotificationService.NotificationPreferenceView view = notificationService.getPreferences(adminId);
+
+        assertThat(view.items())
+                .extracting(NotificationService.NotificationPreferenceItem::kindCode)
+                .containsExactly(NotificationService.KIND_FRIDGE_RESULT_ADMIN);
+    }
+
+    @Test
+    @DisplayName("경고나 폐기 조치가 있으면 관리자도 알림을 받는다")
+    void sendInspectionResultNotifications_notifiesAdmins() {
+        UUID sessionId = UUID.fromString("00000000-0000-0000-0000-000000000888");
+        InspectionSession session = buildSession(sessionId,
+                buildAction(InspectionActionType.WARN_INFO_MISMATCH),
+                buildAction(InspectionActionType.DISPOSE_EXPIRED));
+
+        UUID adminId = UUID.fromString("00000000-0000-0000-0000-000000000707");
+        DormUser adminUser = new DormUser();
+        adminUser.setStatus(DormUserStatus.ACTIVE);
+        setField(adminUser, "id", adminId);
+
+        when(dormUserRepository.findActiveAdminIds()).thenReturn(List.of(adminId));
+        when(dormUserRepository.findById(adminId)).thenReturn(Optional.of(adminUser));
+        when(dormUserRepository.existsActiveAdminRole(adminId)).thenReturn(true);
+
+        notificationService.sendInspectionResultNotifications(session);
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository, atLeast(2)).save(captor.capture());
+        assertThat(captor.getAllValues())
+                .anyMatch(notification -> notification.getKindCode().equals(NotificationService.KIND_FRIDGE_RESULT_ADMIN));
     }
 
     private InspectionSession buildSession(UUID id, InspectionAction... actions) {

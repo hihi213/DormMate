@@ -191,7 +191,11 @@ export default function NotificationBell({ size = 10, disabled = false, onRequir
           )}
         </button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-[320px] p-0">
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        className="w-[320px] max-w-[min(90vw,320px)] p-0 sm:max-w-[340px] overflow-hidden"
+      >
         <div className="flex flex-col">
           <div className="border-b px-4 py-3">
             <div className="flex items-center justify-between">
@@ -262,7 +266,7 @@ export default function NotificationBell({ size = 10, disabled = false, onRequir
             </div>
           </div>
 
-          <ScrollArea className="max-h-[360px]">
+          <ScrollArea className="max-h-[60vh] sm:max-h-[360px]">
             <div className="divide-y">
               {initializing ? (
                 <div className="space-y-3 px-4 py-4">

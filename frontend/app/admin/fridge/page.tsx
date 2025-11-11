@@ -2199,73 +2199,71 @@ export default function AdminFridgePage() {
                     {issueActions.length === 0 ? (
                       <p className="text-xs text-slate-500">경고·폐기 조치가 없습니다.</p>
                     ) : (
-                      <ScrollArea className="max-h-[260px] pr-2">
-                        <div className="space-y-2">
-                          {issueActions.map((action, index) => {
-                            const key =
-                              action.actionId ??
-                              action.correlationId ??
-                              `${action.recordedAt ?? "action"}-${index}`
-                            const actionType = isInspectionActionType(action.actionType)
-                              ? action.actionType
-                              : DEFAULT_INSPECTION_ACTION
-                            const actionLabel = formatInspectionActionLabel(actionType)
-                            const recordedAt = action.recordedAt
-                              ? formatDateTime(action.recordedAt, "-")
-                              : "기록 시간 미상"
-                            const actionBadgeClass =
-                              actionType === "DISPOSE_EXPIRED" || actionType === "UNREGISTERED_DISPOSE"
-                                ? "border-rose-200 text-rose-700 bg-rose-50"
-                                : "border-amber-200 text-amber-700 bg-amber-50"
-                            const roomLabel = formatRoomLabel(action.roomNumber, selectedInspection.floorNo)
-                            const personalLabel =
-                              typeof action.personalNo === "number" ? String(action.personalNo) : undefined
-                            const roomIdentifier =
-                              roomLabel && personalLabel
-                                ? `${roomLabel}-${personalLabel}`
-                                : roomLabel ?? undefined
-                            const ownerName =
-                              action.targetName?.trim() ??
-                              (action.bundleId ? bundleOwnerLookup.get(action.bundleId) ?? undefined : undefined)
-                            const occupantLabel =
-                              roomIdentifier && ownerName
-                                ? `${roomIdentifier} ${ownerName}`
-                                : roomIdentifier ?? ownerName ?? "사용자"
-                            const summaryLine = buildIssueActionSummary(action)
-                            return (
-                              <div
-                                key={key}
-                                className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-[13px] text-slate-700 shadow-sm"
-                              >
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <Badge
-                                      variant="outline"
-                                      className={cn("px-2 py-0.5 text-xs font-semibold", actionBadgeClass)}
+                      <div className="max-h-[260px] space-y-2 overflow-y-auto pr-2">
+                        {issueActions.map((action, index) => {
+                          const key =
+                            action.actionId ??
+                            action.correlationId ??
+                            `${action.recordedAt ?? "action"}-${index}`
+                          const actionType = isInspectionActionType(action.actionType)
+                            ? action.actionType
+                            : DEFAULT_INSPECTION_ACTION
+                          const actionLabel = formatInspectionActionLabel(actionType)
+                          const recordedAt = action.recordedAt
+                            ? formatDateTime(action.recordedAt, "-")
+                            : "기록 시간 미상"
+                          const actionBadgeClass =
+                            actionType === "DISPOSE_EXPIRED" || actionType === "UNREGISTERED_DISPOSE"
+                              ? "border-rose-200 text-rose-700 bg-rose-50"
+                              : "border-amber-200 text-amber-700 bg-amber-50"
+                          const roomLabel = formatRoomLabel(action.roomNumber, selectedInspection.floorNo)
+                          const personalLabel =
+                            typeof action.personalNo === "number" ? String(action.personalNo) : undefined
+                          const roomIdentifier =
+                            roomLabel && personalLabel
+                              ? `${roomLabel}-${personalLabel}`
+                              : roomLabel ?? undefined
+                          const ownerName =
+                            action.targetName?.trim() ??
+                            (action.bundleId ? bundleOwnerLookup.get(action.bundleId) ?? undefined : undefined)
+                          const occupantLabel =
+                            roomIdentifier && ownerName
+                              ? `${roomIdentifier} ${ownerName}`
+                              : roomIdentifier ?? ownerName ?? "사용자"
+                          const summaryLine = buildIssueActionSummary(action)
+                          return (
+                            <div
+                              key={key}
+                              className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-[13px] text-slate-700 shadow-sm"
+                            >
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <Badge
+                                    variant="outline"
+                                    className={cn("px-2 py-0.5 text-xs font-semibold", actionBadgeClass)}
+                                  >
+                                    {actionLabel}
+                                  </Badge>
+                                  {action.targetUserId ? (
+                                    <Link
+                                      href={`/admin/users?focus=${action.targetUserId}`}
+                                      className="text-sm font-semibold text-emerald-700 hover:underline"
                                     >
-                                      {actionLabel}
-                                    </Badge>
-                                    {action.targetUserId ? (
-                                      <Link
-                                        href={`/admin/users?focus=${action.targetUserId}`}
-                                        className="text-sm font-semibold text-emerald-700 hover:underline"
-                                      >
-                                        {occupantLabel}
-                                      </Link>
-                                    ) : (
-                                      <span className="text-sm font-semibold text-slate-900">{occupantLabel}</span>
-                                    )}
-                                  </div>
-                                  <span className="text-[11px] text-slate-500">{recordedAt}</span>
+                                      {occupantLabel}
+                                    </Link>
+                                  ) : (
+                                    <span className="text-sm font-semibold text-slate-900">{occupantLabel}</span>
+                                  )}
                                 </div>
-                                {summaryLine ? (
-                                  <p className="mt-2 text-sm font-medium text-slate-900">{summaryLine}</p>
-                                ) : null}
+                                <span className="text-[11px] text-slate-500">{recordedAt}</span>
                               </div>
-                            )
-                          })}
-                        </div>
-                      </ScrollArea>
+                              {summaryLine ? (
+                                <p className="mt-2 text-sm font-medium text-slate-900">{summaryLine}</p>
+                              ) : null}
+                            </div>
+                          )
+                        })}
+                      </div>
                     )}
                   </section>
                 </div>
