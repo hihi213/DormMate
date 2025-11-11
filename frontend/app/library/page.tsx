@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth"
 import BottomNav from "@/components/bottom-nav"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import HomeHeader from "@/app/_components/home/home-header"
+import { ComingSoonCard } from "@/components/coming-soon-card"
 
 type BookItem = {
   id: string
@@ -57,7 +58,13 @@ function LibraryInner() {
       />
 
       <div className="mx-auto max-w-screen-sm px-4 py-8 pb-28">
-        <p className="text-sm text-muted-foreground mt-1">{"도서 모듈은 곧 도입 예정입니다."}</p>
+        <ComingSoonCard
+          badge="도서관"
+          title="도서 모듈 (준비 중)"
+          description="도서 검색·대출·예약 기능은 차기 배포에서 제공됩니다."
+          icon={<BookOpen className="size-4" aria-hidden />}
+          note="현재는 사감실에서 수기 대출을 도와드립니다."
+        />
       </div>
     </main>
   )

@@ -38,12 +38,12 @@
 ### 🚀 Dormmate: 최종 시연 시나리오 (A+B)
 
 #### 1단계: 데모 초기 칸 사용 + 즉시 정책 조정 [검증완료]
-> 목표: 데모 초기화 상태(허용량 10, 이미 10개 보관)에서 거주자 등록 실패 → 관리자 증량 → 라벨 발급·수정·삭제 → 잘못된 하향 조정 차단까지 연속 확인.  
+> 목표: 데모 리셋 시 모든 냉장 칸의 허용량이 10으로 초기화된 상태(점유 수는 층 배정 데이터에 따라 8~10개로 달라질 수 있음)에서 거주자 등록 실패 → 관리자 증량 → 라벨 발급·수정·삭제 → 잘못된 하향 조정 차단까지 연속 확인.  
 > 핵심 API/검증: `GET /fridge/slots?view=full`, `POST /fridge/bundles`, `PATCH /fridge/bundles/{bundleId}`, `DELETE /fridge/bundles/{bundleId}`, `PATCH /admin/fridge/compartments/{id}` → `CAPACITY_EXCEEDED`, `bundle_label_sequence`, `CAPACITY_BELOW_ACTIVE`.
 
 * [페르소나] 거주자 (A) / 관리자 (C)
 * (시연 멘트)
-    "데모 리셋 직후라 제 슬롯은 허용량 10개, 실제 보관 10개 상태입니다. `/fridge/slots?view=full` 응답으로 'ACTIVE · 10/10'을 보여주고, 허용량이 꽉 찼음을 확인합니다."
+    "데모 리셋 직후라 제 슬롯의 허용량이 10개로 맞춰져 있습니다. `/fridge/slots?view=full` 응답에서 `maxBundleCount=10`, `occupiedCount` 필드를 보여주고, 현재 점유 수가 허용량과 동일함을 확인합니다."
 
     *(거주자 A가 11번째 포장을 `POST /fridge/bundles`로 등록 시도 → 422 `CAPACITY_EXCEEDED` 토스트 확인)*
 
@@ -55,21 +55,24 @@
 
     "마지막으로 관리자가 허용량을 실제 보관량보다 낮은 5개로 설정하려 하면 서버가 `422 CAPACITY_BELOW_ACTIVE`로 차단해, 정책 하향 시에도 데이터 일관성이 보장됨을 확인합니다."
 
+> **운영 노트**  
+> `R__demo_reset.sql`이 허용량을 10으로 맞추지만, 실제 보관 수는 층별 배정 인원에 따라 달라질 수 있으므로 시연 전 `occupiedCount` 확인 후 11번째 등록이 실패하도록 데이터를 맞춰 둡니다.
+
 #### 2단계: 검사 시작 (층별장)
 > 목표: 검사 세션 생성과 칸 잠금 정책 시연.  
-> 핵심 API/검증: `POST /inspections/start` → 칸 상태 `IN_INSPECTION`, 30분 잠금.
+> 핵심 API/검증: `POST /fridge/inspections` → 칸 상태 `IN_INSPECTION`, 30분 잠금.
 
 * [페르소나] 층별장 (B)
 * (시연 멘트)
-    "이제 B 층별장이 정기 검사를 시작합니다. '검사 시작' 버튼을 누릅니다. (`POST /inspections/start`)"
+    "이제 B 층별장이 정기 검사를 시작합니다. '검사 시작' 버튼을 누릅니다. (`POST /fridge/inspections`)"
 
     *(층별장 화면에서 '검사 시작' 클릭)*
 
-    "이 순간, `InspectionService`가 호출되어 냉장고 칸이 30분간 'IN_INSPECTION' 상태로 변경됩니다. 이 세션은 등록된 '검사 일정(`InspectionSchedule`)'과 자동으로 연결되며, 만약 30분 내 검사를 못 마치면 스케줄러가 세션을 `CANCELLED` 처리하여 냉장고가 무한정 잠기는 것을 방지합니다."
+    "이 순간, `InspectionService`가 호출되어 냉장고 칸이 30분간 'IN_INSPECTION' 상태로 변경됩니다. 요청 본문에 `scheduleId`를 전달하면 해당 '검사 일정(`InspectionSchedule`)'과 즉시 연결되고, 30분 내 검사를 완료하지 않으면 스케줄러가 세션을 `CANCELLED` 처리해 냉장고가 무한정 잠기는 것을 방지합니다."
 
 #### 3단계: 시스템의 견고성 (어-어 패스 1)
 > 목표: 잠금 상태에서 거주자 변경 차단.  
-> 핵심 API/검증: `POST /fridge/bundles` → `ensureCompartmentNotLocked` = 423 Locked / COMPARTMENT_LOCKED.
+> 핵심 API/검증: `POST /fridge/bundles` → `ensureCompartmentNotLocked` = 423 Locked / `COMPARTMENT_LOCKED`, `COMPARTMENT_UNDER_INSPECTION`.
 
 * [페르소나] 거주자 (A)
 * (시연 멘트)
@@ -77,15 +80,15 @@
 
     *(거주자 A의 화면을 보여줌. 잠긴 칸에 '등록' 버튼이 비활성화된 것을 강조)*
 
-    "만약 거주자가 이 상태를 무시하고 API로 직접 포장을 등록하려 시도하면, `ensureCompartmentNotLocked` 로직이 `423 Locked + COMPARTMENT_LOCKED` 오류를 반환하며 시스템의 데이터 정합성을 견고하게 지켜줍니다."
+    "만약 거주자가 이 상태를 무시하고 API로 직접 포장을 등록하려 시도하면, `ensureCompartmentNotLocked` 로직이 `423 Locked + COMPARTMENT_LOCKED` 혹은 검사 중일 때는 `COMPARTMENT_UNDER_INSPECTION` 오류를 반환하며 시스템의 데이터 정합성을 견고하게 지켜줍니다."
 
 #### 4단계: 조치 및 자동화 (층별장)
 > 목표: 조치 → 스냅샷 → 벌점 → 잠금 연장 자동화 설명.  
-> 핵심 API/검증: `POST /inspections/{id}/actions` → `inspection_action_item`, `maybeAttachPenalty`.
+> 핵심 API/검증: `POST /fridge/inspections/{id}/actions` → `inspection_action_item`, `maybeAttachPenalty`.
 
 * [페르소나] 층별장 (B)
 * (시연 멘트)
-    "다시 층별장 화면입니다. B 층별장이 유통기한이 지난 포장을 발견하고 '폐기(DISPOSE)' 조치를 선택합니다. (`POST /inspections/{id}/actions`)"
+    "다시 층별장 화면입니다. B 층별장이 유통기한이 지난 포장을 발견하고 '폐기(DISPOSE)' 조치를 선택합니다. (`POST /fridge/inspections/{id}/actions`)"
 
     *(층별장 화면에서 '폐기' 버튼 클릭)*
 
@@ -94,24 +97,30 @@
     2.  `maybeAttachPenalty`가 호출되어, '폐기' 조치에 대한 벌점(`PenaltyHistory`)이 자동으로 생성됩니다.
     3.  조치가 성공했으므로 잠금 시간이 30분 더 연장됩니다."
 
+    > **운영 노트**  
+    > 자동 벌점은 `DISPOSE_EXPIRED`, `UNREGISTERED_DISPOSE` 조치에만 1점이 부과되며, 경고(WARN) 계열은 조치 기록만 남고 벌점은 생성되지 않습니다.
+
 
 #### 5단계: 제출 및 알림 (거주자)
 > 목표: 검사 제출과 알림/배지 반영.  
-> 핵심 API/검증: `POST /inspections/{id}/submit` → `NotificationService.sendInspectionResultNotifications` (dedupe `FRIDGE_RESULT:<session>:<user>`), `/notifications` 미읽음 우선.
+> 핵심 API/검증: `POST /fridge/inspections/{id}/submit` → `NotificationService.sendInspectionResultNotifications` (dedupe `FRIDGE_RESULT:<sessionId>:<userId>`), `/notifications` 미읽음 우선.
 
 * [페르소나] 층별장 (B) / 거주자 (A)
 * (시연 멘트)
-    "B 층별장이 검사를 '제출'합니다. (`POST /inspections/{id}/submit`)"
+    "B 층별장이 검사를 '제출'합니다. (`POST /fridge/inspections/{id}/submit`)"
 
     *(층별장 화면에서 '제출' 클릭, 거주자 화면으로 전환)*
 
-    "제출 즉시, `NotificationService`가 A 거주자에게 벌점 ID와 조치 내역이 포함된 알림을 발송합니다. `dedupe` 키로 중복 알림은 모두 차단됩니다."
+    "제출 즉시, `NotificationService`가 A 거주자에게 벌점 ID와 조치 내역이 포함된 알림을 발송합니다. `FRIDGE_RESULT:<sessionId>:<userId>` 형태의 dedupe 키로 중복 알림은 모두 차단됩니다."
 
     *(거주자 화면의 '알림'(/notifications) 아이콘에 배지가 뜨고, 클릭 시 '검사 결과' 알림이 최상단에 보임. 알림을 읽고, 포장 목록으로 돌아가면 검사 이후 수정된 항목을 구분하기 위해 `updatedAfterInspection` 배지가 표시되는 것을 보여줌)*
 
+    > **운영 노트**  
+    > `updatedAfterInspection` 배지는 `lastInspectedAt < updatedAt` 인 항목에만 표시되므로, 제출 직후 거주자가 내용을 수정하면 즉시 뱃지가 붙어 검수 이후 변경 여부를 파악할 수 있습니다.
+
 #### 6단계: 관리자의 강력한 운영 도구
 > 목표: 재배분·정정 등 운영 액션과 감사 로그 확인.  
-> 핵심 API/검증: `POST /admin/fridge/reallocations/preview|apply`, `PATCH /inspections/{id}` (정정), AuditLog `FRIDGE_REALLOCATION_APPLY`.
+> 핵심 API/검증: `POST /admin/fridge/reallocations/preview|apply`, `PATCH /fridge/inspections/{id}` (정정), AuditLog `FRIDGE_REALLOCATION_APPLY`.
 
 * [페르소나] 관리자 (C)
 * (시연 멘트)
@@ -119,7 +128,10 @@
 
     *(관리자 화면에서 '호실 재배분' 미리보기와 적용을 시연)*
 
-    "또한, 어제 층별장이 실수로 부과한 벌점을 수정해야 한다면, '검사 내역'에서 `PATCH /inspections/{id}`를 호출하여 조치 내역을 '정정(ADJUST)'할 수도 있습니다."
+    "또한, 어제 층별장이 실수로 부과한 벌점을 수정해야 한다면, '검사 내역'에서 `PATCH /fridge/inspections/{id}`를 호출하여 조치 내역을 '정정(ADJUST)'할 수도 있습니다."
+
+    > **운영 노트**  
+    > `apply` 요청에 포함된 칸 중 하나라도 잠겨 있거나 검사 중이면 API가 전체 요청을 `COMPARTMENT_IN_USE`로 거절하므로, 실행 전에 `/fridge/inspections/active`로 검사 상태를 확인하거나 해당 칸을 제외하고 재요청합니다.
 
 #### 7단계: 배치 작업 및 최종 추적
 > 목표: 배치 알림과 감사 추적 시연.  
@@ -127,11 +139,11 @@
 
 * [페르소나] 관리자 (C)
 * (시연 멘트)
-    "보이지 않는 영역도 관리됩니다. 매일 아침 9시, `FridgeExpiryNotificationScheduler`가 실행되어 유통기한 임박 알림을 보냅니다. 관리자는 `notification_dispatch_log`에서 이 배치 작업이 'SUCCESS'했는지, 혹은 특정 사용자에게 'FAILED'했는지 모두 추적할 수 있습니다."
+    "보이지 않는 영역도 관리됩니다. 매일 아침 9시, `FridgeExpiryNotificationScheduler`가 실행되어 유통기한 임박 알림을 보냅니다. 관리자는 `notification_dispatch_log`에서 배치별 `SUCCESS/FAILED` 기록과 오류 코드를 추적할 수 있습니다."
 
     *(관리자 화면에서 'AuditLog' 조회)*
 
-    "그리고 오늘 시연한 모든 핵심 행위들—'층별장의 검사 제출', '자동 벌점 부과', '관리자의 재배분'—이 '감사 로그(AuditLog)'에 `FRIDGE_REALLOCATION_APPLY` 같은 타입과 JSON 상세 내역으로 모두 기록되었습니다. 이것이 수기 관리의 비대칭 문제를 해결하는 Dormmate의 핵심입니다."
+    "그리고 오늘 시연한 모든 핵심 행위들—'층별장의 검사 제출', '자동 벌점 부과', '관리자의 재배분'—이 '감사 로그(AuditLog)'에 `INSPECTION_SUBMIT`, `FRIDGE_REALLOCATION_APPLY`, `FRIDGE_DEMO_SEED_EXECUTED` 같은 타입과 JSON 상세 내역으로 모두 기록되었습니다. 이것이 수기 관리의 비대칭 문제를 해결하는 Dormmate의 핵심입니다."
 
 #### 8단계: 데모 리셋 (마무리)
 > 목표: 데모 데이터를 초기 상태로 재구성하고 감사 로그 남김.  
@@ -155,6 +167,7 @@
 
     > **운영 노트**  
     > "현재 access token TTL은 45초, refresh 토큰은 5분으로 운용해 사용자가 거의 즉시 `/auth/refresh`를 거치도록 강제하고 있습니다. refresh 시마다 `deviceId`를 재검증해 두 세션을 동시에 끊고, 추후에는 IP/위치 검증과 세션·하드웨어 인증을 연계해 방어를 확장할 계획입니다."
+    >
+    > 데모에서 `DEVICE_MISMATCH`를 재현하려면 브라우저마다 서로 다른 `deviceId`(로컬 스토리지 `dm.auth.deviceId`)를 유지한 상태에서 한쪽의 `refreshToken`만 다른 기기에 붙여 넣고 `/auth/refresh`를 호출하면 됩니다. 토큰과 기기 ID가 묶여 있기 때문에 refresh 토큰만 탈취해도 서버가 즉시 모든 세션을 폐기합니다.
 
-브라우저 A에서 로그인한 뒤 개발자 도구 → Application → Local Storage → 해당 도메인으로 가보면 dm.auth.tokens 항목이 있고, 여기서 refreshToken을 확인할 수 있습니다.
-이걸 다른 기기에 붙여 저장하고 새로고침해서
+브라우저 A에서 로그인한 뒤 개발자 도구 → Application → Local Storage → 해당 도메인으로 가보면 `dm.auth.tokens`와 `dm.auth.deviceId` 항목이 있습니다. refresh 토큰만 다른 기기에 붙여 저장하고 새로고침하면 서버가 `deviceId` 불일치를 감지하고 두 세션을 동시에 끊습니다.

@@ -19,6 +19,7 @@ import {
   updateItem as updateItemApi,
   deleteItem as deleteItemApi,
   deleteBundle as deleteBundleApi,
+  type SlotFetchOptions,
 } from "@/features/fridge/api"
 import { toItems } from "@/features/fridge/utils/data-shaping"
 import {
@@ -101,6 +102,18 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const [isInspector, setIsInspector] = useState(false)
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null)
 
+  const buildSlotFetchOptions = useCallback((): SlotFetchOptions => {
+    const currentUser = getCurrentUser()
+    if (!currentUser) {
+      return {}
+    }
+    if (currentUser.isAdmin) {
+      return {}
+    }
+    const floor = currentUser.roomDetails?.floor
+    return typeof floor === "number" ? { floor } : {}
+  }, [])
+
   useEffect(() => {
     let canceled = false
 
@@ -119,8 +132,9 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
       const ownerScope = currentUser?.isAdmin ? "all" : "me"
 
       try {
+        const slotOptions = buildSlotFetchOptions()
         const [slotResult, inventoryResult] = await Promise.allSettled([
-          fetchFridgeSlots(),
+          fetchFridgeSlots(slotOptions),
           fetchFridgeInventory(currentUserId, { ownerScope }),
         ])
 
@@ -179,7 +193,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
     return () => {
       canceled = true
     }
-  }, [currentUserId])
+  }, [buildSlotFetchOptions, currentUserId])
 
   const bundles = useMemo(() => bundleState, [bundleState])
   const items = useMemo(() => toItems(bundles, units), [bundles, units])
@@ -187,12 +201,12 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
 
   const refreshSlots = useCallback(async () => {
     try {
-      const updatedSlots = await fetchFridgeSlots()
+      const updatedSlots = await fetchFridgeSlots(buildSlotFetchOptions())
       setSlots(updatedSlots)
     } catch (error) {
       console.error("Failed to refresh fridge slots after mutation", error)
     }
-  }, [])
+  }, [buildSlotFetchOptions])
 
   useEffect(() => {
     if (!currentUserId) return

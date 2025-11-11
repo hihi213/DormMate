@@ -48,9 +48,10 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
   const resolveTarget = useCallback(
     (current: AuthUser | null) => {
       if (current?.isAdmin) {
-        if (!explicitRedirect || explicitRedirect === "/" || explicitRedirect === null) {
-          return "/admin"
+        if (explicitRedirect && explicitRedirect.startsWith("/admin")) {
+          return explicitRedirect
         }
+        return "/admin"
       }
       return finalRedirect || "/"
     },
