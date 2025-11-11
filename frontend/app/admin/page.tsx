@@ -198,9 +198,6 @@ function AdminDashboard() {
                 <CardTitle className="text-base font-semibold text-slate-900">운영 워치리스트</CardTitle>
                 <CardDescription className="text-sm text-slate-500">지금 처리해야 할 승인/조치/경보 항목입니다.</CardDescription>
               </div>
-              <Button asChild size="sm" variant="outline">
-                <Link href="/admin/tools">운영 도구 열기</Link>
-              </Button>
             </CardHeader>
             <CardContent className="space-y-4">
               {watchlistItems.map((item) => (

@@ -1555,48 +1555,27 @@ export default function AdminFridgePage() {
             <p className="text-sm text-slate-400">칸을 선택하면 상세 정보가 표시됩니다.</p>
           )}
         </div>
-        {selectedSlot ? (
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className="gap-1"
-                onClick={() => openSlotConfigDialog(selectedSlot)}
-              >
-                <Settings2 className="size-4" aria-hidden />
-                상태·설정
-              </Button>
-              {detailTab === "bundles" ? (
-                <>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="gap-1 text-slate-600 hover:text-emerald-600"
-                    onClick={handleResetSearch}
-                    disabled={bundleData.loading}
-                  >
-                    <RotateCcw className="size-4" aria-hidden />
-                    검색 초기화
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1"
-                    onClick={() => handleDeletedOpenChange(true)}
-                  >
-                    <History className="size-4" aria-hidden />
-                    삭제 이력
-                  </Button>
-                </>
-              ) : null}
-              <Button variant="ghost" size="sm" className="gap-1 text-emerald-600" asChild>
-                <Link href={`/admin/audit?module=fridge&slotId=${selectedSlot.slotId}`}>
-                  감사 로그 이동
-                  <ArrowRight className="size-3" aria-hidden />
-                </Link>
-              </Button>
-            </div>
+        {selectedSlot && detailTab === "bundles" ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1 text-slate-600 hover:text-emerald-600"
+              onClick={handleResetSearch}
+              disabled={bundleData.loading}
+            >
+              <RotateCcw className="size-4" aria-hidden />
+              검색 초기화
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1"
+              onClick={() => handleDeletedOpenChange(true)}
+            >
+              <History className="size-4" aria-hidden />
+              삭제 이력
+            </Button>
           </div>
         ) : null}
       </div>
