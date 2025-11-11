@@ -3,20 +3,22 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle, Search } from "lucide-react"
 import { format } from "date-fns"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { ScrollArea } from "@/components/ui/scroll-area"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
-import { BulkEditor, DangerZoneModal, DetailsDrawer } from "@/components/admin"
+import { DangerZoneModal, DetailsDrawer } from "@/components/admin"
 import {
   demoteAdminFloorManager,
   deactivateAdminUser,
@@ -33,15 +35,19 @@ type UserStatusFilter = "ACTIVE" | "INACTIVE"
 type FilterState = {
   floor: string
   status: UserStatusFilter
+  floorManagerOnly: boolean
+  search: string
 }
 
-type SelectionMode = "PROMOTE" | "DEACTIVATE" | null
+type SelectionMode = "DEACTIVATE" | null
 type RoleChangeMode = "PROMOTE" | "DEMOTE"
 
 export default function AdminUsersPage() {
   const [filters, setFilters] = useState<FilterState>({
     floor: "ALL",
     status: "ACTIVE",
+    floorManagerOnly: false,
+    search: "",
   })
   const { data, loading, error, refetch } = useAdminUsers(filters.status)
   const userItems = useMemo(() => data?.items ?? [], [data?.items])
@@ -169,20 +175,36 @@ export default function AdminUsersPage() {
   }, [userItems])
 
   const filteredUsers = useMemo(() => {
+    const keyword = filters.search.trim().toLowerCase()
     const filtered = userItems.filter((user) => {
       const statusMatches = user.status === filters.status
       const userFloor = resolveUserFloor(user)
       const floorMatches =
         filters.floor === "ALL" || (userFloor !== null && String(userFloor) === filters.floor)
+      const floorManagerMatches = !filters.floorManagerOnly || user.role === "FLOOR_MANAGER"
+      const searchTargets = [
+        user.name,
+        user.room,
+        formatRoomWithPersonal(user),
+        typeof user.personalNo === "number" ? user.personalNo.toString() : undefined,
+      ]
+      const searchMatches =
+        keyword.length === 0 ||
+        searchTargets.some((value) => value?.toLowerCase().includes(keyword))
 
-      return statusMatches && floorMatches
+      return statusMatches && floorMatches && floorManagerMatches && searchMatches
     })
     return filtered.sort(compareAdminUsers)
-  }, [filters.floor, filters.status, userItems])
+  }, [filters.floor, filters.status, filters.floorManagerOnly, filters.search, userItems])
 
   const totalItems = filteredUsers.length
   const paginated = filteredUsers.slice((page - 1) * pageSize, page * pageSize)
   const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
+  const searchKeyword = filters.search.trim()
+  const floorLabel = filters.floor === "ALL" ? "전체 층" : `${filters.floor}F`
+  const statusLabel = filters.status === "ACTIVE" ? "활성" : "비활성"
+  const selectionActive = Boolean(selectionMode)
+  const floorOptions = useMemo(() => ["ALL", ...floors.map((floor) => String(floor))], [floors])
 
   useEffect(() => {
     if (!pendingFocusId || !focusCandidate) return
@@ -261,13 +283,23 @@ export default function AdminUsersPage() {
     setPage(1)
   }
 
-  const startSelection = (mode: Exclude<SelectionMode, null>) => {
+  const handleFloorManagerToggle = (checked: boolean) => {
+    setFilters((prev) => ({ ...prev, floorManagerOnly: checked }))
+    setPage(1)
+  }
+
+  const handleSearchChange = (value: string) => {
+    setFilters((prev) => ({ ...prev, search: value }))
+    setPage(1)
+  }
+
+  const toggleSelectionMode = () => {
     if (actionLoading) return
-    if (selectionMode === mode) {
+    if (selectionMode) {
       cancelSelection()
       return
     }
-    setSelectionMode(mode)
+    setSelectionMode("DEACTIVATE")
     setFocusedUserId(null)
     resetSelection()
   }
@@ -290,13 +322,9 @@ export default function AdminUsersPage() {
   const confirmSelection = async () => {
     if (!selectionMode || selectedIds.length === 0) return
     setActionLoading(true)
-    const actionLabel = selectionMode === "PROMOTE" ? "층별장 임명" : "계정 비활성화"
+    const actionLabel = "계정 비활성화"
     try {
-      if (selectionMode === "PROMOTE") {
-        await Promise.all(selectedIds.map((id) => promoteAdminFloorManager(id)))
-      } else {
-        await Promise.all(selectedIds.map((id) => deactivateAdminUser(id)))
-      }
+      await Promise.all(selectedIds.map((id) => deactivateAdminUser(id)))
       toast({
         title: `${actionLabel} 완료`,
         description: `${selectedIds.length}명의 사용자에 대해 ${actionLabel}이 반영되었습니다.`,
@@ -413,87 +441,49 @@ export default function AdminUsersPage() {
                 층별장 승격/복귀, 관리자 임명, 계정 비활성화를 처리합니다. 변경 이력은 감사 로그에서 추적하세요.
               </p>
             </div>
-            <Badge variant="secondary" className="h-fit rounded-full bg-emerald-100 px-4 py-1 text-sm font-medium text-emerald-700">
-              총 {totalItems.toLocaleString()}명
-            </Badge>
           </div>
         </section>
 
-        <section className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm space-y-4">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-1.5 w-full lg:max-w-[220px]">
-              <Label className="text-xs font-semibold uppercase tracking-wide text-slate-600">층 선택</Label>
-              <Select value={filters.floor} onValueChange={handleFloorChange}>
-                <SelectTrigger className="h-10 rounded-xl border border-slate-200 bg-white/90">
-                  <SelectValue placeholder="층 선택" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="ALL">전체</SelectItem>
-                  {floors.map((floor) => (
-                    <SelectItem key={floor} value={String(floor)}>
-                      {floor}층
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex justify-end">
-              <Button asChild variant="ghost" className="text-slate-600">
-                <Link href="/admin/audit?module=roles">권한 변경 로그</Link>
-              </Button>
-            </div>
-          </div>
-          <Separator />
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div className="space-y-2 text-xs text-slate-600">
-              <span className="text-sm font-semibold text-slate-800">
-                사용자 목록 · 총 {totalItems.toLocaleString()}명
-              </span>
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">상태</span>
-                <div className="flex gap-1 rounded-full border border-slate-200 bg-slate-50/80 p-1">
-                  {(["ACTIVE", "INACTIVE"] as UserStatusFilter[]).map((status) => {
-                    const isActive = filters.status === status
-                    return (
-                      <Button
-                        key={status}
-                        type="button"
-                        size="sm"
-                        variant={isActive ? "default" : "ghost"}
-                        className={cn(
-                          "px-3 text-xs font-medium",
-                          isActive
-                            ? "bg-emerald-200/80 text-emerald-800 hover:bg-emerald-200/80"
-                            : "text-slate-600 hover:text-emerald-600",
-                        )}
-                        onClick={() => handleStatusChange(status)}
-                      >
-                        {status === "ACTIVE" ? "활성" : "비활성"}
-                      </Button>
-                    )
-                  })}
+        <section className="rounded-3xl border border-slate-200 bg-white/90 p-5 shadow-sm space-y-5">
+
+          <div className="space-y-3">
+            <Label className="text-xs font-semibold uppercase tracking-wide text-slate-600">층 · 검색</Label>
+            <div className="flex gap-3 lg:flex-row lg:items-center">
+                <Select value={filters.floor} onValueChange={handleFloorChange}>
+                  <SelectTrigger className="h-11 rounded-2xl border border-slate-200 bg-white/95 px-4 text-sm font-semibold">
+                    <SelectValue placeholder="층 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {floorOptions.map((value) => (
+                      <SelectItem key={value} value={value}>
+                        {value === "ALL" ? "전체" : `${value}층`}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              <div className="flex flex-1 items-center gap-2">
+                <div className="flex min-w-[140px] items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
+                  <Input
+                    value={filters.search}
+                    onChange={(event) => handleSearchChange(event.target.value)}
+                    placeholder="이름 · 호실(205)"
+                    className="h-9 flex-1 border-none bg-transparent px-0 text-sm focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                  <Button
+                    type="button"
+                    size="sm"
+                    className="h-9 rounded-xl bg-emerald-600 px-4 text-xs font-semibold text-white hover:bg-emerald-700"
+                    onClick={() => {
+                      void refetch()
+                    }}
+                  >
+                    검색
+                  </Button>
                 </div>
               </div>
             </div>
-            <div className="flex flex-wrap justify-end gap-2">
-              <Button
-                type="button"
-                variant={selectionMode === "PROMOTE" ? "default" : "outline"}
-                disabled={actionLoading}
-                onClick={() => startSelection("PROMOTE")}
-              >
-                {selectionMode === "PROMOTE" ? "선택 취소" : "층별장 임명"}
-              </Button>
-              <Button
-                type="button"
-                variant={selectionMode === "DEACTIVATE" ? "default" : "outline"}
-                disabled={actionLoading}
-                onClick={() => startSelection("DEACTIVATE")}
-              >
-                {selectionMode === "DEACTIVATE" ? "선택 취소" : "비활성화"}
-              </Button>
-            </div>
           </div>
+
         </section>
 
         <section className="space-y-4">
@@ -510,6 +500,52 @@ export default function AdminUsersPage() {
             </Alert>
           ) : null}
           <Card className="shadow-sm">
+            <CardHeader className="space-y-2 border-b border-slate-100 py-2">
+              <div className="text-base font-semibold text-slate-800">
+                {floorLabel} · {statusLabel}
+              </div>
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <Badge
+                  variant="secondary"
+                  className={cn(
+                    "rounded-full px-3 py-1 text-xs font-semibold",
+                    selectionActive ? "bg-violet-100 text-violet-700" : "bg-emerald-100 text-emerald-700",
+                  )}
+                >
+                  {selectionActive ? `선택 ${selectedIds.length}명` : `총 ${totalItems.toLocaleString()}명`}
+                </Badge>
+                <div className="flex flex-wrap items-center gap-2 text-xs font-semibold">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={filters.status === "INACTIVE" ? "default" : "outline"}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-[12px] font-semibold",
+                      filters.status === "INACTIVE"
+                        ? "bg-emerald-600 text-white hover:bg-emerald-600"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:text-emerald-700",
+                    )}
+                    onClick={() => handleStatusChange(filters.status === "INACTIVE" ? "ACTIVE" : "INACTIVE")}
+                  >
+                    비활성만
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={filters.floorManagerOnly ? "default" : "outline"}
+                    className={cn(
+                      "rounded-full border px-3 py-1 text-[12px] font-semibold",
+                      filters.floorManagerOnly
+                        ? "bg-emerald-600 text-white hover:bg-emerald-600"
+                        : "border-slate-200 bg-white text-slate-600 hover:border-emerald-200 hover:text-emerald-700",
+                    )}
+                    onClick={() => handleFloorManagerToggle(!filters.floorManagerOnly)}
+                  >
+                    층별장만
+                  </Button>
+                </div>
+              </div>
+            </CardHeader>
             <CardContent className="space-y-3">
               {paginated.length === 0 && !loading ? (
                 <p className="text-center text-xs text-muted-foreground">표시할 사용자가 없습니다.</p>
@@ -622,34 +658,6 @@ export default function AdminUsersPage() {
             </CardContent>
           </Card>
 
-          {selectionMode ? (
-            <BulkEditor
-              selectedCount={selectedIds.length}
-              onClearSelection={resetSelection}
-              secondaryActions={[
-                {
-                  id: "cancel",
-                  label: "선택 취소",
-                  variant: "ghost",
-                  onSelect: cancelSelection,
-                  disabled: actionLoading,
-                },
-              ]}
-              primaryAction={{
-                id: "confirm",
-                label: selectionMode === "PROMOTE" ? "임명 확정" : "비활성화 확정",
-                onSelect: () => {
-                  void confirmSelection()
-                },
-                disabled: actionLoading || selectedIds.length === 0,
-              }}
-            >
-              <span className="text-xs text-muted-foreground">
-                선택한 사용자 {selectedIds.length}명 · {selectionMode === "PROMOTE" ? "층별장 임명" : "계정 비활성화"}을 진행하려면 확정
-                버튼을 누르세요.
-              </span>
-            </BulkEditor>
-          ) : null}
         </section>
 
         <DetailsDrawer
@@ -743,9 +751,34 @@ export default function AdminUsersPage() {
                     <Button asChild size="sm" variant="ghost" className="gap-1 text-slate-600">
                       <Link href="/admin/notifications">벌점 알림 템플릿</Link>
                     </Button>
-                  </div>
-                </div>
-              </section>
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
+            <p className="text-xs text-slate-600">
+              {selectionActive
+                ? "비활성화할 사용자를 체크박스로 선택한 뒤 실행 버튼을 누르세요."
+                : "여러 사용자를 비활성화하려면 선택 모드를 켜세요."}
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button type="button" variant={selectionActive ? "default" : "outline"} disabled={actionLoading} onClick={toggleSelectionMode}>
+                {selectionActive ? "선택 모드 종료" : "선택 비활성화"}
+              </Button>
+              {selectionActive ? (
+                <Button
+                  type="button"
+                  className="bg-slate-900 text-white hover:bg-slate-800"
+                  disabled={actionLoading || selectedIds.length === 0}
+                  onClick={() => {
+                    void confirmSelection()
+                  }}
+                >
+                  선택 비활성화 실행
+                </Button>
+              ) : null}
+            </div>
+          </div>
+        </section>
 
               <section className="space-y-3 rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
                 <div className="flex items-start justify-between gap-3">

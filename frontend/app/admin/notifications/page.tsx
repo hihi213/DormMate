@@ -662,8 +662,8 @@ export default function AdminNotificationsPage() {
             </Link>
           </p>
           <p>
-            <Link href="/admin/tools" className="text-emerald-600 hover:underline">
-              운영 도구 허브
+            <Link href="/admin/notifications" className="text-emerald-600 hover:underline">
+              알림·정책 설정
             </Link>
           </p>
         </section>

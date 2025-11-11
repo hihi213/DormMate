@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import dynamic from "next/dynamic"
-import { Snowflake, Plus } from "lucide-react"
+import { Snowflake } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { FridgeProvider, useFridge } from "@/features/fridge/hooks/fridge-context"
@@ -20,6 +20,7 @@ import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
 import { computePermittedSlotIds } from "@/features/fridge/utils/slot-permissions"
 import type { InspectionSchedule } from "@/features/inspections/types"
 import type { Slot } from "@/features/fridge/types"
+import HomeHeader from "@/app/_components/home/home-header"
 
 // Lazy load heavier bottom sheets
 const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
@@ -41,11 +42,11 @@ function FridgeInner() {
   const { toast } = useToast()
   const currentUser = getCurrentUser()
   const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
+  const [mounted, setMounted] = useState(false)
   const [query, setQuery] = useState("")
   const [tab, setTab] = useState<"all" | "mine" | "expiring" | "expired">("all")
   const [selectedSlotId, setSelectedSlotId] = useState<string>("")
   const [addOpen, setAddOpen] = useState(false)
-  const [myOnly, setMyOnly] = useState(true)
   const [nextScheduleText, setNextScheduleText] = useState<string>("")
   const [itemSheet, setItemSheet] = useState<{ open: boolean; id: string; edit?: boolean }>({
     open: false,
@@ -84,6 +85,10 @@ function FridgeInner() {
       setSelectedSlotId(fallbackSlotId)
     }
   }, [restrictSlotViewToOwnership, permittedSlotIds, selectedSlotId])
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   useEffect(() => {
     if (typeof window === "undefined") return
@@ -174,7 +179,6 @@ function FridgeInner() {
 
     const matchesBaseFilters = (item: Item) => {
       if (selectedSlotId && item.slotId !== selectedSlotId) return false
-      if (myOnly && !(uid ? item.ownerId === uid : item.owner === "me")) return false
 
       switch (tab) {
         case "mine":
@@ -216,7 +220,7 @@ function FridgeInner() {
 
     result.sort((a, b) => a.expiryDate.localeCompare(b.expiryDate))
     return result
-  }, [items, query, tab, selectedSlotId, myOnly, uid])
+  }, [items, query, tab, selectedSlotId, uid])
 
   const counts = useMemo(() => {
     const now = new Date()
@@ -225,14 +229,13 @@ function FridgeInner() {
       expired = 0
     items.forEach((it) => {
       if (selectedSlotId && it.slotId !== selectedSlotId) return
-      if (myOnly && !(uid ? it.ownerId === uid : it.owner === "me")) return
       const d = Math.floor((new Date(it.expiryDate).getTime() - new Date(now.toDateString()).getTime()) / 86400000)
       if (uid ? it.ownerId === uid : it.owner === "me") mine++
       if (d >= 0 && d <= 3) expiring++
       if (d < 0) expired++
     })
     return { mine, expiring, expired }
-  }, [items, selectedSlotId, myOnly, uid])
+  }, [items, selectedSlotId, uid])
 
   const selectedSlot = useMemo(() => slots.find((slot) => slot.slotId === selectedSlotId) ?? null, [slots, selectedSlotId])
   const selectedSlotSuspended = useMemo(() => {
@@ -265,27 +268,22 @@ function FridgeInner() {
 
   return (
     <main className="min-h-[100svh] bg-white">
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur">
-        <div className="mx-auto max-w-screen-sm px-2 py-3 flex items-center">
-          <div className="flex-1 text-center">
-            <div className="inline-flex items-center gap-2">
-              <Snowflake className="w-4 h-4 text-teal-700" />
-              <h1 className="text-base font-semibold leading-none">{"냉장고"}</h1>
-            </div>
+      <HomeHeader
+        mounted={mounted}
+        isLoggedIn={Boolean(currentUser)}
+        user={currentUser}
+        isAdmin={isAdmin}
+        onOpenInfo={() => toast({ title: "내 정보 화면은 아직 준비 중입니다." })}
+        onLogout={() => {
+          window.location.href = "/auth/logout"
+        }}
+        contextSlot={
+          <div className="inline-flex items-center gap-2 text-emerald-700">
+            <Snowflake className="h-5 w-5" aria-hidden />
+            <span className="text-base font-semibold leading-none">냉장고</span>
           </div>
-          <div className="inline-flex items-center gap-1">
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="물품 등록"
-              onClick={handleAddClick}
-              aria-disabled={selectedSlotSuspended}
-            >
-              <Plus className="w-5 h-5" />
-            </Button>
-          </div>
-        </div>
-      </header>
+        }
+      />
 
       <div className="mx-auto max-w-screen-sm px-4 pb-28 pt-4 space-y-4">
         {initialLoadError && (
@@ -316,11 +314,14 @@ function FridgeInner() {
               setSlotId={setSelectedSlotId}
               slots={visibleSlots}
               counts={counts}
-              myOnly={myOnly}
-              onToggleMyOnly={setMyOnly}
               searchValue={query}
               onSearchChange={setQuery}
               allowAllSlots={!restrictSlotViewToOwnership}
+              actionSlot={
+                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleAddClick}>
+                  {"물품 추가"}
+                </Button>
+              }
             />
           </CardContent>
         </Card>

@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { formatDistanceToNow } from "date-fns"
 import { ko } from "date-fns/locale"
@@ -192,9 +193,18 @@ export default function NotificationBell({ size = 10, disabled = false, onRequir
       </PopoverTrigger>
       <PopoverContent align="end" className="w-[320px] p-0">
         <div className="flex flex-col">
-          <div className="flex items-center justify-between border-b px-4 py-3">
-            <div className="text-sm font-semibold">알림</div>
-            <div className="flex items-center gap-2">
+          <div className="border-b px-4 py-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold">알림</div>
+              <Link
+                href="/notifications"
+                className="text-xs font-medium text-emerald-600 hover:underline"
+                onClick={() => setOpen(false)}
+              >
+                알림 센터
+              </Link>
+            </div>
+            <div className="mt-2 flex items-center justify-between gap-2">
               <div className="flex items-center gap-1">
                 {[
                   { key: "all" as const, label: "전체" },

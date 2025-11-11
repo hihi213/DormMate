@@ -1,14 +1,11 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ArrowLeft, Plus, Clock, CheckCircle, XCircle, MoreVertical, Edit3, Trash2, Shirt } from "lucide-react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { getCurrentUserId } from "@/lib/auth"
-import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from "@/components/ui/dropdown-menu"
+import { Shirt } from "lucide-react"
+import { getCurrentUser } from "@/lib/auth"
 import BottomNav from "@/components/bottom-nav"
 import AuthGuard from "@/features/auth/components/auth-guard"
+import HomeHeader from "@/app/_components/home/home-header"
 
 type LaundryItem = {
   id: string
@@ -33,19 +30,32 @@ export default function LaundryPage() {
 }
 
 function LaundryInner() {
+  const currentUser = getCurrentUser()
+  const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
+  const [mounted, setMounted] = useState(false)
+
+  useEffect(() => {
+    setMounted(true)
+  }, [])
+
   return (
     <main className="min-h-[100svh] bg-white">
-      {/* Main page header (no back) */}
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-        <div className="mx-auto max-w-screen-sm px-2 py-3 flex items-center">
-          <div className="flex-1 text-center">
-            <div className="inline-flex items-center gap-2">
-              <Shirt className="size-4 text-teal-700" />
-              <h1 className="text-base font-semibold leading-none">{"세탁기 현황"}</h1>
-            </div>
+      <HomeHeader
+        mounted={mounted}
+        isLoggedIn={Boolean(currentUser)}
+        user={currentUser}
+        isAdmin={isAdmin}
+        onOpenInfo={() => undefined}
+        onLogout={() => {
+          window.location.href = "/auth/logout"
+        }}
+        contextSlot={
+          <div className="inline-flex items-center gap-2 text-sky-700">
+            <Shirt className="h-5 w-5" aria-hidden />
+            <span className="text-base font-semibold leading-none">세탁실</span>
           </div>
-        </div>
-      </header>
+        }
+      />
 
       <div className="mx-auto max-w-screen-sm px-4 py-8 pb-28">
         <p className="text-sm text-muted-foreground">{"세탁 모듈은 곧 도입 예정입니다."}</p>
