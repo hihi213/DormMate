@@ -9,7 +9,7 @@ test.describe('검사 취소 상태 회귀', () => {
     await page.goto('/fridge/inspections');
 
     const historyCard = page
-      .locator('div.rounded-lg')
+      .getByRole('button', { name: '검사 기록 상세 보기' })
       .filter({ hasText: cancelNote })
       .first();
 
