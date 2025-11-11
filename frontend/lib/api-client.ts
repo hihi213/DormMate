@@ -87,6 +87,7 @@ export async function apiClient<T>(path: string, options: ApiRequestOptions = {}
   const headers = new Headers(headersInit)
   const requestUrl = `${baseUrl}${path}`
   let requestBody = buildBody(body, headers)
+  ensureRequestId(headers)
 
   if (!skipAuth) {
     const accessToken = await ensureValidAccessToken()
@@ -125,6 +126,21 @@ export async function apiClient<T>(path: string, options: ApiRequestOptions = {}
 
   const data = await parseResponse<T>(response, parseResponseAs)
   return { ok: true, data, response }
+}
+
+function ensureRequestId(headers: Headers) {
+  if (headers.has("x-request-id")) {
+    return
+  }
+  headers.set("x-request-id", generateRequestId())
+}
+
+function generateRequestId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID()
+  }
+  const random = Math.random().toString(36).slice(2, 10)
+  return `req-${Date.now().toString(36)}-${random}`
 }
 
 export async function safeApiCall<T>(

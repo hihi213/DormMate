@@ -16,7 +16,7 @@ export default function LogoutPage() {
         await logout()
       } finally {
         if (mounted) {
-          router.replace("/auth?mode=login&reason=sessionExpired")
+          router.replace("/auth?mode=login&reason=logout")
         }
       }
     }
