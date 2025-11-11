@@ -2,7 +2,14 @@ package com.dormmate.backend.modules.admin.presentation.dto;
 
 import java.util.List;
 
-public record AdminUsersResponse(List<User> items) {
+public record AdminUsersResponse(
+        List<User> items,
+        int page,
+        int size,
+        long totalElements,
+        int totalPages,
+        List<Integer> availableFloors
+) {
 
     public record User(
             String id,

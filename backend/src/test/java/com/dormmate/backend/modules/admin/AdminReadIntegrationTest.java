@@ -51,6 +51,24 @@ class AdminReadIntegrationTest extends AbstractPostgresIntegrationTest {
     }
 
     @Test
+    void adminCanFilterUsersByFloorSearchAndPagination() throws Exception {
+        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+
+        mockMvc.perform(get("/admin/users")
+                        .header("Authorization", "Bearer " + adminToken)
+                        .param("status", "ACTIVE")
+                        .param("floor", "2")
+                        .param("search", "205")
+                        .param("page", "0")
+                        .param("size", "5"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.page").value(0))
+                .andExpect(jsonPath("$.size").value(5))
+                .andExpect(jsonPath("$.items").isArray())
+                .andExpect(jsonPath("$.availableFloors").isArray());
+    }
+
+    @Test
     void nonAdminCannotAccessAdminReadEndpoints() throws Exception {
         String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
 

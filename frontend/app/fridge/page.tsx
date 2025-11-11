@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react"
 import dynamic from "next/dynamic"
-import { Snowflake } from "lucide-react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { FridgeProvider, useFridge } from "@/features/fridge/hooks/fridge-context"
+import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import type { Item } from "@/features/fridge/types"
 import Filters from "@/features/fridge/components/filters"
 import ItemsList from "@/features/fridge/components/items-list"
@@ -20,7 +20,7 @@ import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
 import { computePermittedSlotIds } from "@/features/fridge/utils/slot-permissions"
 import type { InspectionSchedule } from "@/features/inspections/types"
 import type { Slot } from "@/features/fridge/types"
-import HomeHeader from "@/app/_components/home/home-header"
+import UserServiceHeader from "@/app/_components/home/user-service-header"
 
 // Lazy load heavier bottom sheets
 const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
@@ -29,17 +29,18 @@ const BundleDetailSheet = dynamic(() => import("@/features/fridge/components/bun
 export default function FridgePage() {
   return (
     <AuthGuard>
-      <FridgeProvider>
-        <FridgeInner />
-        <BottomNav />
-      </FridgeProvider>
+      <FridgeInner />
+      <BottomNav />
     </AuthGuard>
   )
 }
 
 function FridgeInner() {
-  const { items, slots, bundles, initialLoadError, refreshAll } = useFridge()
+  const { items, slots, bundles, initialLoadError } = useFridge()
   const { toast } = useToast()
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
   const currentUser = getCurrentUser()
   const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
   const [mounted, setMounted] = useState(false)
@@ -62,6 +63,38 @@ function FridgeInner() {
 
   const restrictSlotViewToOwnership = !isAdmin
   const roomDetails = currentUser?.roomDetails ?? null
+
+  useEffect(() => {
+    const itemParam = searchParams.get("item")
+    const editParam = searchParams.get("itemEdit") === "1"
+    if (itemParam) {
+      setItemSheet({ open: true, id: itemParam, edit: editParam })
+    } else {
+      setItemSheet((prev) => (prev.open ? { ...prev, open: false, id: prev.id } : prev))
+    }
+  }, [searchParams])
+
+  const replaceQuery = useCallback(
+    (mutation: (params: URLSearchParams) => void) => {
+      if (!pathname) return
+      const before = searchParams.toString()
+      const params = new URLSearchParams(before)
+      mutation(params)
+      const next = params.toString()
+      if (next === before) {
+        return
+      }
+      router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false })
+    },
+    [pathname, router, searchParams],
+  )
+
+  const clearItemQuery = useCallback(() => {
+    replaceQuery((params) => {
+      params.delete("item")
+      params.delete("itemEdit")
+    })
+  }, [replaceQuery])
 
   const permittedSlotIds = useMemo(() => {
     if (!restrictSlotViewToOwnership) return null
@@ -90,16 +123,6 @@ function FridgeInner() {
   useEffect(() => {
     setMounted(true)
   }, [])
-
-  useEffect(() => {
-    if (typeof window === "undefined") return
-    const intervalId = window.setInterval(() => {
-      void refreshAll()
-    }, 60000)
-    return () => {
-      window.clearInterval(intervalId)
-    }
-  }, [refreshAll])
 
   useEffect(() => {
     let cancelled = false
@@ -245,9 +268,20 @@ function FridgeInner() {
   }, [selectedSlot])
 
   // Stable handlers
-  const handleOpenItem = useCallback((id: string, opts?: { edit?: boolean }) => {
-    setItemSheet({ open: true, id, edit: !!opts?.edit })
-  }, [])
+  const handleOpenItem = useCallback(
+    (id: string, opts?: { edit?: boolean }) => {
+      setItemSheet({ open: true, id, edit: !!opts?.edit })
+      replaceQuery((params) => {
+        params.set("item", id)
+        if (opts?.edit) {
+          params.set("itemEdit", "1")
+        } else {
+          params.delete("itemEdit")
+        }
+      })
+    },
+    [replaceQuery],
+  )
   const handleOpenBundle = useCallback((bid: string, opts?: { edit?: boolean }) => {
     setBundleSheet({ open: true, id: bid, edit: !!opts?.edit })
   }, [])
@@ -277,21 +311,15 @@ function FridgeInner() {
 
   return (
     <main className="min-h-[100svh] bg-white">
-      <HomeHeader
+      <UserServiceHeader
+        service="fridge"
         mounted={mounted}
-        isLoggedIn={Boolean(currentUser)}
         user={currentUser}
         isAdmin={isAdmin}
         onOpenInfo={() => toast({ title: "내 정보 화면은 아직 준비 중입니다." })}
         onLogout={() => {
           window.location.href = "/auth/logout"
         }}
-        contextSlot={
-          <div className="inline-flex items-center gap-2 text-emerald-700">
-            <Snowflake className="h-5 w-5" aria-hidden />
-            <span className="text-base font-semibold leading-none">냉장고</span>
-          </div>
-        }
       />
 
       <div className="mx-auto max-w-screen-sm px-4 pb-28 pt-4 space-y-4">
@@ -368,7 +396,12 @@ function FridgeInner() {
       {/* Bottom sheets for quick detail (lazy-loaded) */}
       <ItemDetailSheet
         open={itemSheet.open}
-        onOpenChange={(v) => setItemSheet((s) => ({ ...s, open: v }))}
+        onOpenChange={(v) => {
+          setItemSheet((s) => ({ ...s, open: v }))
+          if (!v) {
+            clearItemQuery()
+          }
+        }}
         itemId={itemSheet.id}
         initialEdit={!!itemSheet.edit}
       />

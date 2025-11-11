@@ -208,17 +208,6 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [buildSlotFetchOptions])
 
-  useEffect(() => {
-    if (!currentUserId) return
-    if (typeof window === "undefined") return
-    const intervalId = window.setInterval(() => {
-      void refreshSlots()
-    }, 30000)
-    return () => {
-      window.clearInterval(intervalId)
-    }
-  }, [currentUserId, refreshSlots])
-
   const refreshInventory = useCallback(async () => {
     if (!currentUserId) {
       setBundleState([])
