@@ -73,6 +73,7 @@ export type FridgeBundleSummaryDto = {
   createdAt: string
   updatedAt: string
   removedAt?: string | null
+  items?: FridgeItemDto[] | null
 }
 
 export type FridgeItemDto = {
@@ -161,7 +162,8 @@ export function mapBundleFromDto(
     removedAt: dto.removedAt ?? null,
   }
 
-  const units = dto.items.map((item, index) => mapItemFromDto(item, bundle, index))
+  const unitSource = Array.isArray(dto.items) ? dto.items : []
+  const units = unitSource.map((item, index) => mapItemFromDto(item, bundle, index))
 
   return { bundle, units }
 }

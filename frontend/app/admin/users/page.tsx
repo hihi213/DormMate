@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { AlertTriangle } from "lucide-react"
+import { AlertTriangle, Loader2 } from "lucide-react"
 import { format } from "date-fns"
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -25,6 +25,7 @@ import {
   promoteAdminFloorManager,
   fetchAdminUsers,
 } from "@/features/admin/api"
+import { fetchFridgeOwnershipIssues, type FridgeOwnershipIssueItem } from "@/features/admin/api/fridge"
 import { useAdminUsers } from "@/features/admin/hooks/use-admin-users"
 import type { AdminUser } from "@/features/admin/types"
 import { cn } from "@/lib/utils"
@@ -41,6 +42,11 @@ type FilterState = {
 
 type SelectionMode = "DEACTIVATE" | null
 type RoleChangeMode = "PROMOTE" | "DEMOTE"
+
+const ISSUE_TYPE_LABEL: Record<string, string> = {
+  NO_ACTIVE_ROOM_ASSIGNMENT: "방 배정 없음",
+  ROOM_NOT_ALLOWED_FOR_COMPARTMENT: "접근 권한 없음",
+}
 
 export default function AdminUsersPage() {
   const [filters, setFilters] = useState<FilterState>({
@@ -83,6 +89,11 @@ export default function AdminUsersPage() {
   const [roleDialogOpen, setRoleDialogOpen] = useState(false)
   const [roleChangeMode, setRoleChangeMode] = useState<RoleChangeMode>("PROMOTE")
   const [roleChangeReason, setRoleChangeReason] = useState("")
+  const [deactivateReason, setDeactivateReason] = useState("")
+  const [bulkDeactivateReason, setBulkDeactivateReason] = useState("")
+  const [ownershipIssues, setOwnershipIssues] = useState<FridgeOwnershipIssueItem[]>([])
+  const [ownershipIssuesLoading, setOwnershipIssuesLoading] = useState(false)
+  const [ownershipIssuesError, setOwnershipIssuesError] = useState<string | null>(null)
   const focusParam = searchParams.get("focus")
 
   const primaryRoleLabel = drawerUser
@@ -98,6 +109,10 @@ export default function AdminUsersPage() {
     (roleChangeMode === "PROMOTE" ? canPromoteCurrent : canDemoteCurrent) &&
     trimmedRoleChangeReason.length >= 2 &&
     !actionLoading
+  const trimmedDeactivateReason = deactivateReason.trim()
+  const trimmedBulkDeactivateReason = bulkDeactivateReason.trim()
+  const canSubmitSingleDeactivation = !!drawerUser && trimmedDeactivateReason.length >= 2 && !actionLoading
+  const fridgeIssuesHref = drawerUser ? `/admin/fridge/issues?ownerId=${encodeURIComponent(drawerUser.id)}` : "/admin/fridge/issues"
 
   useEffect(() => {
     if (focusParam) {
@@ -197,6 +212,44 @@ export default function AdminUsersPage() {
   useEffect(() => {
     setSearchDraft(filters.search)
   }, [filters.search])
+
+  useEffect(() => {
+    if (!drawerUser) {
+      setDeactivateReason("")
+      setOwnershipIssues([])
+      setOwnershipIssuesError(null)
+      setOwnershipIssuesLoading(false)
+      return
+    }
+    let cancelled = false
+    const loadIssues = async () => {
+      try {
+        setOwnershipIssuesLoading(true)
+        setOwnershipIssuesError(null)
+        const response = await fetchFridgeOwnershipIssues({ ownerId: drawerUser.id, size: 5 })
+        if (cancelled) return
+        setOwnershipIssues(response.items)
+      } catch (err) {
+        if (cancelled) return
+        setOwnershipIssuesError(err instanceof Error ? err.message : "권한 불일치 데이터를 불러오지 못했습니다.")
+        setOwnershipIssues([])
+      } finally {
+        if (!cancelled) {
+          setOwnershipIssuesLoading(false)
+        }
+      }
+    }
+    void loadIssues()
+    return () => {
+      cancelled = true
+    }
+  }, [drawerUser])
+
+  useEffect(() => {
+    if (!selectionMode) {
+      setBulkDeactivateReason("")
+    }
+  }, [selectionMode])
 
   const availableFloors = useMemo(() => {
     if (data?.availableFloors && data.availableFloors.length > 0) {
@@ -320,11 +373,13 @@ export default function AdminUsersPage() {
     setSelectionMode("DEACTIVATE")
     setFocusedUserId(null)
     resetSelection()
+    setBulkDeactivateReason("")
   }
 
   const cancelSelection = () => {
     setSelectionMode(null)
     resetSelection()
+    setBulkDeactivateReason("")
   }
 
   const handleRowClick = (user: AdminUser) => {
@@ -339,13 +394,21 @@ export default function AdminUsersPage() {
 
   const confirmSelection = async () => {
     if (!selectionMode || selectedIds.length === 0) return
+    if (trimmedBulkDeactivateReason.length < 2) {
+      toast({
+        title: "사유를 입력하세요.",
+        description: "일괄 비활성화 사유는 최소 2자 이상이어야 합니다.",
+        variant: "destructive",
+      })
+      return
+    }
     setActionLoading(true)
     const actionLabel = "계정 비활성화"
     try {
-      await Promise.all(selectedIds.map((id) => deactivateAdminUser(id)))
+      await Promise.all(selectedIds.map((id) => deactivateAdminUser(id, trimmedBulkDeactivateReason)))
       toast({
         title: `${actionLabel} 완료`,
-        description: `${selectedIds.length}명의 사용자에 대해 ${actionLabel}이 반영되었습니다.`,
+        description: `${selectedIds.length}명의 사용자에 대해 ${actionLabel}이 반영되었습니다. 사유: ${trimmedBulkDeactivateReason}`,
       })
       await refetch()
       setPage(1)
@@ -361,13 +424,22 @@ export default function AdminUsersPage() {
     }
   }
 
-  const handlePromoteUser = async (user: AdminUser, reason?: string) => {
+  const handlePromoteUser = async (user: AdminUser, reason: string) => {
+    const trimmed = reason.trim()
+    if (!trimmed) {
+      toast({
+        title: "사유를 입력하세요.",
+        description: "층별장 임명 사유는 최소 2자 이상이어야 합니다.",
+        variant: "destructive",
+      })
+      return
+    }
     setActionLoading(true)
     try {
-      await promoteAdminFloorManager(user.id)
+      await promoteAdminFloorManager(user.id, trimmed)
       toast({
         title: "층별장 임명 완료",
-        description: `${user.name}님이 층별장으로 임명되었습니다.${reason ? ` 사유: ${reason}` : ""}`,
+        description: `${user.name}님이 층별장으로 임명되었습니다. 사유: ${trimmed}`,
       })
       await refetch()
       closeDrawer()
@@ -382,13 +454,22 @@ export default function AdminUsersPage() {
     }
   }
 
-  const handleDemoteUser = async (user: AdminUser, reason?: string) => {
+  const handleDemoteUser = async (user: AdminUser, reason: string) => {
+    const trimmed = reason.trim()
+    if (!trimmed) {
+      toast({
+        title: "사유를 입력하세요.",
+        description: "층별장 해제 사유는 최소 2자 이상이어야 합니다.",
+        variant: "destructive",
+      })
+      return
+    }
     setActionLoading(true)
     try {
-      await demoteAdminFloorManager(user.id)
+      await demoteAdminFloorManager(user.id, trimmed)
       toast({
         title: "층별장 해제 완료",
-        description: `${user.name}님의 층별장 권한을 해제했습니다.${reason ? ` 사유: ${reason}` : ""}`,
+        description: `${user.name}님의 층별장 권한을 해제했습니다. 사유: ${trimmed}`,
       })
       await refetch()
       closeDrawer()
@@ -417,13 +498,22 @@ export default function AdminUsersPage() {
     }
   }
 
-  const handleDeactivateUser = async (user: AdminUser) => {
+  const handleDeactivateUser = async (user: AdminUser, reason: string) => {
+    const trimmed = reason.trim()
+    if (!trimmed) {
+      toast({
+        title: "사유를 입력하세요.",
+        description: "계정 비활성화 사유는 최소 2자 이상이어야 합니다.",
+        variant: "destructive",
+      })
+      return
+    }
     setActionLoading(true)
     try {
-      await deactivateAdminUser(user.id)
+      await deactivateAdminUser(user.id, trimmed)
       toast({
         title: "계정 비활성화 완료",
-        description: `${user.name}님의 DormMate 접근이 중단되었습니다.`,
+        description: `${user.name}님의 DormMate 접근이 중단되었습니다. 사유: ${trimmed}`,
       })
       await refetch()
       closeDrawer()
@@ -768,39 +858,90 @@ export default function AdminUsersPage() {
                       벌점 차감·삭제
                     </Button>
                     <Button asChild size="sm" variant="ghost" className="gap-1 text-slate-600">
-                      <Link href={`/admin/fridge?ownerId=${encodeURIComponent(drawerUser.id)}`}>
-                        관련 냉장고 검사 보기
-                      </Link>
-                    </Button>
-                    <Button asChild size="sm" variant="ghost" className="gap-1 text-slate-600">
                       <Link href="/admin/notifications">벌점 알림 템플릿</Link>
                     </Button>
-            </div>
+                  </div>
+                  <div className="space-y-2 rounded-xl border border-slate-200 bg-white/80 p-3">
+                    <div className="flex items-center justify-between gap-2 text-xs font-semibold text-slate-700">
+                      <span>냉장고 권한 불일치</span>
+                      <Button asChild variant="link" className="h-auto p-0 text-xs text-emerald-600">
+                        <Link href={fridgeIssuesHref}>전체 보기</Link>
+                      </Button>
+                    </div>
+                    {ownershipIssuesLoading ? (
+                      <div className="flex items-center gap-2 text-xs text-slate-500">
+                        <Loader2 className="size-4 animate-spin text-slate-400" aria-hidden />
+                        불일치 데이터를 불러오는 중입니다…
+                      </div>
+                    ) : ownershipIssuesError ? (
+                      <p className="text-xs text-rose-600">{ownershipIssuesError}</p>
+                    ) : ownershipIssues.length === 0 ? (
+                      <p className="text-xs text-slate-500">해당 거주자와 연결된 권한 불일치 항목이 없습니다.</p>
+                    ) : (
+                      <div className="space-y-2">
+                        {ownershipIssues.map((issue) => (
+                          <div key={`${issue.bundleId}-${issue.issueType}`} className="rounded-lg border border-slate-100 bg-slate-50/80 p-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-slate-900">
+                                {issue.bundleName ?? `라벨 #${issue.labelNumber ?? "-"}`}
+                              </p>
+                              <Badge variant="outline" className="border-rose-200 bg-rose-50 text-[11px] text-rose-700">
+                                {ISSUE_TYPE_LABEL[issue.issueType] ?? issue.issueType}
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-slate-500">
+                              {issue.roomFloor ? `${issue.roomFloor}F ` : ""}
+                              {issue.roomNumber ?? "호실 미배정"} · 슬롯 {issue.slotIndex ?? "-"}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
           </div>
 
-          <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3 lg:flex-row lg:items-center lg:justify-between">
-            <p className="text-xs text-slate-600">
-              {selectionActive
-                ? "비활성화할 사용자를 체크박스로 선택한 뒤 실행 버튼을 누르세요."
-                : "여러 사용자를 비활성화하려면 선택 모드를 켜세요."}
-            </p>
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant={selectionActive ? "default" : "outline"} disabled={actionLoading} onClick={toggleSelectionMode}>
-                {selectionActive ? "선택 모드 종료" : "선택 비활성화"}
-              </Button>
-              {selectionActive ? (
-                <Button
-                  type="button"
-                  className="bg-slate-900 text-white hover:bg-slate-800"
-                  disabled={actionLoading || selectedIds.length === 0}
-                  onClick={() => {
-                    void confirmSelection()
-                  }}
-                >
-                  선택 비활성화 실행
+          <div className="flex flex-col gap-3 rounded-2xl border border-slate-100 bg-slate-50/80 px-4 py-3">
+            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+              <p className="text-xs text-slate-600">
+                {selectionActive
+                  ? "비활성화할 사용자를 체크박스로 선택한 뒤 실행 버튼을 누르세요."
+                  : "여러 사용자를 비활성화하려면 선택 모드를 켜세요."}
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <Button type="button" variant={selectionActive ? "default" : "outline"} disabled={actionLoading} onClick={toggleSelectionMode}>
+                  {selectionActive ? "선택 모드 종료" : "선택 비활성화"}
                 </Button>
-              ) : null}
+                {selectionActive ? (
+                  <Button
+                    type="button"
+                    className="bg-slate-900 text-white hover:bg-slate-800"
+                    disabled={actionLoading || selectedIds.length === 0}
+                    onClick={() => {
+                      void confirmSelection()
+                    }}
+                  >
+                    선택 비활성화 실행
+                  </Button>
+                ) : null}
+              </div>
             </div>
+            {selectionActive ? (
+              <div className="space-y-2">
+                <Label htmlFor="bulk-deactivate-reason" className="text-xs font-semibold text-slate-600">
+                  일괄 비활성화 사유
+                </Label>
+                <Textarea
+                  id="bulk-deactivate-reason"
+                  value={bulkDeactivateReason}
+                  onChange={(event) => setBulkDeactivateReason(event.target.value)}
+                  minLength={2}
+                  maxLength={200}
+                  placeholder="예: 집중위생점검 대비 임시 중지"
+                  disabled={actionLoading}
+                />
+                <p className="text-[11px] text-slate-500">사유는 모든 사용자 감사 로그에 함께 기록됩니다.</p>
+              </div>
+            ) : null}
           </div>
         </section>
 
@@ -817,11 +958,36 @@ export default function AdminUsersPage() {
                   title="계정을 비활성화하시겠습니까?"
                   description="비활성화 시 DormMate 접근이 차단되며, 관련 예약/검사 세션이 모두 정리됩니다."
                   confirmLabel="비활성화"
+                  confirmDisabled={!canSubmitSingleDeactivation}
                   onConfirm={async () => {
                     if (!drawerUser) return
-                    await handleDeactivateUser(drawerUser)
+                    if (trimmedDeactivateReason.length < 2) {
+                      toast({
+                        title: "사유를 입력하세요.",
+                        description: "비활성화 사유는 최소 2자 이상이어야 합니다.",
+                        variant: "destructive",
+                      })
+                      return
+                    }
+                    await handleDeactivateUser(drawerUser, trimmedDeactivateReason)
                   }}
-                />
+                >
+                  <div className="space-y-2 text-left">
+                    <Label htmlFor="deactivate-reason" className="text-xs text-rose-600">
+                      비활성화 사유
+                    </Label>
+                    <Textarea
+                      id="deactivate-reason"
+                      placeholder="예: 퇴사 처리"
+                      minLength={2}
+                      maxLength={200}
+                      value={deactivateReason}
+                      onChange={(event) => setDeactivateReason(event.target.value)}
+                      disabled={actionLoading}
+                    />
+                    <p className="text-[11px] text-rose-500">사유는 감사 로그에 기록됩니다.</p>
+                  </div>
+                </DangerZoneModal>
               </section>
 
               <Dialog

@@ -24,6 +24,8 @@ export type DangerZoneModalProps = {
   triggerLabel?: string
   trigger?: React.ReactNode
   destructive?: boolean
+  children?: React.ReactNode
+  confirmDisabled?: boolean
 }
 
 /**
@@ -39,6 +41,8 @@ export function DangerZoneModal({
   triggerLabel = "Danger Action",
   trigger,
   destructive = true,
+  children,
+  confirmDisabled = false,
 }: DangerZoneModalProps) {
   const [isPending, startTransition] = React.useTransition()
 
@@ -62,11 +66,12 @@ export function DangerZoneModal({
           <AlertDialogTitle>{title}</AlertDialogTitle>
           <AlertDialogDescription>{description}</AlertDialogDescription>
         </AlertDialogHeader>
+        {children ? <div className="space-y-3 py-2">{children}</div> : null}
         <AlertDialogFooter>
           <AlertDialogCancel disabled={isPending}>{cancelLabel}</AlertDialogCancel>
           <AlertDialogAction
             className="bg-destructive hover:bg-destructive/90"
-            disabled={isPending}
+            disabled={isPending || confirmDisabled}
             onClick={handleConfirm}
           >
             {isPending ? "처리 중…" : confirmLabel}

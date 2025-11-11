@@ -4,7 +4,7 @@ import type { ReactNode } from "react"
 
 import { useEffect, useMemo, useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { FridgeProvider, useFridge } from "@/features/fridge/hooks/fridge-context"
+import { useFridge } from "@/features/fridge/hooks/fridge-context"
 import { formatStickerLabel } from "@/features/fridge/utils/labels"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -16,14 +16,6 @@ import { getCurrentUserId } from "@/lib/auth"
 import { formatShortDate } from "@/lib/date-utils"
 
 export default function BundleDetailPage() {
-  return (
-    <FridgeProvider>
-      <BundleInner />
-    </FridgeProvider>
-  )
-}
-
-function BundleInner() {
   const router = useRouter()
   const search = useSearchParams()
   const { items, updateItem, deleteItem } = useFridge()

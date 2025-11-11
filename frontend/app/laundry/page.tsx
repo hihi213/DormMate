@@ -5,7 +5,7 @@ import { Shirt } from "lucide-react"
 import { getCurrentUser } from "@/lib/auth"
 import BottomNav from "@/components/bottom-nav"
 import AuthGuard from "@/features/auth/components/auth-guard"
-import HomeHeader from "@/app/_components/home/home-header"
+import UserServiceHeader from "@/app/_components/home/user-service-header"
 import { ComingSoonCard } from "@/components/coming-soon-card"
 
 type LaundryItem = {
@@ -41,21 +41,14 @@ function LaundryInner() {
 
   return (
     <main className="min-h-[100svh] bg-white">
-      <HomeHeader
+      <UserServiceHeader
+        service="laundry"
         mounted={mounted}
-        isLoggedIn={Boolean(currentUser)}
         user={currentUser}
         isAdmin={isAdmin}
-        onOpenInfo={() => undefined}
         onLogout={() => {
           window.location.href = "/auth/logout"
         }}
-        contextSlot={
-          <div className="inline-flex items-center gap-2 text-sky-700">
-            <Shirt className="h-5 w-5" aria-hidden />
-            <span className="text-base font-semibold leading-none">세탁실</span>
-          </div>
-        }
       />
 
       <div className="mx-auto max-w-screen-sm px-4 py-8 pb-28">

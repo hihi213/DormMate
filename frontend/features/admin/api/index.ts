@@ -69,24 +69,26 @@ export async function fetchAdminUsers(params: FetchAdminUsersParams = {}): Promi
   )
 }
 
-export async function promoteAdminFloorManager(userId: string) {
+export async function promoteAdminFloorManager(userId: string, reason: string) {
   const { error } = await safeApiCall<void>(`${USERS_ENDPOINT}/${userId}/roles/floor-manager`, {
     method: "POST",
+    body: { reason },
   })
   if (error) throw error
 }
 
-export async function demoteAdminFloorManager(userId: string) {
+export async function demoteAdminFloorManager(userId: string, reason: string) {
   const { error } = await safeApiCall<void>(`${USERS_ENDPOINT}/${userId}/roles/floor-manager`, {
     method: "DELETE",
+    body: { reason },
   })
   if (error) throw error
 }
 
-export async function deactivateAdminUser(userId: string) {
+export async function deactivateAdminUser(userId: string, reason: string) {
   const { error } = await safeApiCall<void>(`${USERS_ENDPOINT}/${userId}/status`, {
     method: "PATCH",
-    body: { status: "INACTIVE" },
+    body: { status: "INACTIVE", reason },
   })
   if (error) throw error
 }

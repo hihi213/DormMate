@@ -282,6 +282,7 @@ export type FridgeOwnershipIssueResponse = {
 export type FetchFridgeOwnershipIssueParams = {
   page?: number
   size?: number
+  ownerId?: string
 }
 
 export async function fetchFridgeOwnershipIssues(
@@ -293,6 +294,9 @@ export async function fetchFridgeOwnershipIssues(
 
   search.set("page", String(Math.max(0, page)))
   search.set("size", String(Math.min(Math.max(1, size), 100)))
+  if (params.ownerId) {
+    search.set("ownerId", params.ownerId)
+  }
 
   const path = `/admin/fridge/issues?${search.toString()}`
   const { data, error } = await safeApiCall<FridgeOwnershipIssueResponse>(path, {

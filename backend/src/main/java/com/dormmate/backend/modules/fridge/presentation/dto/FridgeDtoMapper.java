@@ -65,13 +65,22 @@ public final class FridgeDtoMapper {
     }
 
     public static FridgeBundleSummaryResponse toSummary(FridgeBundle bundle, RoomAssignment assignment) {
-        return toSummary(bundle, assignment, true);
+        return toSummary(bundle, assignment, true, false);
     }
 
     public static FridgeBundleSummaryResponse toSummary(
             FridgeBundle bundle,
             RoomAssignment assignment,
             boolean includeMemo
+    ) {
+        return toSummary(bundle, assignment, includeMemo, false);
+    }
+
+    public static FridgeBundleSummaryResponse toSummary(
+            FridgeBundle bundle,
+            RoomAssignment assignment,
+            boolean includeMemo,
+            boolean includeItems
     ) {
         FridgeCompartment compartment = bundle.getFridgeCompartment();
         int slotIndex = compartment.getSlotIndex();
@@ -81,6 +90,12 @@ public final class FridgeDtoMapper {
         int activeItemCount = (int) bundle.getItems().stream()
                 .filter(item -> item.getStatus() == FridgeItemStatus.ACTIVE)
                 .count();
+        List<FridgeItemResponse> items = includeItems
+                ? bundle.getItems().stream()
+                .sorted(Comparator.comparing(FridgeItem::getCreatedAt))
+                .map(FridgeDtoMapper::toItemResponse)
+                .toList()
+                : null;
         return new FridgeBundleSummaryResponse(
                 bundle.getId(),
                 compartment.getId(),
@@ -98,7 +113,8 @@ public final class FridgeDtoMapper {
                 activeItemCount,
                 bundle.getCreatedAt(),
                 bundle.getUpdatedAt(),
-                bundle.getDeletedAt()
+                bundle.getDeletedAt(),
+                items
         );
     }
 

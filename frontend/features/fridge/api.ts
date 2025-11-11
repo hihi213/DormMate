@@ -89,27 +89,15 @@ export async function fetchFridgeInventory(
     return { bundles: [], units: [] }
   }
 
-  const detailResults = await Promise.all(
-    summaries.map((summary) =>
-      safeApiCall<FridgeBundleDto>(`/fridge/bundles/${summary.bundleId}`, {
-        method: "GET",
-      }),
-    ),
-  )
-
   const bundles: Bundle[] = []
   const units: ItemUnit[] = []
 
-  detailResults.forEach((result, index) => {
-      if (result.error || !result.data) {
-        const fallbackId = summaries[index]?.bundleId
-        const message = result.error?.message ?? "포장 상세 정보를 불러오지 못했습니다."
-        raiseFridgeError(
-          result.error,
-          fallbackId ? `${message} (bundleId=${fallbackId})` : message,
-        )
-      }
-    const { bundle, units: mappedUnits } = mapBundleFromDto(result.data, currentUserId)
+  summaries.forEach((summary) => {
+    const detailDto: FridgeBundleDto = {
+      ...summary,
+      items: summary.items ?? [],
+    }
+    const { bundle, units: mappedUnits } = mapBundleFromDto(detailDto, currentUserId)
     bundles.push(bundle)
     units.push(...mappedUnits)
   })

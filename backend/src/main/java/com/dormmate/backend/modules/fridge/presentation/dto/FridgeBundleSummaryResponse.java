@@ -1,6 +1,7 @@
 package com.dormmate.backend.modules.fridge.presentation.dto;
 
 import java.time.OffsetDateTime;
+import java.util.List;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -23,6 +24,7 @@ public record FridgeBundleSummaryResponse(
         int itemCount,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt,
-        OffsetDateTime removedAt
+        OffsetDateTime removedAt,
+        List<FridgeItemResponse> items
 ) {
 }
