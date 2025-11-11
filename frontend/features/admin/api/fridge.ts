@@ -250,6 +250,62 @@ export async function applyReallocation(
   return data
 }
 
+export type FridgeOwnershipIssueItem = {
+  bundleId: string
+  bundleName: string
+  labelNumber: number | null
+  ownerUserId: string
+  ownerName?: string | null
+  ownerLoginId?: string | null
+  roomId?: string | null
+  roomNumber?: string | null
+  roomFloor?: number | null
+  personalNo?: number | null
+  fridgeCompartmentId: string
+  slotIndex: number
+  compartmentType?: string | null
+  fridgeFloorNo?: number | null
+  fridgeDisplayName?: string | null
+  issueType: string
+  createdAt?: string | null
+  updatedAt?: string | null
+}
+
+export type FridgeOwnershipIssueResponse = {
+  items: FridgeOwnershipIssueItem[]
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+}
+
+export type FetchFridgeOwnershipIssueParams = {
+  page?: number
+  size?: number
+}
+
+export async function fetchFridgeOwnershipIssues(
+  params: FetchFridgeOwnershipIssueParams = {},
+): Promise<FridgeOwnershipIssueResponse> {
+  const search = new URLSearchParams()
+  const page = Number.isInteger(params.page) ? Number(params.page) : 0
+  const size = Number.isInteger(params.size) ? Number(params.size) : 20
+
+  search.set("page", String(Math.max(0, page)))
+  search.set("size", String(Math.min(Math.max(1, size), 100)))
+
+  const path = `/admin/fridge/issues?${search.toString()}`
+  const { data, error } = await safeApiCall<FridgeOwnershipIssueResponse>(path, {
+    method: "GET",
+  })
+
+  if (error || !data) {
+    raiseAdminFridgeError(error, "냉장고 권한 불일치 목록을 불러오지 못했습니다.")
+  }
+
+  return data
+}
+
 export type {
   BundleSummaryDto as AdminBundleSummaryDto,
   BundleListResponseDto as AdminBundleListResponseDto,
