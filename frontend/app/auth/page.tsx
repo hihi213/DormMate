@@ -7,6 +7,7 @@ import { ArrowLeft, Sparkles } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { LoginPanel } from "@/features/auth/components/login-panel"
+import { getAuthReasonMessage } from "@/features/auth/utils/messages"
 
 type Mode = "login" | "signup"
 
@@ -53,6 +54,8 @@ function AuthPortalContent() {
   const [mode, setMode] = useState<Mode>(queryMode)
 
   const redirectTo = useMemo(() => params.get("redirect") ?? "/", [params])
+  const reasonKey = params.get("reason")
+  const reasonMessage = useMemo(() => getAuthReasonMessage(reasonKey), [reasonKey])
 
   useEffect(() => {
     setMode(queryMode)
@@ -100,6 +103,12 @@ function AuthPortalContent() {
               {"메인으로"}
             </Link>
           </header>
+
+          {reasonMessage && (
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/80 px-4 py-3 text-sm text-emerald-800">
+              {reasonMessage}
+            </div>
+          )}
 
           <div className="relative min-h-[420px]">
             {mode === "login" && <LoginPanel redirectTo={redirectTo} />}

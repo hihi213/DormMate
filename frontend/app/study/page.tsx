@@ -7,6 +7,7 @@ import BottomNav from "@/components/bottom-nav"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import UserServiceHeader from "@/app/_components/home/user-service-header"
 import { ComingSoonCard } from "@/components/coming-soon-card"
+import { useLogoutRedirect } from "@/hooks/use-logout-redirect"
 
 type StudyRoomItem = {
   id: string
@@ -33,6 +34,7 @@ function StudyInner() {
   const currentUser = getCurrentUser()
   const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
   const [mounted, setMounted] = useState(false)
+  const logoutAndRedirect = useLogoutRedirect()
 
   useEffect(() => {
     setMounted(true)
@@ -46,7 +48,7 @@ function StudyInner() {
         user={currentUser}
         isAdmin={isAdmin}
         onLogout={() => {
-          window.location.href = "/auth/logout"
+          void logoutAndRedirect()
         }}
       />
 

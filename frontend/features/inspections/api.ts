@@ -280,6 +280,8 @@ export async function fetchInspectionSlots(): Promise<Slot[]> {
 type InspectionScheduleParams = {
   status?: InspectionSchedule["status"]
   limit?: number
+  floor?: number
+  compartmentIds?: string[]
 }
 
 export async function fetchInspectionSchedules(
@@ -294,6 +296,14 @@ export async function fetchInspectionSchedules(
   const search = new URLSearchParams()
   if (params.status) search.set("status", params.status)
   if (typeof params.limit === "number") search.set("limit", String(params.limit))
+  if (typeof params.floor === "number") search.set("floor", String(params.floor))
+  if (params.compartmentIds && params.compartmentIds.length > 0) {
+    params.compartmentIds.forEach((id) => {
+      if (id) {
+        search.append("compartmentId", id)
+      }
+    })
+  }
   const path = search.toString() ? `/fridge/inspection-schedules?${search.toString()}` : "/fridge/inspection-schedules"
 
   const { data, error } = await safeApiCall<InspectionScheduleDto[]>(path, { method: "GET" })

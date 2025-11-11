@@ -34,9 +34,11 @@ public class InspectionScheduleController {
     @GetMapping
     public ResponseEntity<List<InspectionScheduleResponse>> listSchedules(
             @RequestParam(name = "status", required = false) String status,
-            @RequestParam(name = "limit", required = false) Integer limit
+            @RequestParam(name = "limit", required = false) Integer limit,
+            @RequestParam(name = "floor", required = false) Integer floor,
+            @RequestParam(name = "compartmentId", required = false) List<UUID> compartmentIds
     ) {
-        return ResponseEntity.ok(inspectionScheduleService.listSchedules(status, limit));
+        return ResponseEntity.ok(inspectionScheduleService.listSchedules(status, limit, floor, compartmentIds));
     }
 
     @GetMapping("/next")

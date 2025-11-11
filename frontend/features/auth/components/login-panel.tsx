@@ -25,17 +25,6 @@ export function LoginPanel({ redirectTo }: LoginPanelProps) {
   // redirect query 우선 사용
   const explicitRedirect = useMemo(() => params.get("redirect"), [params])
   const finalRedirect = useMemo(() => explicitRedirect ?? redirectTo ?? "/", [explicitRedirect, redirectTo])
-  const reason = params.get("reason")
-  const sessionMessage = useMemo(() => {
-    switch (reason) {
-      case "sessionExpired":
-        return "세션이 만료되어 다시 로그인해 주세요."
-      case "logout":
-        return "정상적으로 로그아웃되었습니다. 다시 로그인해 주세요."
-      default:
-        return ""
-    }
-  }, [reason])
 
   const [loginId, setLoginId] = useState("")
   const [password, setPassword] = useState("")
@@ -109,12 +98,6 @@ export function LoginPanel({ redirectTo }: LoginPanelProps) {
         handleSubmit()
       }}
     >
-      {sessionMessage && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-          {sessionMessage}
-        </div>
-      )}
-
       <div className="space-y-2">
         <label htmlFor="login-id" className="text-sm font-medium text-gray-800">
           {"아이디"}
