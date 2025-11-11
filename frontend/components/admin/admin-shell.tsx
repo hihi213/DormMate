@@ -19,7 +19,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
-import { getCurrentUser, logout, subscribeAuth, type AuthUser } from "@/lib/auth"
+import { getCurrentUser, logout, redirectToLogin, subscribeAuth, type AuthUser } from "@/lib/auth"
 import HeaderNotifications from "@/components/admin/header-notifications"
 import { useToast } from "@/hooks/use-toast"
 import { resetDemoDataset } from "@/lib/demo-seed"
@@ -212,7 +212,7 @@ export default function AdminShell({ children }: AdminShellProps) {
 
   const handleLogout = async () => {
     await logout()
-    router.push("/auth/login?redirect=/admin")
+    router.push(redirectToLogin({ reason: "logout", redirect: "/admin" }))
   }
 
   return (

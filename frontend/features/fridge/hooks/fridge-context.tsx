@@ -103,15 +103,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
   const [initialLoadError, setInitialLoadError] = useState<string | null>(null)
 
   const buildSlotFetchOptions = useCallback((): SlotFetchOptions => {
-    const currentUser = getCurrentUser()
-    if (!currentUser) {
-      return {}
-    }
-    if (currentUser.isAdmin) {
-      return {}
-    }
-    const floor = currentUser.roomDetails?.floor
-    return typeof floor === "number" ? { floor } : {}
+    return {}
   }, [])
 
   useEffect(() => {
@@ -649,7 +641,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
             return { ...slot, occupiedCount: next }
           }),
         )
-        void refreshSlots()
+        void refreshAll()
         return { success: true, message: "묶음이 삭제되었습니다." }
       } catch (error) {
         if (isSuspendedError(error)) {
@@ -675,7 +667,7 @@ export function FridgeProvider({ children }: { children: React.ReactNode }) {
         }
       }
     },
-    [bundles, slots, refreshSlots],
+    [bundles, slots, refreshAll],
   )
 
   const setLastInspectionNow = useCallback(() => {

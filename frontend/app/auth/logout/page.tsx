@@ -4,7 +4,7 @@ import { useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 
-import { logout } from "@/lib/auth"
+import { logout, redirectToLogin } from "@/lib/auth"
 
 export default function LogoutPage() {
   const router = useRouter()
@@ -16,7 +16,7 @@ export default function LogoutPage() {
         await logout()
       } finally {
         if (mounted) {
-          router.replace("/auth?mode=login&reason=logout")
+          router.replace(redirectToLogin("logout"))
         }
       }
     }

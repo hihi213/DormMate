@@ -14,6 +14,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import type { AuthUser } from "@/lib/auth"
+import { redirectToLogin } from "@/lib/auth"
 
 type Props = {
   mounted: boolean
@@ -41,8 +42,10 @@ export default function HomeHeader({
   const router = useRouter()
 
   const navigateToLogin = useCallback(() => {
-    const redirect = typeof window !== "undefined" ? window.location.pathname : "/"
-    router.push(`/auth/login?redirect=${encodeURIComponent(redirect)}`)
+    const redirect =
+      typeof window !== "undefined" ? window.location.pathname + window.location.search : undefined
+    const target = redirectToLogin({ redirect })
+    router.push(target)
   }, [router])
 
   return (

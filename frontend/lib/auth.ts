@@ -68,6 +68,7 @@ type LoginResponse = {
 
 const TOKENS_KEY = "dm.auth.tokens"
 const PROFILE_KEY = "dm.auth.profile"
+const ADMIN_FLAG_COOKIE = "dm.admin"
 
 const ACCESS_TOKEN_SKEW_MS = 5_000
 
@@ -150,9 +151,25 @@ function writeUser(user: AuthUser | null) {
   if (typeof window === "undefined") return
   if (!user) {
     localStorage.removeItem(PROFILE_KEY)
+    clearAdminCookie()
     return
   }
   localStorage.setItem(PROFILE_KEY, JSON.stringify(user))
+  syncAdminCookie(user)
+}
+
+function clearAdminCookie() {
+  if (typeof document === "undefined") return
+  document.cookie = `${ADMIN_FLAG_COOKIE}=; Max-Age=0; Path=/; SameSite=Lax`
+}
+
+function syncAdminCookie(user: AuthUser | null) {
+  if (typeof document === "undefined") return
+  if (user?.isAdmin) {
+    document.cookie = `${ADMIN_FLAG_COOKIE}=1; Max-Age=604800; Path=/; SameSite=Lax`
+  } else {
+    clearAdminCookie()
+  }
 }
 
 function notifyAuth(user: AuthUser | null) {
@@ -319,29 +336,43 @@ export function getAuthorizationHeader(): string | null {
   return `${tokens.tokenType} ${tokens.accessToken}`
 }
 
-export function redirectToLogin(redirectUrl?: string, reason?: string) {
+type RedirectToLoginOptions = {
+  redirect?: string
+  reason?: string
+  navigate?: boolean
+  preserveSession?: boolean
+}
+
+export function redirectToLogin(reason?: string): string
+export function redirectToLogin(options?: RedirectToLoginOptions): string
+export function redirectToLogin(
+  arg0?: string | RedirectToLoginOptions,
+  maybeOptions?: RedirectToLoginOptions,
+): string {
+  const options = typeof arg0 === "string" ? { ...(maybeOptions ?? {}), reason: arg0 } : arg0 ?? {}
+  const { redirect, reason, navigate = false, preserveSession = false } = options
   if (
     process.env.NEXT_PUBLIC_FIXTURE === "1" ||
     (typeof window !== "undefined" && window.localStorage.getItem("dm.fixture") === "1")
   ) {
-    return
+    return "/"
   }
-  clearSession()
-  if (typeof window === "undefined") {
-    return
+  if (!preserveSession) {
+    clearSession()
   }
-  const fallback = window.location.pathname + window.location.search
-  const target = redirectUrl ?? fallback
-  const params = new URLSearchParams({ redirect: target })
+  const params = new URLSearchParams()
+  params.set("mode", "login")
+  if (redirect) {
+    params.set("redirect", redirect)
+  }
   if (reason) {
     params.set("reason", reason)
   }
-  const loginUrl = `/auth/login?${params.toString()}`
-  if (window.location.pathname.startsWith("/auth/login")) {
+  const loginUrl = `/auth?${params.toString()}`
+  if (navigate && typeof window !== "undefined") {
     window.location.href = loginUrl
-    return
   }
-  window.location.href = loginUrl
+  return loginUrl
 }
 
 export async function registerUser(): Promise<AuthUser> {

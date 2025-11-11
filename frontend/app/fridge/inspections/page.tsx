@@ -82,9 +82,14 @@ const getStatusMeta = (status: InspectionSession["status"]) =>
 
 type ScheduleFormState = {
   scheduledAt: string
-  title: string
   notes: string
-  slotId: string
+}
+
+type ScheduleGroup = {
+  groupId: string
+  scheduledAt: string
+  notes?: string | null
+  schedules: InspectionSchedule[]
 }
 
 export default function InspectionsPage() {
@@ -116,14 +121,13 @@ function InspectionsInner() {
   const [scheduleDialogMode, setScheduleDialogMode] = useState<"create" | "edit">("create")
   const [scheduleForm, setScheduleForm] = useState<ScheduleFormState>(() => getDefaultScheduleFormState())
   const [scheduleSubmitting, setScheduleSubmitting] = useState(false)
-  const [editingScheduleId, setEditingScheduleId] = useState<string | null>(null)
-  const [deleteTargetSchedule, setDeleteTargetSchedule] = useState<InspectionSchedule | null>(null)
+  const [editingGroup, setEditingGroup] = useState<ScheduleGroup | null>(null)
+  const [deleteTargetGroup, setDeleteTargetGroup] = useState<ScheduleGroup | null>(null)
   const [deletingSchedule, setDeletingSchedule] = useState(false)
-  const [selectedScheduleId, setSelectedScheduleId] = useState<string>("")
   const [startDialogOpen, setStartDialogOpen] = useState(false)
-  const [scheduleToStart, setScheduleToStart] = useState<InspectionSchedule | null>(null)
+  const [groupToStart, setGroupToStart] = useState<ScheduleGroup | null>(null)
   const [slotToStart, setSlotToStart] = useState<string>("")
-  const [scheduleStartingId, setScheduleStartingId] = useState<string | null>(null)
+  const [startingGroupId, setStartingGroupId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [starting, setStarting] = useState(false)
   const [canceling, setCanceling] = useState(false)
@@ -160,7 +164,6 @@ function InspectionsInner() {
 
   const refreshSchedules = useCallback(
     async (options?: { silent?: boolean }) => {
-      if (!isFloorManager) return []
       try {
         const data = await fetchInspectionSchedules({ status: "SCHEDULED" })
         setSchedules(data)
@@ -177,7 +180,7 @@ function InspectionsInner() {
         return []
       }
     },
-    [isFloorManager, toast],
+    [toast],
   )
 
   useEffect(() => {
@@ -188,9 +191,13 @@ function InspectionsInner() {
       setError(null)
       try {
         const slotList = await fetchInspectionSlots()
-        const schedulePromise = isFloorManager
-          ? fetchInspectionSchedules({ status: "SCHEDULED" })
-          : Promise.resolve<InspectionSchedule[]>([])
+        const schedulePromise = fetchInspectionSchedules({ status: "SCHEDULED" }).catch((err) => {
+          if (isFloorManager) {
+            throw err
+          }
+          console.warn("Failed to load schedules (resident view)", err)
+          return []
+        })
         const [session, historyList, scheduleList] = await Promise.all([
           fetchActiveInspection(),
           fetchInspectionHistory({ limit: 10 }),
@@ -203,11 +210,7 @@ function InspectionsInner() {
         setSlots(normalizedSlots)
         setActiveSession(session)
         setHistory(historyList)
-        if (isFloorManager) {
-          setSchedules(scheduleList)
-        } else {
-          setSchedules([])
-        }
+        setSchedules(scheduleList)
       } catch (err) {
         if (canceled) return
         const message = err instanceof Error ? err.message : "검사 정보를 불러오지 못했습니다."
@@ -246,18 +249,10 @@ function InspectionsInner() {
     }
   }, [refreshActiveSession, refreshSlotList])
 
-  const availableSlots = useMemo(() => {
-    if (!slots.length) return []
-    if (!activeSession) return slots
-    return slots.filter((slot) => slot.slotId !== activeSession.slotId)
-  }, [slots, activeSession])
-
-  const sortedSchedules = useMemo(
-    () =>
-      schedules
-        .slice()
-        .sort((a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime()),
-    [schedules],
+  const scheduleGroups = useMemo(() => groupSchedules(schedules), [schedules])
+  const groupStartSlots = useMemo(
+    () => (groupToStart ? getGroupSlots(groupToStart, slots) : []),
+    [groupToStart, slots],
   )
 
   const getSlotLabel = useCallback(
@@ -280,15 +275,15 @@ function InspectionsInner() {
     if (starting) return
     if (!open) {
       setStartDialogOpen(false)
-      setScheduleToStart(null)
+      setGroupToStart(null)
       setSlotToStart("")
-      setScheduleStartingId(null)
+      setStartingGroupId(null)
     } else {
       setStartDialogOpen(true)
     }
   }
 
-  const handleRequestStart = (schedule: InspectionSchedule) => {
+  const handleRequestStart = (group: ScheduleGroup) => {
     if (!isFloorManager) return
     if (activeSession) {
       toast({
@@ -298,14 +293,9 @@ function InspectionsInner() {
       })
       return
     }
-    setScheduleToStart(schedule)
-    const preferredSlotId = schedule.fridgeCompartmentId ?? ""
-    const matchedSlot = preferredSlotId
-      ? availableSlots.find((candidate) => candidate.slotId === preferredSlotId)
-      : undefined
-    const fallbackSlot = availableSlots[0]?.slotId ?? ""
-    const resolvedSlotId = matchedSlot?.slotId ?? fallbackSlot ?? ""
-    if (!resolvedSlotId) {
+    const groupSlots = getGroupSlots(group, slots)
+    const selectableSlot = groupSlots.find((slot) => isSlotSelectableForStart(slot, activeSession))
+    if (!selectableSlot) {
       toast({
         title: "검사를 시작할 수 없습니다.",
         description: "현재 선택 가능한 칸이 없습니다. 잠시 후 다시 시도해 주세요.",
@@ -313,14 +303,15 @@ function InspectionsInner() {
       })
       return
     }
-    setSlotToStart(resolvedSlotId)
-    setScheduleStartingId(null)
+    setGroupToStart(group)
+    setSlotToStart(selectableSlot.slotId)
+    setStartingGroupId(null)
     setStartDialogOpen(true)
   }
 
   const handleConfirmStartInspection = async () => {
-    if (!isFloorManager || !scheduleToStart || starting) return
-    const slot = availableSlots.find((candidate) => candidate.slotId === slotToStart)
+    if (!isFloorManager || !groupToStart || starting) return
+    const slot = slots.find((candidate) => candidate.slotId === slotToStart)
     if (!slot) {
       toast({
         title: "검사를 시작할 수 없습니다.",
@@ -329,12 +320,28 @@ function InspectionsInner() {
       })
       return
     }
+    const targetSchedule =
+      groupToStart.schedules.find((schedule) => schedule.fridgeCompartmentId === slot.slotId) ??
+      groupToStart.schedules.find(
+        (schedule) =>
+          typeof schedule.slotIndex === "number" && typeof slot.slotIndex === "number"
+            ? schedule.slotIndex === slot.slotIndex
+            : false,
+      )
+    if (!targetSchedule) {
+      toast({
+        title: "검사를 시작할 수 없습니다.",
+        description: "선택한 칸과 연결된 일정 정보를 찾을 수 없습니다.",
+        variant: "destructive",
+      })
+      return
+    }
     try {
       setStarting(true)
-      setScheduleStartingId(scheduleToStart.scheduleId)
+      setStartingGroupId(groupToStart.groupId)
       const session = await startInspection({
         slotId: slot.slotId,
-        scheduleId: scheduleToStart.scheduleId,
+        scheduleId: targetSchedule.scheduleId,
       })
       await refreshSchedules({ silent: true })
       await refreshSlotList()
@@ -344,9 +351,9 @@ function InspectionsInner() {
         description: `${getSlotLabel(session.slotId, session.slotIndex)} 검사 세션이 생성되었습니다.`,
       })
       setStartDialogOpen(false)
-      setScheduleToStart(null)
+      setGroupToStart(null)
       setSlotToStart("")
-      setScheduleStartingId(null)
+      setStartingGroupId(null)
       router.push(`/fridge/inspect?sessionId=${session.sessionId}`)
     } catch (err) {
       const message = err instanceof Error ? err.message : "검사를 시작하지 못했습니다."
@@ -357,7 +364,7 @@ function InspectionsInner() {
       })
     } finally {
       setStarting(false)
-      setScheduleStartingId(null)
+      setStartingGroupId(null)
     }
   }
 
@@ -397,42 +404,37 @@ function InspectionsInner() {
     if (scheduleSubmitting) return
     if (!open) {
       setScheduleDialogOpen(false)
-      setEditingScheduleId(null)
-      setScheduleForm(getDefaultScheduleFormState(slots[0]?.slotId ?? ""))
+      setEditingGroup(null)
+      setScheduleForm(getDefaultScheduleFormState())
       return
     }
     if (!isFloorManager) return
     setScheduleDialogOpen(true)
   }
 
-  useEffect(() => {
-    if (!scheduleDialogOpen) return
-    if (scheduleDialogMode !== "create") return
-    if (scheduleForm.slotId) return
-    if (!slots.length) return
-    setScheduleForm((prev) => ({
-      ...prev,
-      slotId: slots[0].slotId,
-    }))
-  }, [scheduleDialogOpen, scheduleDialogMode, scheduleForm.slotId, slots])
-
   const handleOpenCreateSchedule = () => {
     if (!isFloorManager) return
+    if (!slots.length) {
+      toast({
+        title: "일정을 추가할 수 없습니다.",
+        description: "검사할 수 있는 냉장고 칸이 없습니다. 잠시 후 다시 시도해 주세요.",
+        variant: "destructive",
+      })
+      return
+    }
     setScheduleDialogMode("create")
-    setEditingScheduleId(null)
-    setScheduleForm(getDefaultScheduleFormState(slots[0]?.slotId ?? ""))
+    setEditingGroup(null)
+    setScheduleForm(getDefaultScheduleFormState())
     setScheduleDialogOpen(true)
   }
 
-  const handleEditSchedule = (schedule: InspectionSchedule) => {
+  const handleEditGroup = (group: ScheduleGroup) => {
     if (!isFloorManager) return
     setScheduleDialogMode("edit")
-    setEditingScheduleId(schedule.scheduleId)
+    setEditingGroup(group)
     setScheduleForm({
-      scheduledAt: formatDateTimeInputValue(new Date(schedule.scheduledAt)),
-      title: schedule.title ?? "",
-      notes: schedule.notes ?? "",
-      slotId: schedule.fridgeCompartmentId ?? slots[0]?.slotId ?? "",
+      scheduledAt: formatDateTimeInputValue(new Date(group.scheduledAt)),
+      notes: group.notes ?? "",
     })
     setScheduleDialogOpen(true)
   }
@@ -474,46 +476,63 @@ function InspectionsInner() {
       return
     }
 
-    const title = scheduleForm.title.trim()
     const notes = scheduleForm.notes.trim()
-    if (!scheduleForm.slotId) {
-      toast({
-        title: "검사 일정을 저장할 수 없습니다.",
-        description: "검사 대상 칸을 선택해 주세요.",
-        variant: "destructive",
-      })
-      return
-    }
 
     try {
       setScheduleSubmitting(true)
       if (scheduleDialogMode === "create") {
-        await createInspectionSchedule({
-          scheduledAt: parsed.toISOString(),
-          title: title.length ? title : undefined,
-          notes: notes.length ? notes : undefined,
-          fridgeCompartmentId: scheduleForm.slotId,
-        })
+        if (!slots.length) {
+          throw new Error("검사 가능한 칸이 없습니다.")
+        }
+        const results = await Promise.allSettled(
+          slots.map((slot) =>
+            createInspectionSchedule({
+              scheduledAt: parsed.toISOString(),
+              notes: notes.length ? notes : undefined,
+              fridgeCompartmentId: slot.slotId,
+            }),
+          ),
+        )
+        const successCount = results.filter((result) => result.status === "fulfilled").length
+        const failureCount = results.length - successCount
+        if (successCount === 0) {
+          throw new Error("모든 칸에 대한 일정 생성에 실패했습니다.")
+        }
         toast({
           title: "검사 일정을 추가했습니다.",
+          description:
+            failureCount > 0
+              ? `${successCount}개 칸은 저장됐지만 ${failureCount}개 칸은 실패했습니다.`
+              : undefined,
         })
-      } else if (editingScheduleId) {
-        await updateInspectionSchedule(editingScheduleId, {
-          scheduledAt: parsed.toISOString(),
-          title: title.length ? title : null,
-          notes: notes.length ? notes : null,
-          fridgeCompartmentId: scheduleForm.slotId,
-        })
+      } else if (editingGroup) {
+        const updates = await Promise.allSettled(
+          editingGroup.schedules.map((schedule) =>
+            updateInspectionSchedule(schedule.scheduleId, {
+              scheduledAt: parsed.toISOString(),
+              notes: notes.length ? notes : null,
+            }),
+          ),
+        )
+        const successCount = updates.filter((result) => result.status === "fulfilled").length
+        const failureCount = updates.length - successCount
+        if (successCount === 0) {
+          throw new Error("일정을 수정하지 못했습니다.")
+        }
         toast({
           title: "검사 일정을 수정했습니다.",
+          description:
+            failureCount > 0
+              ? `${successCount}개 칸은 수정됐지만 ${failureCount}개 칸은 실패했습니다.`
+              : undefined,
         })
       } else {
         throw new Error("수정할 검사 일정을 찾지 못했습니다.")
       }
       await refreshSchedules({ silent: true })
       setScheduleDialogOpen(false)
-      setEditingScheduleId(null)
-      setScheduleForm(getDefaultScheduleFormState(slots[0]?.slotId ?? ""))
+      setEditingGroup(null)
+      setScheduleForm(getDefaultScheduleFormState())
     } catch (err) {
       const message = err instanceof Error ? err.message : "검사 일정을 저장하지 못했습니다."
       toast({
@@ -526,35 +545,38 @@ function InspectionsInner() {
     }
   }
 
-  const handleDeleteScheduleRequest = (schedule: InspectionSchedule) => {
+  const handleDeleteGroupRequest = (group: ScheduleGroup) => {
     if (!isFloorManager) return
-    setDeleteTargetSchedule(schedule)
-    setSelectedScheduleId(schedule.scheduleId)
+    setDeleteTargetGroup(group)
   }
 
   const handleDeleteDialogChange = (open: boolean) => {
     if (deletingSchedule) return
     if (!open) {
-      setDeleteTargetSchedule(null)
-      setSelectedScheduleId("")
+      setDeleteTargetGroup(null)
     }
   }
 
-  const handleConfirmDeleteSchedule = async () => {
-    if (!deleteTargetSchedule) return
+  const handleConfirmDeleteGroup = async () => {
+    if (!deleteTargetGroup) return
     try {
       setDeletingSchedule(true)
-      const targetId = deleteTargetSchedule.scheduleId
-      await deleteInspectionSchedule(targetId)
-      setSchedules((prev) => prev.filter((schedule) => schedule.scheduleId !== targetId))
+      const deletions = await Promise.allSettled(
+        deleteTargetGroup.schedules.map((schedule) => deleteInspectionSchedule(schedule.scheduleId)),
+      )
+      const successCount = deletions.filter((result) => result.status === "fulfilled").length
+      if (successCount === 0) {
+        throw new Error("일정을 삭제하지 못했습니다.")
+      }
       toast({
         title: "검사 일정을 삭제했습니다.",
+        description:
+          successCount < deleteTargetGroup.schedules.length
+            ? `${successCount}개 칸만 삭제되었습니다.`
+            : undefined,
       })
-      if (selectedScheduleId === deleteTargetSchedule.scheduleId) {
-        setSelectedScheduleId("")
-      }
       await refreshSchedules({ silent: true })
-      setDeleteTargetSchedule(null)
+      setDeleteTargetGroup(null)
     } catch (err) {
       const message = err instanceof Error ? err.message : "검사 일정을 삭제하지 못했습니다."
       toast({
@@ -569,125 +591,16 @@ function InspectionsInner() {
 
   const activeSessionBadge = activeSession ? getStatusMeta(activeSession.status) : null
 
-  if (!isFloorManager) {
-    return (
-      <main className="min-h-[100svh] bg-white">
-        <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-          <div className="mx-auto max-w-screen-sm px-4 py-3 flex items-center justify-between">
-            <div className="inline-flex items-center gap-2">
-              <CalendarDays className="size-4 text-teal-700" />
-              <h1 className="text-base font-semibold leading-none">{"검사 일정"}</h1>
-            </div>
-            {loading && <Loader2 className="size-4 animate-spin text-emerald-600" aria-hidden />}
-          </div>
-        </header>
-
-        <div className="mx-auto max-w-screen-sm px-4 pb-28 pt-4 space-y-6">
-          {error && (
-            <Card className="border-rose-200">
-              <CardContent className="py-4 text-sm text-rose-700">{error}</CardContent>
-            </Card>
-          )}
-
-          <Card className="border-emerald-200">
-            <CardHeader className="pb-3">
-              <CardTitle className="flex items-center gap-2 text-sm font-semibold">
-                <ClipboardCheck className="size-4 text-emerald-700" />
-                {"검사 진행 현황"}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-2 text-sm text-gray-800">
-              {loading ? (
-                <p className="text-sm text-muted-foreground">검사 정보를 불러오는 중입니다…</p>
-              ) : activeSession ? (
-                <>
-                  <div className="flex items-center gap-2">
-                    <span className="font-semibold">
-                      {getSlotLabel(activeSession.slotId, activeSession.slotIndex)}
-                    </span>
-                    <Badge
-                      variant="secondary"
-                      className={activeSessionBadge?.className}
-                    >
-                      {activeSessionBadge?.label ?? activeSession.status}
-                    </Badge>
-                  </div>
-                  <p className="text-xs text-muted-foreground">
-                    {`시작: ${formatDateTimeLabel(activeSession.startedAt)}`}
-                    {activeSession.endedAt ? ` · 종료: ${formatDateTimeLabel(activeSession.endedAt)}` : ""}
-                  </p>
-                  {activeSession.summary.length > 0 && (
-                    <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
-                      {activeSession.summary.map((entry) => (
-                        <span key={entry.action} className="inline-flex items-center gap-1 rounded-md border px-2 py-1">
-                          {`${friendlyActionLabel(entry.action)} ${entry.count}건`}
-                        </span>
-                      ))}
-                    </div>
-                  )}
-                  {activeSession.notes && (
-                    <p className="text-xs text-slate-600 whitespace-pre-wrap">{activeSession.notes}</p>
-                  )}
-                </>
-              ) : (
-                <p className="text-sm text-muted-foreground">현재 진행 중인 검사가 없습니다.</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">{"내 보관 칸"}</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              {slots.length ? (
-                <ul className="space-y-2">
-                  {slots.map((slot) => {
-                    const statusMeta = getSlotStatusMeta(slot)
-                    return (
-                      <li
-                        key={slot.slotId}
-                        className="flex items-center justify-between rounded-md border border-slate-200 px-3 py-2"
-                      >
-                        <span className="text-sm font-medium text-gray-900">{formatSlotDisplayName(slot)}</span>
-                        <Badge variant="outline" className={statusMeta.className}>
-                          {statusMeta.label}
-                        </Badge>
-                      </li>
-                    )
-                  })}
-                </ul>
-              ) : (
-                <p className="text-sm text-muted-foreground">배정된 냉장고 칸이 없습니다.</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader className="pb-3">
-              <CardTitle className="text-sm font-semibold">{"검사 이력"}</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loading ? (
-                <p className="text-sm text-muted-foreground">검사 이력을 불러오는 중입니다…</p>
-              ) : (
-                <HistoryList history={history} getSlotLabel={getSlotLabel} />
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="border-dashed border-emerald-200">
-            <CardContent className="flex items-start gap-3 py-4 text-sm text-muted-foreground">
-              <ShieldCheck className="mt-0.5 size-4 text-emerald-600" />
-              <p>
-                {"검사 시작과 조치 기록은 층별장만 수행할 수 있습니다. 이상이 있다고 판단되면 담당 층별장에게 문의해 주세요."}
-              </p>
-            </CardContent>
-          </Card>
-        </div>
-      </main>
-    )
-  }
+  const residentNotice = !isFloorManager ? (
+    <Card className="border-dashed border-emerald-200">
+      <CardContent className="flex items-start gap-3 py-4 text-sm text-muted-foreground">
+        <ShieldCheck className="mt-0.5 size-4 text-emerald-600" />
+        <p>
+          {"검사 시작과 조치 기록은 층별장만 수행할 수 있습니다. 이상이 있다고 판단되면 담당 층별장에게 문의해 주세요."}
+        </p>
+      </CardContent>
+    </Card>
+  ) : null
 
   return (
     <main className="min-h-[100svh] bg-white">
@@ -726,42 +639,42 @@ function InspectionsInner() {
             <CardContent className="space-y-3">
               {loading ? (
                 <p className="text-sm text-muted-foreground">검사 일정을 불러오는 중입니다…</p>
-              ) : sortedSchedules.length === 0 ? (
+              ) : scheduleGroups.length === 0 ? (
                 <p className="text-sm text-muted-foreground">등록된 검사 일정이 없습니다.</p>
               ) : (
                 <ul className="space-y-3">
-                  {sortedSchedules.map((schedule) => {
-                    const isActiveSchedule =
-                      Boolean(activeSession && schedule.inspectionSessionId === activeSession.sessionId)
+                  {scheduleGroups.map((group) => {
+                    const groupSlots = getGroupSlots(group, slots)
+                    const groupSlotSummary = formatGroupSlotSummary(groupSlots)
+                    const isGroupActive = Boolean(
+                      activeSession &&
+                        group.schedules.some(
+                          (schedule) => schedule.inspectionSessionId === activeSession.sessionId,
+                        ),
+                    )
+                    const hasSelectableSlot = groupSlots.some((slot) =>
+                      isSlotSelectableForStart(slot, activeSession),
+                    )
                     const primaryDisabled =
                       !isFloorManager ||
-                      (isActiveSchedule
-                        ? false
-                        : starting || availableSlots.length === 0 || Boolean(activeSession))
-                    const hasSlotInfo =
-                      Boolean(schedule.fridgeCompartmentId) || typeof schedule.slotIndex === "number"
-                    const slotLabelCandidate = hasSlotInfo
-                      ? getSlotLabel(schedule.fridgeCompartmentId ?? undefined, schedule.slotIndex ?? undefined)
-                      : null
-                    const slotDisplayLabel =
-                      slotLabelCandidate && slotLabelCandidate !== "?"
-                        ? slotLabelCandidate
-                        : hasSlotInfo
-                          ? "칸 정보 없음"
-                          : "검사 시작 시 칸 선택"
-                    const scheduleStatusBadge = isActiveSchedule
-                      ? { className: "border-emerald-300 bg-emerald-100 text-emerald-700", label: "진행 중" }
+                      (isGroupActive ? false : starting || !hasSelectableSlot || Boolean(activeSession))
+                    const statusBadge = isGroupActive
+                      ? { className: "border-emerald-300 bg-emerald-50 text-emerald-700", label: "검사 중" }
                       : { className: "border-slate-200 bg-slate-50 text-slate-600", label: "예정" }
-                    const slotLabelForCard = slotDisplayLabel ?? "검사 시작 시 칸 선택"
-
                     return (
-                      <li key={schedule.scheduleId} className="rounded-lg border border-slate-200 p-4 space-y-3">
-                        <div className="flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex items-center gap-2 text-sm font-semibold text-gray-900">
-                            <span>{slotLabelForCard}</span>
-                            <Badge variant="outline" className={scheduleStatusBadge.className}>
-                              {scheduleStatusBadge.label}
+                      <li key={group.groupId} className="rounded-lg border border-slate-200 p-4 space-y-3">
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 space-y-1">
+                            <p className="text-xs text-muted-foreground">
+                              {formatDateTimeLabel(group.scheduledAt)}
+                            </p>
+                            <Badge variant="outline" className={statusBadge.className}>
+                              {statusBadge.label}
                             </Badge>
+                            <p className="text-sm font-semibold text-gray-900">
+                              {group.notes?.trim() ? group.notes : "메모 없음"}
+                            </p>
+                            <p className="text-xs text-muted-foreground">{groupSlotSummary}</p>
                           </div>
                           <div className="flex items-center gap-2">
                             {isFloorManager ? (
@@ -769,17 +682,17 @@ function InspectionsInner() {
                                 size="sm"
                                 className="px-3"
                                 onClick={() =>
-                                  isActiveSchedule ? handleContinue() : handleRequestStart(schedule)
+                                  isGroupActive ? handleContinue() : handleRequestStart(group)
                                 }
                                 disabled={primaryDisabled}
-                                variant={isActiveSchedule ? "secondary" : "default"}
+                                variant={isGroupActive ? "secondary" : "default"}
                               >
-                                {scheduleStartingId === schedule.scheduleId && starting && !isActiveSchedule ? (
+                                {startingGroupId === group.groupId && starting && !isGroupActive ? (
                                   <>
                                     <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />
                                     {"검사 시작"}
                                   </>
-                                ) : isActiveSchedule ? (
+                                ) : isGroupActive ? (
                                   <>
                                     <ShieldCheck className="mr-2 size-4" aria-hidden />
                                     {"검사 중"}
@@ -791,11 +704,7 @@ function InspectionsInner() {
                                   </>
                                 )}
                               </Button>
-                            ) : (
-                              <Badge variant="outline" className="border-slate-200 text-slate-600">
-                                {isActiveSchedule ? "진행 중" : "층별장 전용"}
-                              </Badge>
-                            )}
+                            ) : null}
                             {isFloorManager && (
                               <DropdownMenu>
                                 <DropdownMenuTrigger asChild>
@@ -805,32 +714,32 @@ function InspectionsInner() {
                                   </Button>
                                 </DropdownMenuTrigger>
                                 <DropdownMenuContent align="end">
-                              <DropdownMenuItem
-                                onSelect={(event) => {
-                                  event.preventDefault()
-                                  handleEditSchedule(schedule)
-                                }}
-                              >
-                                {"일정 수정"}
-                              </DropdownMenuItem>
-                              {isActiveSchedule && (
-                                <DropdownMenuItem
-                                  className="text-amber-600 focus:text-amber-600"
-                                  onSelect={(event) => {
-                                    event.preventDefault()
-                                    if (!canceling) {
-                                      void handleCancel()
-                                    }
-                                  }}
-                                >
-                                  {canceling ? "취소 중..." : "검사 취소"}
-                                </DropdownMenuItem>
-                              )}
-                              <DropdownMenuItem
-                                className="text-rose-600 focus:text-rose-600"
-                                onSelect={(event) => {
-                                  event.preventDefault()
-                                  handleDeleteScheduleRequest(schedule)
+                                  <DropdownMenuItem
+                                    onSelect={(event) => {
+                                      event.preventDefault()
+                                      handleEditGroup(group)
+                                    }}
+                                  >
+                                    {"일정 수정"}
+                                  </DropdownMenuItem>
+                                  {isGroupActive && (
+                                    <DropdownMenuItem
+                                      className="text-amber-600 focus:text-amber-600"
+                                      onSelect={(event) => {
+                                        event.preventDefault()
+                                        if (!canceling) {
+                                          void handleCancel()
+                                        }
+                                      }}
+                                    >
+                                      {canceling ? "취소 중..." : "검사 취소"}
+                                    </DropdownMenuItem>
+                                  )}
+                                  <DropdownMenuItem
+                                    className="text-rose-600 focus:text-rose-600"
+                                    onSelect={(event) => {
+                                      event.preventDefault()
+                                      handleDeleteGroupRequest(group)
                                     }}
                                   >
                                     {"일정 삭제"}
@@ -840,13 +749,6 @@ function InspectionsInner() {
                             )}
                           </div>
                         </div>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <p>{formatDateTimeLabel(schedule.scheduledAt)}</p>
-                        </div>
-                        <p className="text-sm font-medium text-gray-900">{getScheduleTitleText(schedule)}</p>
-                        {schedule.notes && (
-                          <p className="text-xs text-muted-foreground whitespace-pre-wrap">{schedule.notes}</p>
-                        )}
                       </li>
                     )
                   })}
@@ -875,45 +777,43 @@ function InspectionsInner() {
           </Card>
         </section>
 
+        {residentNotice}
+
         <Dialog open={startDialogOpen} onOpenChange={handleStartDialogChange}>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>{"검사 시작"}</DialogTitle>
               <DialogDescription>
-                {scheduleToStart
-                  ? `${formatShortDate(scheduleToStart.scheduledAt)} 검사 일정을 기반으로 새 검사 세션을 시작합니다.`
+                {groupToStart
+                  ? `${formatShortDate(groupToStart.scheduledAt)} 검사 일정을 기반으로 새 검사 세션을 시작합니다.`
                   : "검사 일정을 선택해 세션을 시작할 수 있습니다."}
               </DialogDescription>
             </DialogHeader>
             <div className="space-y-4 py-2">
               <div className="space-y-1 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-700">
                 <span className="block font-semibold text-slate-900">
-                  {scheduleToStart ? getScheduleTitleText(scheduleToStart) : "선택된 일정 없음"}
+                  {groupToStart ? formatDateTimeLabel(groupToStart.scheduledAt) : "선택된 일정 없음"}
                 </span>
-                {scheduleToStart && (
-                  <span>
-                    {new Date(scheduleToStart.scheduledAt).toLocaleString("ko-KR", {
-                      month: "numeric",
-                      day: "numeric",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </span>
-                )}
-                {scheduleToStart?.notes && <span className="whitespace-pre-wrap">{scheduleToStart.notes}</span>}
+                {groupToStart?.notes && <span className="whitespace-pre-wrap">{groupToStart.notes}</span>}
               </div>
               <div className="space-y-2">
                 <Label>{"검사할 칸 선택"}</Label>
-                {availableSlots.length > 0 ? (
+                {groupStartSlots.length > 0 ? (
                   <SlotSelector
                     value={slotToStart}
                     onChange={setSlotToStart}
-                    slots={availableSlots}
+                    slots={groupStartSlots}
                     placeholder="검사할 보관 칸 선택"
+                    isSelectable={(slot) => isSlotSelectableForStart(slot, activeSession)}
+                    getDisabledDescription={(slot) =>
+                      !isSlotSelectableForStart(slot, activeSession)
+                        ? "현재 선택할 수 없는 칸입니다."
+                        : undefined
+                    }
                   />
                 ) : (
                   <p className="text-sm text-muted-foreground">
-                    {"검사 가능한 칸이 없습니다. 다른 사용자의 검사가 끝난 뒤 다시 시도해 주세요."}
+                    {"선택 가능한 칸이 없습니다. 다른 사용자의 검사가 끝난 뒤 다시 시도해 주세요."}
                   </p>
                 )}
               </div>
@@ -930,7 +830,7 @@ function InspectionsInner() {
               <Button
                 type="button"
                 onClick={handleConfirmStartInspection}
-                disabled={starting || !scheduleToStart || !slotToStart || availableSlots.length === 0}
+                disabled={starting || !groupToStart || !slotToStart || groupStartSlots.length === 0}
               >
                 {starting ? <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> : <Play className="mr-2 size-4" aria-hidden />}
                 {"검사 시작"}
@@ -965,35 +865,6 @@ function InspectionsInner() {
                 </p>
               </div>
               <div className="space-y-2">
-                <Label>{"검사 대상 칸"}</Label>
-                {slots.length > 0 ? (
-                  <SlotSelector
-                    value={scheduleForm.slotId}
-                    onChange={handleScheduleFieldChange("slotId")}
-                    slots={slots}
-                    placeholder="검사할 칸을 선택하세요"
-                    className="max-w-full"
-                  />
-                ) : (
-                  <p className="rounded-md border border-dashed border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
-                    {"선택 가능한 칸 정보가 없어 일정을 추가할 수 없습니다. 잠시 후 다시 시도해 주세요."}
-                  </p>
-                )}
-                <p className="text-xs text-muted-foreground">
-                  {"검사할 냉장고 칸을 선택하면 일정과 세션이 연결됩니다."}
-                </p>
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="inspection-schedule-title">{"제목"}</Label>
-                <Input
-                  id="inspection-schedule-title"
-                  value={scheduleForm.title}
-                  onChange={(event) => handleScheduleFieldChange("title")(event.target.value)}
-                  placeholder="예: 3층 냉장고 정기 점검"
-                  disabled={scheduleSubmitting}
-                />
-              </div>
-              <div className="space-y-2">
                 <Label htmlFor="inspection-schedule-notes">{"메모"}</Label>
                 <Textarea
                   id="inspection-schedule-notes"
@@ -1022,22 +893,19 @@ function InspectionsInner() {
           </DialogContent>
         </Dialog>
 
-        <AlertDialog
-          open={Boolean(deleteTargetSchedule)}
-          onOpenChange={handleDeleteDialogChange}
-        >
+        <AlertDialog open={Boolean(deleteTargetGroup)} onOpenChange={handleDeleteDialogChange}>
           <AlertDialogContent>
             <AlertDialogHeader>
               <AlertDialogTitle>{"검사 일정을 삭제할까요?"}</AlertDialogTitle>
               <AlertDialogDescription>
-                {deleteTargetSchedule
-                  ? `${getScheduleDisplayName(deleteTargetSchedule)} 일정을 삭제하면 연결된 세션 링크가 해제됩니다.`
+                {deleteTargetGroup
+                  ? `${getGroupDisplayName(deleteTargetGroup)} · ${deleteTargetGroup.schedules.length}개 칸 일정을 모두 삭제합니다.`
                   : "선택한 검사 일정을 삭제하면 되돌릴 수 없습니다."}
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
               <AlertDialogCancel disabled={deletingSchedule}>{"취소"}</AlertDialogCancel>
-              <AlertDialogAction onClick={handleConfirmDeleteSchedule} disabled={deletingSchedule}>
+              <AlertDialogAction onClick={handleConfirmDeleteGroup} disabled={deletingSchedule}>
                 {deletingSchedule && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
                 {"삭제"}
               </AlertDialogAction>
@@ -1049,16 +917,9 @@ function InspectionsInner() {
   )
 }
 
-function getScheduleTitleText(schedule: InspectionSchedule): string {
-  const trimmed = schedule.title?.trim()
-  if (trimmed && trimmed.length > 0) {
-    return trimmed
-  }
-  return ""
-}
-
-function getScheduleDisplayName(schedule: InspectionSchedule): string {
-  return `"${getScheduleTitleText(schedule)}"`
+function getGroupDisplayName(group: ScheduleGroup): string {
+  const memo = group.notes?.trim()
+  return memo && memo.length > 0 ? `${formatDateTimeLabel(group.scheduledAt)} · ${memo}` : formatDateTimeLabel(group.scheduledAt)
 }
 
 function friendlyActionLabel(action: InspectionAction): string {
@@ -1122,38 +983,6 @@ function HistoryList({
   )
 }
 
-function getSlotStatusMeta(slot: Slot): { label: string; className: string } {
-  if (slot.locked) {
-    return {
-      label: "검사 중",
-      className: "border-amber-200 bg-amber-50 text-amber-700",
-    }
-  }
-
-  switch (slot.resourceStatus) {
-    case "SUSPENDED":
-      return {
-        label: "점검 중지",
-        className: "border-rose-200 bg-rose-50 text-rose-700",
-      }
-    case "REPORTED":
-      return {
-        label: "이상 신고",
-        className: "border-amber-200 bg-amber-50 text-amber-700",
-      }
-    case "RETIRED":
-      return {
-        label: "퇴역",
-        className: "border-slate-200 bg-slate-50 text-slate-600",
-      }
-    default:
-      return {
-        label: "정상",
-        className: "border-emerald-200 bg-emerald-50 text-emerald-700",
-      }
-  }
-}
-
 function formatDateTimeLabel(value?: string | null): string {
   if (!value) return "-"
   const date = new Date(value)
@@ -1171,13 +1000,60 @@ function formatDateTimeInputValue(date: Date): string {
   return `${year}-${month}-${day}T${hours}:${minutes}`
 }
 
-function getDefaultScheduleFormState(defaultSlotId = ""): ScheduleFormState {
+function getDefaultScheduleFormState(): ScheduleFormState {
   const baseline = new Date()
   baseline.setSeconds(0, 0)
   return {
     scheduledAt: formatDateTimeInputValue(baseline),
-    title: "",
     notes: "",
-    slotId: defaultSlotId,
   }
+}
+
+function groupSchedules(list: InspectionSchedule[]): ScheduleGroup[] {
+  const grouped = new Map<string, ScheduleGroup>()
+  list.forEach((schedule) => {
+    const key = `${schedule.scheduledAt}::${(schedule.notes ?? "").trim()}`
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        groupId: key,
+        scheduledAt: schedule.scheduledAt,
+        notes: schedule.notes,
+        schedules: [],
+      })
+    }
+    grouped.get(key)!.schedules.push(schedule)
+  })
+  return Array.from(grouped.values()).sort(
+    (a, b) => new Date(a.scheduledAt).getTime() - new Date(b.scheduledAt).getTime(),
+  )
+}
+
+function getGroupSlots(group: ScheduleGroup, slots: Slot[]): Slot[] {
+  const unique = new Map<string, Slot>()
+  group.schedules.forEach((schedule) => {
+    let slot = slots.find((candidate) => candidate.slotId === schedule.fridgeCompartmentId)
+    if (!slot && typeof schedule.slotIndex === "number") {
+      slot = slots.find((candidate) => candidate.slotIndex === schedule.slotIndex)
+    }
+    if (slot) {
+      unique.set(slot.slotId, slot)
+    }
+  })
+  return Array.from(unique.values())
+}
+
+function formatGroupSlotSummary(slots: Slot[]): string {
+  if (!slots.length) return "연결된 칸 정보 없음"
+  const labels = slots.map((slot) => formatSlotDisplayName(slot))
+  if (labels.length <= 2) {
+    return labels.join(", ")
+  }
+  return `${labels.slice(0, 2).join(", ")} 외 ${labels.length - 2}칸`
+}
+
+function isSlotSelectableForStart(slot: Slot, activeSession: InspectionSession | null): boolean {
+  if (slot.locked) return false
+  if (slot.resourceStatus !== "ACTIVE") return false
+  if (activeSession && activeSession.slotId === slot.slotId) return false
+  return true
 }

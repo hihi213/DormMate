@@ -82,7 +82,12 @@ public class InspectionScheduleService {
     }
 
     @Transactional(readOnly = true)
-    public List<InspectionScheduleResponse> listSchedules(String status, Integer limit) {
+    public List<InspectionScheduleResponse> listSchedules(
+            String status,
+            Integer limit,
+            Integer floorFilter,
+            List<UUID> compartmentIds
+    ) {
         InspectionScheduleStatus statusFilter = parseStatus(status, true);
         List<InspectionSchedule> schedules;
         if (statusFilter != null) {
@@ -90,6 +95,16 @@ public class InspectionScheduleService {
         } else {
             schedules = inspectionScheduleRepository.findAll().stream()
                     .sorted(Comparator.comparing(InspectionSchedule::getScheduledAt))
+                    .toList();
+        }
+
+        Set<UUID> compartmentFilter = (compartmentIds == null || compartmentIds.isEmpty())
+                ? Set.of()
+                : new LinkedHashSet<>(compartmentIds);
+        if (floorFilter != null || !compartmentFilter.isEmpty()) {
+            schedules = schedules.stream()
+                    .filter(schedule -> matchesFloorFilter(schedule, floorFilter))
+                    .filter(schedule -> matchesCompartmentFilter(schedule, compartmentFilter))
                     .toList();
         }
 
@@ -296,6 +311,29 @@ public class InspectionScheduleService {
                 schedule.getCreatedAt(),
                 schedule.getUpdatedAt()
         );
+    }
+
+    private boolean matchesFloorFilter(InspectionSchedule schedule, Integer floorFilter) {
+        if (floorFilter == null) {
+            return true;
+        }
+        FridgeCompartment compartment = schedule.getFridgeCompartment();
+        if (compartment == null || compartment.getFridgeUnit() == null) {
+            return false;
+        }
+        Integer floor = compartment.getFridgeUnit().getFloorNo();
+        return floor != null && floor.intValue() == floorFilter;
+    }
+
+    private boolean matchesCompartmentFilter(InspectionSchedule schedule, Set<UUID> compartmentFilter) {
+        if (compartmentFilter == null || compartmentFilter.isEmpty()) {
+            return true;
+        }
+        FridgeCompartment compartment = schedule.getFridgeCompartment();
+        if (compartment == null) {
+            return false;
+        }
+        return compartmentFilter.contains(compartment.getId());
     }
 
     private void ensureNoScheduleConflict(UUID compartmentId, OffsetDateTime scheduledAt, UUID excludeId) {

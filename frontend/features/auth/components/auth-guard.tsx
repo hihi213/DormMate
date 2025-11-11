@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation"
 import { User } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { getCurrentUser, subscribeAuth } from "@/lib/auth"
+import { getCurrentUser, subscribeAuth, redirectToLogin } from "@/lib/auth"
 
 interface AuthGuardProps {
   children: React.ReactNode
@@ -57,7 +57,7 @@ export default function AuthGuard({ children, fallback }: AuthGuardProps) {
               </p>
               <div className="space-y-3">
                 <Button
-                  onClick={() => router.push(`/auth/login?redirect=${encodeURIComponent(redirectTo)}`)}
+                  onClick={() => router.push(redirectToLogin({ redirect: redirectTo }))}
                   className="bg-emerald-600 hover:bg-emerald-700 w-full max-w-xs"
                   size="lg"
                 >

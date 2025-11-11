@@ -20,6 +20,7 @@ import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
 import type { InspectionSchedule } from "@/features/inspections/types"
 import type { Slot } from "@/features/fridge/types"
 import UserServiceHeader from "@/app/_components/home/user-service-header"
+import { useLogoutRedirect } from "@/hooks/use-logout-redirect"
 
 // Lazy load heavier bottom sheets
 const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
@@ -59,6 +60,7 @@ function FridgeInner() {
     edit: false,
   })
   const uid = getCurrentUserId()
+  const logoutAndRedirect = useLogoutRedirect()
 
   const restrictSlotViewToOwnership = !isAdmin
 
@@ -69,6 +71,16 @@ function FridgeInner() {
       setItemSheet({ open: true, id: itemParam, edit: editParam })
     } else {
       setItemSheet((prev) => (prev.open ? { ...prev, open: false, id: prev.id } : prev))
+    }
+  }, [searchParams])
+
+  useEffect(() => {
+    const bundleParam = searchParams.get("bundle")
+    const editParam = searchParams.get("bundleEdit") === "1"
+    if (bundleParam) {
+      setBundleSheet({ open: true, id: bundleParam, edit: editParam })
+    } else {
+      setBundleSheet((prev) => (prev.open ? { ...prev, open: false, id: prev.id } : prev))
     }
   }, [searchParams])
 
@@ -91,6 +103,13 @@ function FridgeInner() {
     replaceQuery((params) => {
       params.delete("item")
       params.delete("itemEdit")
+    })
+  }, [replaceQuery])
+
+  const clearBundleQuery = useCallback(() => {
+    replaceQuery((params) => {
+      params.delete("bundle")
+      params.delete("bundleEdit")
     })
   }, [replaceQuery])
 
@@ -135,7 +154,11 @@ function FridgeInner() {
         return
       }
       try {
-        const schedules = await fetchInspectionSchedules({ status: "SCHEDULED", limit: 20 })
+        const schedules = await fetchInspectionSchedules({
+          status: "SCHEDULED",
+          limit: Math.max(20, permittedIds.length * 2),
+          compartmentIds: permittedIds,
+        })
         if (cancelled) return
         const relevant = schedules
           .filter(
@@ -266,9 +289,20 @@ function FridgeInner() {
     },
     [replaceQuery],
   )
-  const handleOpenBundle = useCallback((bid: string, opts?: { edit?: boolean }) => {
-    setBundleSheet({ open: true, id: bid, edit: !!opts?.edit })
-  }, [])
+  const handleOpenBundle = useCallback(
+    (bid: string, opts?: { edit?: boolean }) => {
+      setBundleSheet({ open: true, id: bid, edit: !!opts?.edit })
+      replaceQuery((params) => {
+        params.set("bundle", bid)
+        if (opts?.edit) {
+          params.set("bundleEdit", "1")
+        } else {
+          params.delete("bundleEdit")
+        }
+      })
+    },
+    [replaceQuery],
+  )
 
   const handleAddClick = useCallback(() => {
     if (noAccessibleSlots) {
@@ -302,7 +336,7 @@ function FridgeInner() {
         isAdmin={isAdmin}
         onOpenInfo={() => toast({ title: "내 정보 화면은 아직 준비 중입니다." })}
         onLogout={() => {
-          window.location.href = "/auth/logout"
+          void logoutAndRedirect()
         }}
       />
 
@@ -391,7 +425,12 @@ function FridgeInner() {
       />
       <BundleDetailSheet
         open={bundleSheet.open}
-        onOpenChange={(v) => setBundleSheet((s) => ({ ...s, open: v }))}
+        onOpenChange={(v) => {
+          setBundleSheet((s) => ({ ...s, open: v }))
+          if (!v) {
+            clearBundleQuery()
+          }
+        }}
         bundleId={bundleSheet.id}
         initialEdit={!!bundleSheet.edit}
       />

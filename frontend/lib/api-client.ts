@@ -119,7 +119,7 @@ export async function apiClient<T>(path: string, options: ApiRequestOptions = {}
   if (!response.ok) {
     const error = await resolveApiError(response, errorMessages, errorCodeMessages)
     if (response.status === 401 && !skipAuth) {
-      redirectToLogin(undefined, "sessionExpired")
+      redirectToLogin({ reason: "sessionExpired", navigate: true })
     }
     return { ok: false, error, response }
   }
