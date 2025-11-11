@@ -74,4 +74,23 @@ public interface DormUserRepository extends JpaRepository<DormUser, UUID> {
              where du.id in :ids
             """)
     List<DormUser> findByIdsWithRoles(@Param("ids") Collection<UUID> ids);
+
+    @Query("""
+            select case when count(ur) > 0 then true else false end
+              from UserRole ur
+             where ur.dormUser.id = :userId
+               and ur.revokedAt is null
+               and upper(ur.role.code) = 'ADMIN'
+            """)
+    boolean existsActiveAdminRole(@Param("userId") UUID userId);
+
+    @Query("""
+            select distinct ur.dormUser.id
+              from UserRole ur
+              join ur.dormUser du
+             where ur.revokedAt is null
+               and du.status = com.dormmate.backend.modules.auth.domain.DormUserStatus.ACTIVE
+               and upper(ur.role.code) = 'ADMIN'
+            """)
+    List<UUID> findActiveAdminIds();
 }
