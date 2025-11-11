@@ -477,6 +477,15 @@ export default function AdminFridgePage() {
     pendingInspectionFocusId,
   ])
 
+  const [inspectionState, setInspectionState] = useState<InspectionState>({
+    loading: false,
+    error: null,
+    items: [],
+    status: "SUBMITTED",
+  })
+  const [selectedInspection, setSelectedInspection] = useState<AdminInspectionSession | null>(null)
+  const [inspectionDialogOpen, setInspectionDialogOpen] = useState(false)
+
   const resetBundleFilters = useCallback(() => {
     setBundleSearchInput("")
     setBundleSearch("")
@@ -506,15 +515,6 @@ export default function AdminFridgePage() {
       setSelectedInspection,
     ],
   )
-
-  const [inspectionState, setInspectionState] = useState<InspectionState>({
-    loading: false,
-    error: null,
-    items: [],
-    status: "SUBMITTED",
-  })
-  const [selectedInspection, setSelectedInspection] = useState<AdminInspectionSession | null>(null)
-  const [inspectionDialogOpen, setInspectionDialogOpen] = useState(false)
 
   const [deletedState, setDeletedState] = useState<DeletedState>({
     open: false,

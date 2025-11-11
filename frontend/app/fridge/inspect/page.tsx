@@ -410,6 +410,11 @@ function InspectInner() {
   }, [purgeStaleDrafts])
 
   useEffect(() => {
+    if (stage !== "committed") return
+    clearStoredResults()
+  }, [clearStoredResults, stage])
+
+  useEffect(() => {
     if (typeof window === "undefined") return
     const previousKey = prevStorageKeyRef.current
     if (previousKey && previousKey !== storageKey) {

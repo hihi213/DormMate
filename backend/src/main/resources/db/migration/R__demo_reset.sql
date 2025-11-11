@@ -43,15 +43,15 @@ BEGIN
     END IF;
 
     PERFORM
-        (CASE WHEN to_regclass('public.inspection_session') IS NOT NULL THEN 1 END);
-    IF FOUND THEN
-        EXECUTE 'DELETE FROM inspection_session';
-    END IF;
-
-    PERFORM
         (CASE WHEN to_regclass('public.inspection_schedule') IS NOT NULL THEN 1 END);
     IF FOUND THEN
         EXECUTE 'DELETE FROM inspection_schedule';
+    END IF;
+
+    PERFORM
+        (CASE WHEN to_regclass('public.inspection_session') IS NOT NULL THEN 1 END);
+    IF FOUND THEN
+        EXECUTE 'DELETE FROM inspection_session';
     END IF;
 
     PERFORM

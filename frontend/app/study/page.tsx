@@ -6,6 +6,7 @@ import { getCurrentUser } from "@/lib/auth"
 import BottomNav from "@/components/bottom-nav"
 import AuthGuard from "@/features/auth/components/auth-guard"
 import HomeHeader from "@/app/_components/home/home-header"
+import { ComingSoonCard } from "@/components/coming-soon-card"
 
 type StudyRoomItem = {
   id: string
@@ -57,7 +58,13 @@ function StudyInner() {
       />
 
       <div className="mx-auto max-w-screen-sm px-4 py-8 pb-28">
-        <p className="text-sm text-muted-foreground">{"스터디룸 모듈은 곧 도입 예정입니다."}</p>
+        <ComingSoonCard
+          badge="스터디룸"
+          title="스터디룸 모듈 (준비 중)"
+          description="예약 캘린더와 노쇼 처리 기능을 준비하고 있습니다."
+          icon={<DoorOpen className="size-4" aria-hidden />}
+          note="향후 Beta 테스트에 참가하고 싶다면 운영팀에 알려 주세요."
+        />
       </div>
     </main>
   )

@@ -69,12 +69,13 @@ function FridgeInner() {
   }, [restrictSlotViewToOwnership, roomDetails, slots])
 
   const visibleSlots = useMemo(() => {
-    if (!permittedSlotIds || permittedSlotIds.size === 0) {
+    if (!permittedSlotIds) {
       return slots
     }
-    const filtered = slots.filter((slot) => permittedSlotIds.has(slot.slotId))
-    return filtered.length > 0 ? filtered : slots
+    return slots.filter((slot) => permittedSlotIds.has(slot.slotId))
   }, [permittedSlotIds, slots])
+
+  const noAccessibleSlots = restrictSlotViewToOwnership && permittedSlotIds && permittedSlotIds.size === 0
 
   useEffect(() => {
     if (!restrictSlotViewToOwnership) return
@@ -252,6 +253,14 @@ function FridgeInner() {
   }, [])
 
   const handleAddClick = useCallback(() => {
+    if (noAccessibleSlots) {
+      toast({
+        title: "등록할 수 없습니다",
+        description: "배정된 냉장고 칸을 찾지 못했습니다. 관리자에게 칸 배정을 요청해 주세요.",
+        variant: "destructive",
+      })
+      return
+    }
     const suspended = selectedSlot
       ? selectedSlot.resourceStatus !== "ACTIVE" || Boolean(selectedSlot.locked)
       : false
@@ -264,7 +273,7 @@ function FridgeInner() {
       return
     }
     setAddOpen(true)
-  }, [selectedSlot, toast])
+  }, [noAccessibleSlots, selectedSlot, toast])
 
   return (
     <main className="min-h-[100svh] bg-white">
@@ -289,6 +298,13 @@ function FridgeInner() {
         {initialLoadError && (
           <Card className="border-amber-200 bg-amber-50">
             <CardContent className="py-3 text-sm text-amber-800">{initialLoadError}</CardContent>
+          </Card>
+        )}
+        {noAccessibleSlots && (
+          <Card className="border-rose-200 bg-rose-50">
+            <CardContent className="py-3 text-sm text-rose-700">
+              {"현재 계정에 배정된 냉장고 칸이 없습니다. 데모 초기화 또는 칸 배정 상태를 확인해 주세요."}
+            </CardContent>
           </Card>
         )}
         <div>
@@ -318,7 +334,12 @@ function FridgeInner() {
               onSearchChange={setQuery}
               allowAllSlots={!restrictSlotViewToOwnership}
               actionSlot={
-                <Button size="sm" className="bg-emerald-600 hover:bg-emerald-700 text-white" onClick={handleAddClick}>
+                <Button
+                  size="sm"
+                  className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                  onClick={handleAddClick}
+                  disabled={noAccessibleSlots}
+                >
                   {"물품 추가"}
                 </Button>
               }

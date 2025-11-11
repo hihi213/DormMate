@@ -82,10 +82,11 @@ export default function AddItemDialog({
   }, [restrictSlotViewToOwnership, slots, currentUser?.roomDetails])
 
   const allowedSlots = useMemo(() => {
-    if (!permittedSlotIds || permittedSlotIds.size === 0) return slots
-    const filtered = slots.filter((slot) => permittedSlotIds.has(slot.slotId))
-    return filtered.length > 0 ? filtered : slots
+    if (!permittedSlotIds) return slots
+    return slots.filter((slot) => permittedSlotIds.has(slot.slotId))
   }, [slots, permittedSlotIds])
+
+  const showNoAccessibleSlots = restrictSlotViewToOwnership && permittedSlotIds != null && allowedSlots.length === 0
 
   const fallbackSlot =
     (currentSlotId && allowedSlots.some((slot) => slot.slotId === currentSlotId)
@@ -224,6 +225,24 @@ export default function AddItemDialog({
     ? allowedSlots.find((slot) => slot.slotId === completion.slotId) ?? null
     : null
   const completionSlotLabel = completionSlot ? formatSlotDisplayName(completionSlot) : undefined
+
+  if (showNoAccessibleSlots) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-md">
+          <DialogTitle>{"등록 가능한 칸이 없습니다"}</DialogTitle>
+          <DialogDescription className="text-sm text-muted-foreground">
+            {"현재 계정에 배정된 냉장고 칸이 없어 포장을 등록할 수 없습니다. 관리자에게 칸 배정을 요청해 주세요."}
+          </DialogDescription>
+          <div className="mt-4 flex justify-end">
+            <Button type="button" onClick={() => onOpenChange(false)}>
+              {"확인"}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    )
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
