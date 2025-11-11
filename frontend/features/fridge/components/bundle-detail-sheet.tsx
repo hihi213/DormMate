@@ -5,6 +5,7 @@ import type React from "react"
 import { useEffect, useMemo, useState } from "react"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Loader2, Trash2, X, Pencil, Check } from "lucide-react"
 import { Label } from "@/components/ui/label"
@@ -74,6 +75,23 @@ export default function BundleDetailSheet({
       ? `${ownerInfo} 물품입니다. 메모는 비공개예요.`
       : "다른 사람 물품이라 가려졌어요~"
   const canEditBundle = isOwner && slotEditable
+  const totalItemCount = group.length
+  const totalCountLabel = useMemo(() => `총 ${totalItemCount.toLocaleString()}개`, [totalItemCount])
+  const identificationLabel = useMemo(() => {
+    if (bundleMeta?.labelDisplay) return bundleMeta.labelDisplay
+    if (first?.bundleLabelDisplay) return first.bundleLabelDisplay
+    return groupCode || "식별번호 없음"
+  }, [bundleMeta?.labelDisplay, first?.bundleLabelDisplay, groupCode])
+  const headerMemoText = useMemo(() => {
+    const trimmed = representativeMemo.trim()
+    if (isOwner) {
+      return trimmed.length ? trimmed : "대표 메모가 없습니다."
+    }
+    if (isAdmin) {
+      return `${ownerInfo} 물품입니다. 대표 메모는 비공개예요.`
+    }
+    return "대표 메모는 소유자만 볼 수 있습니다."
+  }, [representativeMemo, isOwner, isAdmin, ownerInfo])
 
   const sorted = useMemo(() => group.slice().sort((a, b) => daysLeft(a.expiryDate) - daysLeft(b.expiryDate)), [group])
   const isSingleItem = sorted.length === 1
@@ -517,7 +535,7 @@ const renderItemCard = (
             <Button variant="ghost" size="icon" aria-label="닫기" onClick={() => onOpenChange(false)}>
               <X className="size-5" />
             </Button>
-            <div className="text-sm font-semibold truncate">{bundleName || "묶음 상세"}</div>
+            <div className="text-sm font-semibold truncate">{identificationLabel || "묶음 상세"}</div>
             <div className="inline-flex items-center gap-1">
               {canEditBundle ? (
                 <Button
@@ -544,10 +562,14 @@ const renderItemCard = (
             <>
               <Card className="border-emerald-200">
                 <CardContent className="py-3 space-y-4">
-                  {canManage && (
-                    <div className="flex justify-end gap-2">
-                      {infoEditing ? (
-                        <>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <p className="text-base font-semibold text-gray-900 flex-1 min-w-0 truncate">{bundleName}</p>
+                    <Badge variant="outline" className="border-emerald-200 text-emerald-800">
+                      {totalCountLabel}
+                    </Badge>
+                    {canManage &&
+                      (infoEditing ? (
+                        <div className="flex flex-wrap items-center gap-2">
                           <Button
                             variant="outline"
                             size="sm"
@@ -565,15 +587,14 @@ const renderItemCard = (
                             {infoSaving && <Loader2 className="mr-2 size-4 animate-spin" aria-hidden />}
                             {"저장"}
                           </Button>
-                        </>
+                        </div>
                       ) : (
-                        <Button variant="ghost" size="sm" onClick={startInfoEdit} disabled={!canEditBundle}>
-                          <Pencil className="mr-2 h-4 w-4" />
+                        <Button variant="outline" size="sm" onClick={startInfoEdit} disabled={!canEditBundle}>
                           {"정보 수정"}
                         </Button>
-                      )}
-                    </div>
-                  )}
+                      ))}
+                  </div>
+                  <p className="text-sm text-slate-600 line-clamp-2">{headerMemoText}</p>
 
                   {infoEditing ? (
                     <div className="space-y-3">
@@ -599,17 +620,7 @@ const renderItemCard = (
                         />
                       </div>
                     </div>
-                  ) : (
-                    <div className="space-y-3">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <Field label="대표명" value={bundleName || "-"} />
-                        {groupCode && <Field label="대표 식별번호" value={groupCode} />}
-                        <Field label="총 개수" value={`${sorted.length}`} />
-                        <Field label="소유자" value={ownerLabel} />
-                      </div>
-                      <div className="text-xs text-muted-foreground">{memoDescription}</div>
-                    </div>
-                  )}
+                  ) : null}
                 </CardContent>
               </Card>
 

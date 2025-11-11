@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useState } from "react"
+import dynamic from "next/dynamic"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { CalendarDays, ClipboardCheck, Loader2, MoreVertical, Play, Plus, ShieldCheck } from "lucide-react"
@@ -63,6 +64,9 @@ import {
   startInspection,
   updateInspectionSchedule,
 } from "@/features/inspections/api"
+
+const ItemDetailSheet = dynamic(() => import("@/features/fridge/components/item-detail-sheet"), { ssr: false })
+const BundleDetailSheet = dynamic(() => import("@/features/fridge/components/bundle-detail-sheet"), { ssr: false })
 
 const STATUS_BADGE: Record<NormalizedInspectionStatus, { label: string; className: string }> = {
   IN_PROGRESS: {
@@ -152,6 +156,8 @@ function InspectionsInner() {
   } | null>(null)
   const [residentActionLoadingId, setResidentActionLoadingId] = useState<string | null>(null)
   const [focusedAction, setFocusedAction] = useState<InspectionActionDetail | null>(null)
+  const [itemSheet, setItemSheet] = useState<{ open: boolean; id: string }>({ open: false, id: "" })
+  const [bundleSheet, setBundleSheet] = useState<{ open: boolean; id: string }>({ open: false, id: "" })
   const minScheduleInputValue = useMemo(() => formatDateTimeInputValue(new Date()), [])
 
   const currentUser = getCurrentUser()
@@ -237,6 +243,32 @@ function InspectionsInner() {
       }
     },
     [currentUser?.userId, toast],
+  )
+
+  const handleInspectActionDetail = useCallback(
+    (action: InspectionActionDetail) => {
+      if (isWarningAction(action.actionType)) {
+        const targetItem = action.items?.find((item) => item.fridgeItemId)
+        if (targetItem?.fridgeItemId) {
+          setItemSheet({ open: true, id: targetItem.fridgeItemId })
+          return
+        }
+        if (action.bundleId) {
+          setBundleSheet({ open: true, id: action.bundleId })
+          return
+        }
+      }
+      if (isDisposalAction(action.actionType)) {
+        setFocusedAction(action)
+        return
+      }
+      toast({
+        title: "조치 정보를 열 수 없습니다",
+        description: "연결된 물품 정보를 찾지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        variant: "destructive",
+      })
+    },
+    [toast],
   )
 
   useEffect(() => {
@@ -840,6 +872,19 @@ function InspectionsInner() {
 
         {residentNotice}
 
+        <ItemDetailSheet
+          open={itemSheet.open}
+          onOpenChange={(open) => setItemSheet((prev) => ({ ...prev, open }))}
+          itemId={itemSheet.id}
+          initialEdit={false}
+        />
+        <BundleDetailSheet
+          open={bundleSheet.open}
+          onOpenChange={(open) => setBundleSheet((prev) => ({ ...prev, open }))}
+          bundleId={bundleSheet.id}
+          initialEdit={false}
+        />
+
         <Dialog
           open={Boolean(residentActionDialog)}
           onOpenChange={(open) => {
@@ -864,7 +909,7 @@ function InspectionsInner() {
                 <ResidentActionTimeline
                   detail={residentActionDialog}
                   onSelectAction={(action) => {
-                    setFocusedAction(action)
+                    handleInspectActionDetail(action)
                   }}
                 />
                 <DialogFooter className="pt-2">

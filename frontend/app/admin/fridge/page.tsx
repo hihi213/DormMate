@@ -58,11 +58,14 @@ import {
   type AdminBundleSummary,
   type AdminFridgeSlot,
   type AdminInspectionActionDetail,
+  type AdminInspectionActionItem,
   type AdminInspectionSession,
 } from "@/features/admin/utils/fridge-adapter"
 import { updateFridgeCompartment } from "@/features/fridge/api"
 import type { ResourceStatus, Slot, UpdateCompartmentConfigPayload } from "@/features/fridge/types"
-import { formatRoomLabel, formatSlotDisplayName } from "@/features/fridge/utils/labels"
+import * as fridgeLabelUtils from "@/features/fridge/utils/labels"
+
+const { formatRoomLabel, formatSlotDisplayName } = fridgeLabelUtils
 
 const FLOOR_OPTIONS = [2, 3, 4, 5]
 const BUNDLE_PAGE_SIZE = 8
@@ -139,6 +142,44 @@ const INSPECTION_NOTIFICATION_LABELS: Record<string, string> = {
   UNREAD: "미확인",
   READ: "확인 완료",
   EXPIRED: "만료",
+}
+
+const ISSUE_ACTION_TYPES: InspectionActionType[] = [
+  "WARN_INFO_MISMATCH",
+  "WARN_STORAGE_POOR",
+  "DISPOSE_EXPIRED",
+  "UNREGISTERED_DISPOSE",
+]
+
+const isIssueActionType = (value: string | null | undefined): value is InspectionActionType =>
+  isInspectionActionType(value) && ISSUE_ACTION_TYPES.includes(value)
+
+const formatAdminActionItemSummary = (item: AdminInspectionActionItem): string => {
+  const name = item.snapshotName?.trim()
+  const quantity =
+    typeof item.quantityAtAction === "number" && item.quantityAtAction > 0
+      ? item.quantityAtAction
+      : null
+  if (name && quantity) {
+    return `${name}(${quantity})`
+  }
+  if (name) return name
+  if (quantity) return `수량 ${quantity}`
+  return ""
+}
+
+const buildIssueActionSummary = (action: AdminInspectionActionDetail): string => {
+  const note = action.note?.trim()
+  const itemSummaries = action.items
+    ?.map((item) => formatAdminActionItemSummary(item))
+    .filter((text) => text.length > 0)
+  if (itemSummaries && itemSummaries.length > 0 && note) {
+    return `${itemSummaries.join(", ")}: ${note}`
+  }
+  if (itemSummaries && itemSummaries.length > 0) {
+    return itemSummaries.join(", ")
+  }
+  return note ?? ""
 }
 
 type InspectionActionType = keyof typeof INSPECTION_ACTION_LABELS
@@ -1060,6 +1101,11 @@ export default function AdminFridgePage() {
     setInspectionDialogOpen(false)
     setSelectedInspection(null)
   }, [])
+
+  const issueActions = useMemo(() => {
+    if (!selectedInspection) return []
+    return selectedInspection.actions.filter((action) => isIssueActionType(action.actionType))
+  }, [selectedInspection])
 
   const handleInspectionAdjust = useCallback(() => {
     if (!selectedInspection) {
@@ -2149,83 +2195,73 @@ export default function AdminFridgePage() {
                         정정
                       </Button>
                     </div>
-                    {selectedInspection.actions.length === 0 ? (
-                      <p className="text-xs text-slate-500">기록된 조치가 없습니다.</p>
+                    {issueActions.length === 0 ? (
+                      <p className="text-xs text-slate-500">경고·폐기 조치가 없습니다.</p>
                     ) : (
                       <ScrollArea className="max-h-[260px] pr-2">
-                        <div className="space-y-1">
-                          {selectedInspection.actions.map((action, index) => {
+                        <div className="space-y-2">
+                          {issueActions.map((action, index) => {
                             const key =
                               action.actionId ??
                               action.correlationId ??
                               `${action.recordedAt ?? "action"}-${index}`
-                          const actionType = isInspectionActionType(action.actionType)
-                            ? action.actionType
-                            : DEFAULT_INSPECTION_ACTION
-                          const actionLabel = formatInspectionActionLabel(actionType)
-                          const recordedAt = action.recordedAt
-                            ? formatDateTime(action.recordedAt, "-")
-                            : "기록 시간 미상"
-                          const notificationLabel =
-                            action.notificationStatus && INSPECTION_NOTIFICATION_LABELS[action.notificationStatus]
-                              ? INSPECTION_NOTIFICATION_LABELS[action.notificationStatus]
-                              : action.notificationStatus ?? null
-                          const trimmedNote = action.note?.trim()
-                          const bundleCount = action.items.length
-                          const actionBadgeClass =
-                            actionType === "DISPOSE_EXPIRED" || actionType === "UNREGISTERED_DISPOSE"
-                              ? "border-rose-200 text-rose-700 bg-rose-50"
-                              : actionType.startsWith("WARN")
-                                ? "border-amber-200 text-amber-700 bg-amber-50"
-                                : "border-slate-200 text-slate-600 bg-slate-50"
-                          const roomLabel = formatRoomLabel(action.roomNumber, selectedInspection.floorNo)
-                          const personalLabel =
-                            typeof action.personalNo === "number" ? String(action.personalNo) : undefined
-                          const roomIdentifier =
-                            roomLabel && personalLabel
-                              ? `${roomLabel}-${personalLabel}`
-                              : roomLabel ?? undefined
-                          const ownerName =
-                            action.targetName?.trim() ??
-                            (action.bundleId ? bundleOwnerLookup.get(action.bundleId) ?? undefined : undefined)
-                          const occupantLabel =
-                            roomIdentifier && ownerName
-                              ? `${roomIdentifier} ${ownerName}`
-                              : roomIdentifier ?? ownerName ?? "사용자"
-                          return (
-                            <div
-                              key={key}
-                              className="flex flex-wrap items-center gap-2 rounded-md border border-slate-200 bg-slate-50 px-3 py-2 text-[11px] text-slate-600"
-                            >
-                              <Badge
-                                variant="outline"
-                                className={cn(
-                                  "px-2 py-0.5 text-xs font-semibold",
-                                  actionBadgeClass,
-                                )}
+                            const actionType = isInspectionActionType(action.actionType)
+                              ? action.actionType
+                              : DEFAULT_INSPECTION_ACTION
+                            const actionLabel = formatInspectionActionLabel(actionType)
+                            const recordedAt = action.recordedAt
+                              ? formatDateTime(action.recordedAt, "-")
+                              : "기록 시간 미상"
+                            const actionBadgeClass =
+                              actionType === "DISPOSE_EXPIRED" || actionType === "UNREGISTERED_DISPOSE"
+                                ? "border-rose-200 text-rose-700 bg-rose-50"
+                                : "border-amber-200 text-amber-700 bg-amber-50"
+                            const roomLabel = formatRoomLabel(action.roomNumber, selectedInspection.floorNo)
+                            const personalLabel =
+                              typeof action.personalNo === "number" ? String(action.personalNo) : undefined
+                            const roomIdentifier =
+                              roomLabel && personalLabel
+                                ? `${roomLabel}-${personalLabel}`
+                                : roomLabel ?? undefined
+                            const ownerName =
+                              action.targetName?.trim() ??
+                              (action.bundleId ? bundleOwnerLookup.get(action.bundleId) ?? undefined : undefined)
+                            const occupantLabel =
+                              roomIdentifier && ownerName
+                                ? `${roomIdentifier} ${ownerName}`
+                                : roomIdentifier ?? ownerName ?? "사용자"
+                            const summaryLine = buildIssueActionSummary(action)
+                            return (
+                              <div
+                                key={key}
+                                className="rounded-lg border border-slate-200 bg-white px-3 py-3 text-[13px] text-slate-700 shadow-sm"
                               >
-                                {actionLabel}
-                              </Badge>
-                              {action.targetUserId ? (
-                                <Link
-                                  href={`/admin/users?focus=${action.targetUserId}`}
-                                  className="text-emerald-600 hover:underline"
-                                >
-                                  {occupantLabel}
-                                </Link>
-                              ) : (
-                                <span>{occupantLabel}</span>
-                              )}
-                              {bundleCount > 0 ? <span>물품 {bundleCount}개</span> : null}
-                              <span className="text-slate-500">{recordedAt}</span>
-                              {notificationLabel ? (
-                                <span className="text-emerald-600">{notificationLabel}</span>
-                              ) : null}
-                              {trimmedNote ? (
-                                <span className="text-slate-500">“{trimmedNote}”</span>
-                              ) : null}
-                            </div>
-                          )
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge
+                                      variant="outline"
+                                      className={cn("px-2 py-0.5 text-xs font-semibold", actionBadgeClass)}
+                                    >
+                                      {actionLabel}
+                                    </Badge>
+                                    {action.targetUserId ? (
+                                      <Link
+                                        href={`/admin/users?focus=${action.targetUserId}`}
+                                        className="text-sm font-semibold text-emerald-700 hover:underline"
+                                      >
+                                        {occupantLabel}
+                                      </Link>
+                                    ) : (
+                                      <span className="text-sm font-semibold text-slate-900">{occupantLabel}</span>
+                                    )}
+                                  </div>
+                                  <span className="text-[11px] text-slate-500">{recordedAt}</span>
+                                </div>
+                                {summaryLine ? (
+                                  <p className="mt-2 text-sm font-medium text-slate-900">{summaryLine}</p>
+                                ) : null}
+                              </div>
+                            )
                           })}
                         </div>
                       </ScrollArea>
