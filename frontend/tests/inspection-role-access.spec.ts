@@ -44,6 +44,6 @@ test.describe('검사 권한 UI 가드', () => {
     await expect(page.getByRole('heading', { name: '검사 일정' })).toBeVisible();
     await expect(page.getByRole('button', { name: '일정 추가' })).toBeVisible();
     await expect(page.getByRole('button', { name: '검사 시작' })).toBeVisible();
-    await expect(page.getByText('냉장(A)')).toBeVisible();
+    await expect(page.getByText('냉장(A)').first()).toBeVisible();
   });
 });
