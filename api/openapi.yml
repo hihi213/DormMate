@@ -358,6 +358,12 @@ paths:
           schema:
             type: string
             format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleChangeRequest'
+        required: true
       responses:
         '200':
           description: OK
@@ -372,6 +378,12 @@ paths:
           schema:
             type: string
             format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleChangeRequest'
+        required: true
       responses:
         '200':
           description: OK
@@ -1040,8 +1052,50 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/AdminDashboardResponse'
+  /admin/fridge/issues:
+    get:
+      tags:
+        - admin-dashboard-controller
+      operationId: getFridgeOwnershipIssues
+      parameters:
+        - name: page
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 0
+        - name: size
+          in: query
+          required: false
+          schema:
+            type: integer
+            format: int32
+            default: 20
+        - name: ownerId
+          in: query
+          required: false
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: OK
+          content:
+            '*/*':
+              schema:
+                $ref: '#/components/schemas/AdminFridgeOwnershipIssuesResponse'
 components:
   schemas:
+    RoleChangeRequest:
+      required:
+        - reason
+      type: object
+      properties:
+        reason:
+          maxLength: 200
+          minLength: 2
+          type: string
     NotificationPolicy:
       required:
         - batchTime
@@ -1822,9 +1876,14 @@ components:
     UpdateUserStatusRequest:
       required:
         - status
+        - reason
       type: object
       properties:
         status:
+          type: string
+        reason:
+          maxLength: 200
+          minLength: 2
           type: string
     UpdateCompartmentConfigRequest:
       type: object
@@ -2126,3 +2185,72 @@ components:
           type: string
         detail:
           type: string
+    AdminFridgeOwnershipIssuesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminFridgeOwnershipIssue'
+        page:
+          type: integer
+          format: int32
+        size:
+          type: integer
+          format: int32
+        totalElements:
+          type: integer
+          format: int64
+        totalPages:
+          type: integer
+          format: int32
+    AdminFridgeOwnershipIssue:
+      type: object
+      properties:
+        bundleId:
+          type: string
+          format: uuid
+        bundleName:
+          type: string
+        labelNumber:
+          type: integer
+          format: int32
+        ownerUserId:
+          type: string
+          format: uuid
+        ownerName:
+          type: string
+        ownerLoginId:
+          type: string
+        roomId:
+          type: string
+          format: uuid
+        roomNumber:
+          type: string
+        roomFloor:
+          type: integer
+          format: int32
+        personalNo:
+          type: integer
+          format: int32
+        fridgeCompartmentId:
+          type: string
+          format: uuid
+        slotIndex:
+          type: integer
+          format: int32
+        compartmentType:
+          type: string
+        fridgeFloorNo:
+          type: integer
+          format: int32
+        fridgeDisplayName:
+          type: string
+        issueType:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
