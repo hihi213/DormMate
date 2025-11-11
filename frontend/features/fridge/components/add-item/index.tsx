@@ -34,7 +34,6 @@ import { Textarea } from "@/components/ui/textarea"
 import { useAddItemWorkflow, formatExpiryDisplay } from "./use-add-item-workflow"
 import { getCurrentUser } from "@/lib/auth"
 import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
-import { computePermittedSlotIds } from "@/features/fridge/utils/slot-permissions"
 
 const LIST_SCROLL_BOX_HEIGHT = "clamp(240px, 35vh, 360px)"
 
@@ -76,17 +75,9 @@ export default function AddItemDialog({
     }
   }, [])
 
-  const permittedSlotIds = useMemo(() => {
-    if (!restrictSlotViewToOwnership) return null
-    return computePermittedSlotIds(slots, currentUser?.roomDetails ?? null)
-  }, [restrictSlotViewToOwnership, slots, currentUser?.roomDetails])
+  const allowedSlots = slots
 
-  const allowedSlots = useMemo(() => {
-    if (!permittedSlotIds) return slots
-    return slots.filter((slot) => permittedSlotIds.has(slot.slotId))
-  }, [slots, permittedSlotIds])
-
-  const showNoAccessibleSlots = restrictSlotViewToOwnership && permittedSlotIds != null && allowedSlots.length === 0
+  const showNoAccessibleSlots = restrictSlotViewToOwnership && allowedSlots.length === 0
 
   const fallbackSlot =
     (currentSlotId && allowedSlots.some((slot) => slot.slotId === currentSlotId)

@@ -12,13 +12,12 @@ import type { AuthUser } from "@/lib/auth"
 
 type LoginPanelProps = {
   redirectTo: string
-  onSwitchToSignup: () => void
 }
 
 const inputStyle =
   "h-11 rounded-xl border border-slate-200 bg-white/80 shadow-[inset_0_1px_0_rgba(255,255,255,0.6)] focus-visible:ring-2 focus-visible:ring-emerald-500 focus-visible:border-emerald-500 transition"
 
-export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
+export function LoginPanel({ redirectTo }: LoginPanelProps) {
   const router = useRouter()
   const params = useSearchParams()
   const { toast } = useToast()
@@ -31,6 +30,8 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
     switch (reason) {
       case "sessionExpired":
         return "세션이 만료되어 다시 로그인해 주세요."
+      case "logout":
+        return "정상적으로 로그아웃되었습니다. 다시 로그인해 주세요."
       default:
         return ""
     }
@@ -189,13 +190,6 @@ export function LoginPanel({ redirectTo, onSwitchToSignup }: LoginPanelProps) {
         {"계정을 발급받지 않았다면 기숙사 관리자에게 문의해 주세요."}
       </p>
 
-      <button
-        type="button"
-        onClick={onSwitchToSignup}
-        className="w-full text-center text-sm font-medium text-emerald-700 hover:underline"
-      >
-        {"계정이 없으신가요? 회원가입하기"}
-      </button>
     </form>
   )
 }

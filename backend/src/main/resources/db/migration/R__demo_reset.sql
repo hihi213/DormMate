@@ -118,25 +118,57 @@ BEGIN
         (10, '스포츠 보충식', '운동 후 보충용 음료와 스낵');
 
     CREATE TEMP TABLE tmp_item_templates (
-        ordinal integer PRIMARY KEY,
+        bundle_ordinal integer,
+        item_seq integer,
         item_name text,
         quantity integer,
         unit_code text,
-        relative_days integer
+        relative_days integer,
+        PRIMARY KEY (bundle_ordinal, item_seq)
     ) ON COMMIT DROP;
 
-    INSERT INTO tmp_item_templates (ordinal, item_name, quantity, unit_code, relative_days)
+    INSERT INTO tmp_item_templates (bundle_ordinal, item_seq, item_name, quantity, unit_code, relative_days)
     VALUES
-        (1, '제주 감귤', 5, 'EA', -2),
-        (2, '매운맛 컵라면', 3, 'EA', 0),
-        (3, '탄산수', 4, 'BTL', 1),
-        (4, '훈제 닭가슴살', 2, 'PACK', 3),
-        (5, '갈릭 만두', 12, 'EA', 5),
-        (6, '비상 미니 파우치', 5, 'EA', 7),
-        (7, '콜드브루 원액', 1, 'BTL', 9),
-        (8, '채소 믹스팩', 2, 'PACK', 10),
-        (9, '수제 쿠키', 8, 'EA', 12),
-        (10, '초콜릿 프로틴바', 6, 'EA', 14);
+        -- 1. 아침 과일 박스
+        (1, 1, '제주 감귤', 6, 'EA', -2),
+        (1, 2, '그릭 요거트', 2, 'CUP', 0),
+        (1, 3, '블루베리 컵', 2, 'CUP', 1),
+        -- 2. 늦은 밤 라면 세트
+        (2, 1, '매운맛 컵라면', 3, 'EA', 0),
+        (2, 2, '사각 김치 팩', 1, 'PACK', 3),
+        (2, 3, '우유 200ml', 2, 'PKG', 1),
+        -- 3. 냉음료 모음
+        (3, 1, '탄산수', 4, 'BTL', 1),
+        (3, 2, '복숭아 아이스티', 2, 'BTL', 2),
+        (3, 3, '에너지 드링크', 2, 'CAN', 5),
+        -- 4. 주말 브런치 키트
+        (4, 1, '훈제 닭가슴살', 2, 'PACK', 3),
+        (4, 2, '시저 샐러드 팩', 1, 'PACK', 2),
+        (4, 3, '허브 드레싱', 1, 'BAG', 4),
+        -- 5. 야식 냉동 코너
+        (5, 1, '갈릭 만두', 12, 'EA', 5),
+        (5, 2, '치즈 핫도그', 4, 'EA', 6),
+        (5, 3, '타르타르 소스', 1, 'JAR', 8),
+        -- 6. 공동 비상식품
+        (6, 1, '비상 미니 파우치', 5, 'EA', 7),
+        (6, 2, '즉석죽', 3, 'EA', 15),
+        (6, 3, '생수 500ml', 6, 'BTL', 30),
+        -- 7. 홈카페 재료
+        (7, 1, '콜드브루 원액', 1, 'BTL', 9),
+        (7, 2, '휘핑 크림', 1, 'CAN', 5),
+        (7, 3, '카라멜 토핑', 1, 'JAR', 20),
+        -- 8. 채식 간편식
+        (8, 1, '채소 믹스팩', 2, 'PACK', 10),
+        (8, 2, '렌틸콩 샐러드', 1, 'PACK', 6),
+        (8, 3, '두부 스테이크', 2, 'EA', 8),
+        -- 9. 간식 상자
+        (9, 1, '수제 쿠키', 8, 'EA', 12),
+        (9, 2, '믹스 견과', 4, 'PACK', 30),
+        (9, 3, '말린 과일칩', 3, 'PACK', 25),
+        -- 10. 스포츠 보충식
+        (10, 1, '초콜릿 프로틴바', 6, 'EA', 14),
+        (10, 2, '이온 음료', 3, 'BTL', 7),
+        (10, 3, '바나나 쉐이크', 2, 'BTL', 3);
 
     CREATE TEMP TABLE tmp_occupant_pool (
         owner_id uuid,
@@ -287,7 +319,7 @@ BEGIN
         tdb.created_at,
         tdb.created_at
     FROM tmp_demo_bundles tdb
-    JOIN tmp_item_templates tit ON tit.ordinal = tdb.label_number;
+    JOIN tmp_item_templates tit ON tit.bundle_ordinal = tdb.label_number;
 
     INSERT INTO bundle_label_sequence (
         fridge_compartment_id,

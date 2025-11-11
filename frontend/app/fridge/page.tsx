@@ -17,7 +17,6 @@ import AuthGuard from "@/features/auth/components/auth-guard"
 import { useToast } from "@/hooks/use-toast"
 import { fetchNextInspectionSchedule, fetchInspectionSchedules } from "@/features/inspections/api"
 import { formatSlotDisplayName } from "@/features/fridge/utils/labels"
-import { computePermittedSlotIds } from "@/features/fridge/utils/slot-permissions"
 import type { InspectionSchedule } from "@/features/inspections/types"
 import type { Slot } from "@/features/fridge/types"
 import UserServiceHeader from "@/app/_components/home/user-service-header"
@@ -62,7 +61,6 @@ function FridgeInner() {
   const uid = getCurrentUserId()
 
   const restrictSlotViewToOwnership = !isAdmin
-  const roomDetails = currentUser?.roomDetails ?? null
 
   useEffect(() => {
     const itemParam = searchParams.get("item")
@@ -96,29 +94,15 @@ function FridgeInner() {
     })
   }, [replaceQuery])
 
-  const permittedSlotIds = useMemo(() => {
-    if (!restrictSlotViewToOwnership) return null
-    return computePermittedSlotIds(slots, roomDetails ?? null)
-  }, [restrictSlotViewToOwnership, roomDetails, slots])
-
-  const visibleSlots = useMemo(() => {
-    if (!permittedSlotIds) {
-      return slots
-    }
-    return slots.filter((slot) => permittedSlotIds.has(slot.slotId))
-  }, [permittedSlotIds, slots])
-
-  const noAccessibleSlots = restrictSlotViewToOwnership && permittedSlotIds && permittedSlotIds.size === 0
+  const noAccessibleSlots = restrictSlotViewToOwnership && slots.length === 0
 
   useEffect(() => {
     if (!restrictSlotViewToOwnership) return
-    if (!permittedSlotIds || permittedSlotIds.size === 0) return
-    const availableSlotIds = Array.from(permittedSlotIds)
-    const fallbackSlotId = availableSlotIds[0]
-    if (!selectedSlotId || !permittedSlotIds.has(selectedSlotId)) {
-      setSelectedSlotId(fallbackSlotId)
+    if (slots.length === 0) return
+    if (!selectedSlotId || !slots.some((slot) => slot.slotId === selectedSlotId)) {
+      setSelectedSlotId(slots[0].slotId)
     }
-  }, [restrictSlotViewToOwnership, permittedSlotIds, selectedSlotId])
+  }, [restrictSlotViewToOwnership, slots, selectedSlotId])
 
   useEffect(() => {
     setMounted(true)
@@ -145,7 +129,7 @@ function FridgeInner() {
     }
 
     const loadResidentSchedule = async () => {
-      const permittedIds = permittedSlotIds ? Array.from(permittedSlotIds) : []
+      const permittedIds = slots.map((slot) => slot.slotId)
       if (permittedIds.length === 0) {
         setNextScheduleText("내 칸 일정 없음")
         return
@@ -194,7 +178,7 @@ function FridgeInner() {
     return () => {
       cancelled = true
     }
-  }, [restrictSlotViewToOwnership, slots, permittedSlotIds, roomDetails])
+  }, [restrictSlotViewToOwnership, slots])
 
   const filtered = useMemo(() => {
     const now = new Date()
@@ -356,7 +340,7 @@ function FridgeInner() {
               onChange={setTab}
               slotId={selectedSlotId}
               setSlotId={setSelectedSlotId}
-              slots={visibleSlots}
+              slots={slots}
               counts={counts}
               searchValue={query}
               onSearchChange={setQuery}
@@ -391,7 +375,7 @@ function FridgeInner() {
         </section>
       </div>
 
-      <AddItemDialog open={addOpen} onOpenChange={setAddOpen} slots={visibleSlots} currentSlotId={selectedSlotId} />
+      <AddItemDialog open={addOpen} onOpenChange={setAddOpen} slots={slots} currentSlotId={selectedSlotId} />
 
       {/* Bottom sheets for quick detail (lazy-loaded) */}
       <ItemDetailSheet
@@ -409,7 +393,7 @@ function FridgeInner() {
         open={bundleSheet.open}
         onOpenChange={(v) => setBundleSheet((s) => ({ ...s, open: v }))}
         bundleId={bundleSheet.id}
-        initialEdit={!!itemSheet.edit}
+        initialEdit={!!bundleSheet.edit}
       />
     </main>
   )

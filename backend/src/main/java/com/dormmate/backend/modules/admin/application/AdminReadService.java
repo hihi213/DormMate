@@ -16,6 +16,7 @@ import java.util.stream.Collectors;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -31,7 +32,6 @@ import com.dormmate.backend.modules.auth.domain.DormUser;
 import com.dormmate.backend.modules.auth.domain.DormUserStatus;
 import com.dormmate.backend.modules.auth.domain.UserRole;
 import com.dormmate.backend.modules.auth.domain.Role;
-import com.dormmate.backend.modules.auth.domain.Room;
 import com.dormmate.backend.modules.auth.domain.RoomAssignment;
 import com.dormmate.backend.modules.auth.domain.UserSession;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
@@ -192,14 +192,31 @@ public class AdminReadService {
 
     public AdminUsersResponse getUsers(AdminUsersQuery query) {
         DormUserStatus status = query.statusFilter().toDormUserStatus();
-        List<DormUser> rawUsers = dormUserRepository.findUsersWithAssociations(status);
-        Map<UUID, DormUser> uniqueUsers = new LinkedHashMap<>();
-        for (DormUser user : rawUsers) {
-            uniqueUsers.putIfAbsent(user.getId(), user);
-        }
+        Pageable pageable = PageRequest.of(
+                normalizePage(query.page()),
+                normalizeSize(query.size())
+        );
+
+        String normalizedSearch = query.search() == null || query.search().isBlank()
+                ? null
+                : query.search().trim().toLowerCase(Locale.ROOT);
+
+        String searchPattern = normalizedSearch == null ? null : "%" + normalizedSearch + "%";
+
+        Page<UUID> userIdPage = dormUserRepository.findUserIdsByFilters(
+                status,
+                query.floor(),
+                query.floorManagerOnly(),
+                searchPattern,
+                pageable
+        );
+
+        List<UUID> orderedIds = userIdPage.getContent();
+        Map<UUID, DormUser> usersById = dormUserRepository.findByIdsWithRoles(orderedIds).stream()
+                .collect(Collectors.toMap(DormUser::getId, user -> user));
 
         OffsetDateTime now = OffsetDateTime.now(clock);
-        Set<UUID> userIds = uniqueUsers.keySet();
+        Set<UUID> userIds = usersById.keySet();
         Map<UUID, Integer> penaltyTotals = loadPenaltyTotals(userIds, now);
         Map<UUID, RoomAssignment> activeAssignments = roomAssignmentRepository.findActiveAssignmentsByUserIds(userIds).stream()
                 .collect(Collectors.toMap(
@@ -210,25 +227,9 @@ public class AdminReadService {
         Map<UUID, List<UserSession>> activeSessions = userSessionRepository.findActiveSessionsByUserIds(userIds, now).stream()
                 .collect(Collectors.groupingBy(session -> session.getDormUser().getId()));
 
-        List<UUID> orderedUserIds = uniqueUsers.values().stream()
-                .filter(user -> !hasActiveRole(user, "ADMIN"))
-                .filter(user -> matchesFloorFilter(user, query.floor(), activeAssignments))
-                .filter(user -> !query.floorManagerOnly() || hasActiveRole(user, "FLOOR_MANAGER"))
-                .filter(user -> matchesSearchFilter(user, activeAssignments.get(user.getId()), query.search()))
-                .sorted((a, b) -> a.getFullName().compareToIgnoreCase(b.getFullName()))
-                .map(DormUser::getId)
-                .toList();
-
-        int normalizedSize = normalizeSize(query.size());
-        int normalizedPage = normalizePage(query.page());
-        int totalElements = orderedUserIds.size();
-        int totalPages = (int) Math.ceil(totalElements / (double) normalizedSize);
-
-        int fromIndex = Math.min(normalizedPage * normalizedSize, totalElements);
-        int toIndex = Math.min(fromIndex + normalizedSize, totalElements);
-
-        List<AdminUsersResponse.User> users = orderedUserIds.subList(fromIndex, toIndex).stream()
-                .map(uniqueUsers::get)
+        List<AdminUsersResponse.User> users = orderedIds.stream()
+                .map(usersById::get)
+                .filter(Objects::nonNull)
                 .map(user -> mapUser(
                         user,
                         now,
@@ -238,14 +239,16 @@ public class AdminReadService {
                 ))
                 .toList();
 
-        List<Integer> availableFloors = resolveAvailableFloors(activeAssignments);
+        List<Integer> availableFloors = roomAssignmentRepository.findDistinctActiveFloors().stream()
+                .map(Short::intValue)
+                .toList();
 
         return new AdminUsersResponse(
                 users,
-                normalizedPage,
-                normalizedSize,
-                totalElements,
-                totalPages,
+                userIdPage.getNumber(),
+                userIdPage.getSize(),
+                userIdPage.getTotalElements(),
+                userIdPage.getTotalPages(),
                 availableFloors
         );
     }
@@ -448,47 +451,6 @@ public class AdminReadService {
         return dateTime.atZoneSameInstant(clock.getZone()).format(DATE_TIME_FORMATTER);
     }
 
-    private boolean matchesFloorFilter(DormUser user, Integer floor, Map<UUID, RoomAssignment> assignments) {
-        if (floor == null) {
-            return true;
-        }
-        RoomAssignment assignment = assignments.get(user.getId());
-        if (assignment == null || assignment.getRoom() == null) {
-            return false;
-        }
-        return assignment.getRoom().getFloor() == floor;
-    }
-
-    private boolean matchesSearchFilter(DormUser user, RoomAssignment assignment, String rawSearch) {
-        if (rawSearch == null || rawSearch.isBlank()) {
-            return true;
-        }
-        String search = rawSearch.trim().toLowerCase(Locale.ROOT);
-        if (user.getFullName() != null && user.getFullName().toLowerCase(Locale.ROOT).contains(search)) {
-            return true;
-        }
-        if (user.getLoginId() != null && user.getLoginId().toLowerCase(Locale.ROOT).contains(search)) {
-            return true;
-        }
-        if (assignment == null || assignment.getRoom() == null) {
-            return false;
-        }
-        Room room = assignment.getRoom();
-        String roomNumberRaw = room.getRoomNumber() != null ? room.getRoomNumber() : "";
-        String roomNumber = roomNumberRaw.toLowerCase(Locale.ROOT);
-        String floorText = String.valueOf(room.getFloor());
-        String roomCode = (floorText + roomNumberRaw).toLowerCase(Locale.ROOT);
-        String roomDisplay = (floorText + "f " + roomNumberRaw).toLowerCase(Locale.ROOT);
-        String roomOnly = roomNumber;
-        String roomWithPersonal = roomCode + "-" + assignment.getPersonalNo();
-
-        return roomCode.contains(search)
-                || roomDisplay.contains(search)
-                || roomOnly.contains(search)
-                || floorText.contains(search)
-                || roomWithPersonal.contains(search);
-    }
-
     private int normalizePage(int page) {
         return Math.max(page, 0);
     }
@@ -496,16 +458,6 @@ public class AdminReadService {
     private int normalizeSize(int size) {
         int normalized = Math.max(size, 1);
         return Math.min(normalized, 100);
-    }
-
-    private List<Integer> resolveAvailableFloors(Map<UUID, RoomAssignment> assignments) {
-        return assignments.values().stream()
-                .map(RoomAssignment::getRoom)
-                .filter(Objects::nonNull)
-                .map(room -> (int) room.getFloor())
-                .distinct()
-                .sorted()
-                .toList();
     }
 
     public record AdminUsersQuery(

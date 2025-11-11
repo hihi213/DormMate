@@ -1,4 +1,7 @@
-import { redirect } from "next/navigation"
+"use client"
+
+import { useEffect, useMemo } from "react"
+import { useRouter } from "next/navigation"
 
 type ItemDetailRedirectPageProps = {
   params: { id: string }
@@ -6,12 +9,22 @@ type ItemDetailRedirectPageProps = {
 }
 
 export default function ItemDetailRedirectPage({ params, searchParams }: ItemDetailRedirectPageProps) {
-  const query = new URLSearchParams()
-  query.set("item", params.id)
-  const editParam = Array.isArray(searchParams.edit) ? searchParams.edit[0] : searchParams.edit
-  if (editParam === "1") {
-    query.set("itemEdit", "1")
-  }
-  const target = query.toString() ? `/fridge?${query.toString()}` : "/fridge"
-  redirect(target)
+  const router = useRouter()
+
+  const target = useMemo(() => {
+    const query = new URLSearchParams()
+    query.set("item", params.id)
+    const editParam = Array.isArray(searchParams.edit) ? searchParams.edit[0] : searchParams.edit
+    if (editParam === "1") {
+      query.set("itemEdit", "1")
+    }
+    const qs = query.toString()
+    return qs ? `/fridge?${qs}` : "/fridge"
+  }, [params.id, searchParams])
+
+  useEffect(() => {
+    router.replace(target)
+  }, [router, target])
+
+  return null
 }
