@@ -8,6 +8,7 @@ import { CalendarDays, ClipboardCheck, Loader2, MoreVertical, Play, Plus, Shield
 
 import BottomNav from "@/components/bottom-nav"
 import AuthGuard from "@/features/auth/components/auth-guard"
+import UserServiceHeader from "@/app/_components/home/user-service-header"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -40,6 +41,7 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { SlotSelector } from "@/features/fridge/components/slot-selector"
 import { useToast } from "@/hooks/use-toast"
+import { useLogoutRedirect } from "@/hooks/use-logout-redirect"
 import { getCurrentUser } from "@/lib/auth"
 import { formatShortDate } from "@/lib/date-utils"
 import { formatCompartmentLabel, formatSlotDisplayName } from "@/features/fridge/utils/labels"
@@ -131,6 +133,7 @@ export default function InspectionsPage() {
 function InspectionsInner() {
   const router = useRouter()
   const { toast } = useToast()
+  const logoutAndRedirect = useLogoutRedirect()
   const [slots, setSlots] = useState<Slot[]>([])
   const [activeSession, setActiveSession] = useState<InspectionSession | null>(null)
   const [history, setHistory] = useState<InspectionSession[]>([])
@@ -161,7 +164,12 @@ function InspectionsInner() {
   const minScheduleInputValue = useMemo(() => formatDateTimeInputValue(new Date()), [])
 
   const currentUser = getCurrentUser()
+  const isAdmin = currentUser?.roles.includes("ADMIN") ?? false
   const isFloorManager = currentUser?.roles.includes("FLOOR_MANAGER") ?? false
+  const [mounted, setMounted] = useState(false)
+  useEffect(() => {
+    setMounted(true)
+  }, [])
 
   const refreshSlotList = useCallback(async () => {
     try {
@@ -690,17 +698,30 @@ function InspectionsInner() {
     </Card>
   ) : null
 
+  const inspectionsContext = useMemo(
+    () => (
+      <div className="inline-flex items-center gap-2 text-emerald-700">
+        <CalendarDays className="h-5 w-5" aria-hidden />
+        <span className="text-base font-semibold leading-none">{"검사 일정"}</span>
+        {loading && <Loader2 className="size-4 animate-spin text-emerald-600" aria-hidden />}
+      </div>
+    ),
+    [loading],
+  )
+
   return (
     <main className="min-h-[100svh] bg-white">
-      <header className="sticky top-0 z-40 border-b bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60">
-        <div className="mx-auto max-w-screen-sm px-4 py-3 flex items-center justify-between">
-          <div className="inline-flex items-center gap-2">
-            <CalendarDays className="size-4 text-teal-700" />
-            <h1 className="text-base font-semibold leading-none">{"냉장고 검사"}</h1>
-          </div>
-          {loading && <Loader2 className="size-4 animate-spin text-emerald-600" aria-hidden />}
-        </div>
-      </header>
+      <UserServiceHeader
+        service="fridge"
+        mounted={mounted}
+        user={currentUser}
+        isAdmin={isAdmin}
+        onOpenInfo={() => toast({ title: "내 정보 화면은 아직 준비 중입니다." })}
+        onLogout={() => {
+          void logoutAndRedirect()
+        }}
+        contextSlotOverride={inspectionsContext}
+      />
 
       <div className="mx-auto max-w-screen-sm px-4 pb-28 pt-4 space-y-8">
         {error && (
