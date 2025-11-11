@@ -118,6 +118,23 @@
     > **운영 노트**  
     > `updatedAfterInspection` 배지는 `lastInspectedAt < updatedAt` 인 항목에만 표시되므로, 제출 직후 거주자가 내용을 수정하면 즉시 뱃지가 붙어 검수 이후 변경 여부를 파악할 수 있습니다.
 
+#### 6단계: 관리자 감시 로그에서 권한 불일치 진단 (관리자)
+> 목표: 관리자 화면에서 번들 소유자-호실-칸 매핑 오류를 실시간 탐지하고 조치 플로우를 보여준다.  
+> 핵심 API/검증: `GET /admin/fridge/issues` → `vw_fridge_bundle_owner_mismatch` 뷰, 감사 로그 페이지 `냉장고 권한 불일치 모니터` 카드, `issueType` 별 대응.
+
+* [페르소나] 관리자 (C)
+* (시연 멘트)
+    "마지막으로 관리자 화면의 '감사 로그' 탭을 열어 보겠습니다. 상단에 '냉장고 권한 불일치 모니터' 카드가 있고, 백엔드가 1초 내 `GET /admin/fridge/issues`로 최신 데이터를 불러옵니다. 이 API는 Flyway repeatable 스크립트로 정의된 `vw_fridge_bundle_owner_mismatch` 뷰를 그대로 읽어, 소유자-호실 배정이 끊겼거나 접근 권한이 없는 칸에 번들이 남아있는 경우만 필터링합니다."
+
+    *(관리자 페이지에서 권한 불일치 테이블을 보여주고, `issueType` 배지·라벨·칸 정보·업데이트 시각을 짚어가며 설명)*
+
+    "리스트에서 `ROOM_NOT_ALLOWED_FOR_COMPARTMENT` 항목을 클릭하면 해당 번들을 `/admin/fridge` 화면에서 바로 찾아 소유자 이관이나 칸 재배분을 진행합니다. `NO_ACTIVE_ROOM_ASSIGNMENT` 라벨은 `room_assignment` 레코드가 끊긴 상태라서, 관리자나 층별장이 실제 거주 여부를 확인해 방 배정을 복원하거나 포장을 회수하면 됩니다."
+
+> **운영 노트**  
+> - `R__fridge_views.sql`에 정의된 뷰는 Flyway repeatable 이므로 배포 시 자동으로 최신 정의가 반영됩니다.  
+> - 시연 전 `SELECT * FROM vw_fridge_bundle_owner_mismatch LIMIT 5;`를 실행해 의도적으로 1~2건의 데이터(예: room_assignment.release 처리, 허용 칸이 다른 호실에 남아있는 번들)를 만들어 두면 데모 중 리스트가 비지 않습니다.  
+> - 로깅/감시와 연계할 때는 `issue_type`, `bundle_id`, `updated_at`을 기준으로 슬랙/이메일 알림을 보낼 수 있도록 status-board에 항목을 추가해 둡니다.
+
 #### 6단계: 관리자의 강력한 운영 도구
 > 목표: 재배분·정정 등 운영 액션과 감사 로그 확인.  
 > 핵심 API/검증: `POST /admin/fridge/reallocations/preview|apply`, `PATCH /fridge/inspections/{id}` (정정), AuditLog `FRIDGE_REALLOCATION_APPLY`.

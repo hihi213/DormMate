@@ -52,7 +52,6 @@ public class SecurityConfig {
                         .requestMatchers("/actuator/**").hasRole("ADMIN")
                         .requestMatchers(
                                 "/admin/dashboard",
-                                "/admin/resources",
                                 "/admin/users",
                                 "/admin/policies",
                                 "/admin/fridge/**",

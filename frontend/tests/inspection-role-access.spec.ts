@@ -8,7 +8,7 @@ test.describe('검사 권한 UI 가드', () => {
 
     await expect(page.getByText('모듈 스냅샷')).toBeVisible();
     await expect(page.getByText('운영 워치리스트')).toBeVisible();
-    await expect(page.getByText('냉장고 자원 관리')).toHaveCount(0);
+    await expect(page.getByText('냉장고 칸 운영')).toBeVisible();
   });
 
   test('관리자는 전용 냉장고 운영 도구 화면에 접근한다', async ({ page }) => {

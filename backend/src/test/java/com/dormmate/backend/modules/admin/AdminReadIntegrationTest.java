@@ -30,7 +30,7 @@ class AdminReadIntegrationTest extends AbstractPostgresIntegrationTest {
     private ObjectMapper objectMapper;
 
     @Test
-    void adminCanReadDashboardAndResources() throws Exception {
+    void adminCanReadDashboardUsersAndPolicies() throws Exception {
         String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
 
         mockMvc.perform(get("/admin/dashboard")
@@ -38,11 +38,6 @@ class AdminReadIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.summary").isArray())
                 .andExpect(jsonPath("$.quickActions").isArray());
-
-        mockMvc.perform(get("/admin/resources")
-                        .header("Authorization", "Bearer " + adminToken))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.items").isArray());
 
         mockMvc.perform(get("/admin/users")
                         .header("Authorization", "Bearer " + adminToken))

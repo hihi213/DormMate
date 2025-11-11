@@ -4,7 +4,6 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -15,14 +14,17 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import com.dormmate.backend.modules.admin.domain.AdminPolicy;
 import com.dormmate.backend.modules.admin.infrastructure.AdminPolicyRepository;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminDashboardResponse;
+import com.dormmate.backend.modules.admin.presentation.dto.AdminFridgeOwnershipIssuesResponse;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminPoliciesResponse;
-import com.dormmate.backend.modules.admin.presentation.dto.AdminResourceResponse;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminUsersResponse;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminUserStatusFilter;
 import com.dormmate.backend.modules.auth.domain.DormUser;
@@ -34,13 +36,11 @@ import com.dormmate.backend.modules.auth.domain.UserSession;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.RoomAssignmentRepository;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.UserSessionRepository;
-import com.dormmate.backend.modules.fridge.domain.CompartmentRoomAccess;
+import com.dormmate.backend.modules.fridge.domain.FridgeBundleOwnershipIssueView;
 import com.dormmate.backend.modules.fridge.domain.FridgeBundleStatus;
-import com.dormmate.backend.modules.fridge.domain.FridgeCompartment;
 import com.dormmate.backend.modules.fridge.domain.FridgeItemStatus;
-import com.dormmate.backend.modules.fridge.infrastructure.persistence.CompartmentRoomAccessRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleRepository;
-import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeCompartmentRepository;
+import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleOwnershipIssueViewRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
 import com.dormmate.backend.modules.inspection.domain.InspectionSchedule;
 import com.dormmate.backend.modules.inspection.domain.InspectionScheduleStatus;
@@ -58,11 +58,10 @@ public class AdminReadService {
     private static final UUID POLICY_ID = UUID.fromString("00000000-0000-0000-0000-000000000001");
 
     private final FridgeBundleRepository fridgeBundleRepository;
+    private final FridgeBundleOwnershipIssueViewRepository fridgeBundleOwnershipIssueViewRepository;
     private final FridgeItemRepository fridgeItemRepository;
     private final InspectionScheduleRepository inspectionScheduleRepository;
     private final NotificationDispatchLogRepository notificationDispatchLogRepository;
-    private final FridgeCompartmentRepository fridgeCompartmentRepository;
-    private final CompartmentRoomAccessRepository compartmentRoomAccessRepository;
     private final DormUserRepository dormUserRepository;
     private final RoomAssignmentRepository roomAssignmentRepository;
     private final UserSessionRepository userSessionRepository;
@@ -72,11 +71,10 @@ public class AdminReadService {
 
     public AdminReadService(
             FridgeBundleRepository fridgeBundleRepository,
+            FridgeBundleOwnershipIssueViewRepository fridgeBundleOwnershipIssueViewRepository,
             FridgeItemRepository fridgeItemRepository,
             InspectionScheduleRepository inspectionScheduleRepository,
             NotificationDispatchLogRepository notificationDispatchLogRepository,
-            FridgeCompartmentRepository fridgeCompartmentRepository,
-            CompartmentRoomAccessRepository compartmentRoomAccessRepository,
             DormUserRepository dormUserRepository,
             RoomAssignmentRepository roomAssignmentRepository,
             UserSessionRepository userSessionRepository,
@@ -85,11 +83,10 @@ public class AdminReadService {
             Clock clock
     ) {
         this.fridgeBundleRepository = fridgeBundleRepository;
+        this.fridgeBundleOwnershipIssueViewRepository = fridgeBundleOwnershipIssueViewRepository;
         this.fridgeItemRepository = fridgeItemRepository;
         this.inspectionScheduleRepository = inspectionScheduleRepository;
         this.notificationDispatchLogRepository = notificationDispatchLogRepository;
-        this.fridgeCompartmentRepository = fridgeCompartmentRepository;
-        this.compartmentRoomAccessRepository = compartmentRoomAccessRepository;
         this.dormUserRepository = dormUserRepository;
         this.roomAssignmentRepository = roomAssignmentRepository;
         this.userSessionRepository = userSessionRepository;
@@ -161,94 +158,35 @@ public class AdminReadService {
         List<AdminDashboardResponse.QuickAction> quickActions = List.of(
                 new AdminDashboardResponse.QuickAction(
                         "compartment",
-                        "칸 상태 전환",
-                        "자원 관리 허브에서 SUSPENDED/ACTIVE 전환",
-                        "/admin/manage/resources",
+                        "냉장고 칸 운영",
+                        "냉장고 관제실에서 허용량·잠금을 조정",
+                        "/admin/fridge",
                         "clipboard"
                 ),
                 new AdminDashboardResponse.QuickAction(
                         "promote",
                         "층별장 임명",
                         "권한·계정 화면에서 승격/복귀 처리",
-                        "/admin/manage/roles",
+                        "/admin/users",
                         "shield"
                 ),
                 new AdminDashboardResponse.QuickAction(
                         "policy",
                         "알림 정책 편집",
                         "09:00 배치, 상한, dedupe 키 즉시 변경",
-                        "/admin/manage/policies",
+                        "/admin/notifications",
                         "bell"
                 ),
                 new AdminDashboardResponse.QuickAction(
                         "report",
                         "보고서 내려받기",
                         "검사·알림·벌점 통합 리포트 생성",
-                        "/admin/manage/reports",
+                        "/admin/audit",
                         "file"
                 )
         );
 
         return new AdminDashboardResponse(summary, timeline, quickActions);
-    }
-
-    public AdminResourceResponse getResources() {
-        List<FridgeCompartment> compartments = fridgeCompartmentRepository.findAllWithActiveUnit();
-        if (compartments.isEmpty()) {
-            return new AdminResourceResponse(List.of());
-        }
-
-        List<UUID> compartmentIds = compartments.stream()
-                .map(FridgeCompartment::getId)
-                .toList();
-
-        Map<UUID, List<CompartmentRoomAccess>> roomAccessMap = compartmentIds.isEmpty()
-                ? Map.of()
-                : compartmentRoomAccessRepository
-                .findActiveAccessesByCompartmentIds(compartmentIds)
-                .stream()
-                .collect(Collectors.groupingBy(access -> access.getFridgeCompartment().getId()));
-
-        Map<UUID, Long> bundleCountMap = compartmentIds.isEmpty()
-                ? Map.of()
-                : fridgeBundleRepository.countActiveBundlesByCompartmentIds(
-                        compartmentIds,
-                        FridgeBundleStatus.ACTIVE
-                ).stream()
-                .collect(Collectors.toMap(
-                        FridgeBundleRepository.ActiveBundleCountProjection::getCompartmentId,
-                        FridgeBundleRepository.ActiveBundleCountProjection::getActiveCount
-                ));
-
-        List<AdminResourceResponse.Resource> resources = new ArrayList<>();
-        for (FridgeCompartment compartment : compartments) {
-            UUID compartmentId = compartment.getId();
-            long activeBundles = bundleCountMap.getOrDefault(compartmentId, 0L);
-            List<CompartmentRoomAccess> accesses = roomAccessMap.getOrDefault(compartmentId, List.of());
-            String rooms = accesses.stream()
-                    .map(access -> access.getRoom().getDisplayName())
-                    .sorted()
-                    .collect(Collectors.joining(", "));
-            String location = compartment.getFridgeUnit().getDisplayName() != null
-                    ? compartment.getFridgeUnit().getDisplayName()
-                    : compartment.getFridgeUnit().getFloorNo() + "층 냉장고";
-
-            resources.add(new AdminResourceResponse.Resource(
-                    compartmentId.toString(),
-                    "fridge",
-                    location + " - 칸 " + compartment.getSlotIndex(),
-                    location,
-                    compartment.getStatus().name(),
-                    activeBundles + "/" + compartment.getMaxBundleCount(),
-                    "-",
-                    rooms,
-                    null,
-                    compartment.getStatus().isActive() ? null : "점검 필요",
-                    null
-            ));
-        }
-
-        return new AdminResourceResponse(resources);
     }
 
     public AdminUsersResponse getUsers(AdminUserStatusFilter statusFilter) {
@@ -384,6 +322,51 @@ public class AdminReadService {
             return "RESIDENT";
         }
         return roles.isEmpty() ? "RESIDENT" : roles.getFirst();
+    }
+
+    public AdminFridgeOwnershipIssuesResponse getFridgeOwnershipIssues(int page, int size) {
+        int normalizedPage = Math.max(page, 0);
+        int normalizedSize = Math.min(Math.max(size, 1), 100);
+        PageRequest pageable = PageRequest.of(
+                normalizedPage,
+                normalizedSize,
+                Sort.by(Sort.Direction.DESC, "updatedAt")
+        );
+        Page<FridgeBundleOwnershipIssueView> result = fridgeBundleOwnershipIssueViewRepository.findAll(pageable);
+        List<AdminFridgeOwnershipIssuesResponse.Issue> items = result.getContent().stream()
+                .map(this::mapOwnershipIssue)
+                .toList();
+
+        return new AdminFridgeOwnershipIssuesResponse(
+                items,
+                result.getNumber(),
+                result.getSize(),
+                result.getTotalElements(),
+                result.getTotalPages()
+        );
+    }
+
+    private AdminFridgeOwnershipIssuesResponse.Issue mapOwnershipIssue(FridgeBundleOwnershipIssueView view) {
+        return new AdminFridgeOwnershipIssuesResponse.Issue(
+                view.getBundleId(),
+                view.getBundleName(),
+                view.getLabelNumber(),
+                view.getOwnerUserId(),
+                view.getOwnerName(),
+                view.getOwnerLoginId(),
+                view.getRoomId(),
+                view.getRoomNumber(),
+                view.getRoomFloor(),
+                view.getPersonalNo(),
+                view.getFridgeCompartmentId(),
+                view.getSlotIndex(),
+                view.getCompartmentType() != null ? view.getCompartmentType().name() : null,
+                view.getFridgeFloorNo(),
+                view.getFridgeDisplayName(),
+                view.getIssueType(),
+                view.getCreatedAt(),
+                view.getUpdatedAt()
+        );
     }
 
     private boolean hasActiveRole(DormUser user, String roleCode) {

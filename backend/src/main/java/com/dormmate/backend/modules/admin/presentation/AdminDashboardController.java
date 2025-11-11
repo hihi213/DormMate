@@ -27,8 +27,8 @@ import com.dormmate.backend.modules.admin.application.AdminMutationService;
 import com.dormmate.backend.modules.admin.application.AdminMutationService.UpdatePoliciesCommand;
 import com.dormmate.backend.modules.admin.application.AdminReadService;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminDashboardResponse;
+import com.dormmate.backend.modules.admin.presentation.dto.AdminFridgeOwnershipIssuesResponse;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminPoliciesResponse;
-import com.dormmate.backend.modules.admin.presentation.dto.AdminResourceResponse;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminUsersResponse;
 import com.dormmate.backend.modules.admin.presentation.dto.AdminUserStatusFilter;
 import com.dormmate.backend.modules.admin.presentation.dto.UpdateAdminPoliciesRequest;
@@ -54,9 +54,12 @@ public class AdminDashboardController {
         return ResponseEntity.ok(adminReadService.getDashboard());
     }
 
-    @GetMapping("/resources")
-    public ResponseEntity<AdminResourceResponse> getResources() {
-        return ResponseEntity.ok(adminReadService.getResources());
+    @GetMapping("/fridge/issues")
+    public ResponseEntity<AdminFridgeOwnershipIssuesResponse> getFridgeOwnershipIssues(
+            @RequestParam(name = "page", defaultValue = "0") int page,
+            @RequestParam(name = "size", defaultValue = "20") int size
+    ) {
+        return ResponseEntity.ok(adminReadService.getFridgeOwnershipIssues(page, size));
     }
 
     @GetMapping("/users")

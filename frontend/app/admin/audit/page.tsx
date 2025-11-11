@@ -1,15 +1,40 @@
 "use client"
 
 import { useState } from "react"
-import { ClipboardList, Download, FileSpreadsheet, History, ListTree } from "lucide-react"
+import { AlertTriangle, ClipboardList, Download, FileSpreadsheet, History, ListTree, RefreshCcw } from "lucide-react"
+import { formatDistanceToNowStrict, parseISO } from "date-fns"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useFridgeOwnershipIssues } from "@/features/admin/hooks/use-fridge-ownership-issues"
+import type { FridgeOwnershipIssueItem } from "@/features/admin/api/fridge"
+
+type IssueTone = "critical" | "warn" | "info"
+
+const ISSUE_TYPE_LABELS: Record<string, { label: string; tone: IssueTone }> = {
+  NO_ACTIVE_ROOM_ASSIGNMENT: { label: "방 배정 없음", tone: "critical" },
+  ROOM_NOT_ALLOWED_FOR_COMPARTMENT: { label: "접근 권한 없음", tone: "warn" },
+  UNKNOWN: { label: "확인 필요", tone: "info" },
+}
+
+const ISSUE_TONE_CLASSES: Record<IssueTone, string> = {
+  critical: "border-rose-200 bg-rose-50 text-rose-700",
+  warn: "border-amber-200 bg-amber-50 text-amber-700",
+  info: "border-slate-200 bg-slate-50 text-slate-700",
+}
+
+const ISSUE_TYPE_HINTS: Record<string, string> = {
+  NO_ACTIVE_ROOM_ASSIGNMENT: "소유자에게 활성화된 호실 배정이 없어 라벨 이동이 필요합니다.",
+  ROOM_NOT_ALLOWED_FOR_COMPARTMENT: "현재 호실은 해당 칸 접근 권한이 없어 재배분이 필요합니다.",
+  UNKNOWN: "원인을 추가 조사해 주세요.",
+}
 
 export default function AdminAuditPage() {
   const [reportModule, setReportModule] = useState("all")
@@ -30,6 +55,8 @@ export default function AdminAuditPage() {
             </p>
           </div>
         </header>
+
+        <FridgeOwnershipIssuesSection />
 
         <Card className="rounded-3xl border border-slate-200 bg-white/90 shadow-sm">
           <CardHeader className="flex flex-row items-center gap-3">
@@ -164,4 +191,182 @@ export default function AdminAuditPage() {
       </div>
     </>
   )
+}
+
+function FridgeOwnershipIssuesSection() {
+  const { data, loading, error, refresh } = useFridgeOwnershipIssues(20)
+  const issues = data?.items ?? []
+  const handleRefresh = () => {
+    void refresh()
+  }
+
+  return (
+    <Card className="rounded-3xl border border-rose-100 bg-white/95 shadow-sm">
+      <CardHeader className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex items-start gap-3">
+          <span className="rounded-full bg-rose-100 p-2">
+            <AlertTriangle className="size-4 text-rose-700" aria-hidden />
+          </span>
+          <div className="space-y-1">
+            <CardTitle className="text-base font-semibold text-slate-900">냉장고 권한 불일치 모니터</CardTitle>
+            <CardDescription className="text-xs text-slate-500">
+              포장 소유자·호실 배정·칸 권한이 불일치하는 항목을 즉시 확인합니다.
+            </CardDescription>
+          </div>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline" className="border-rose-200 bg-rose-50 text-rose-700">
+            표시 중 {issues.length}건
+          </Badge>
+          <Button type="button" size="sm" variant="outline" onClick={handleRefresh} disabled={loading} className="gap-2">
+            <RefreshCcw className={`size-4 ${loading ? "animate-spin" : ""}`} aria-hidden />
+            새로 고침
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {error && (
+          <div className="rounded-lg border border-rose-200 bg-rose-50/80 p-3 text-xs text-rose-700">
+            {error.message}
+          </div>
+        )}
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-[30%] text-xs font-semibold text-slate-500">이슈</TableHead>
+                <TableHead className="w-[30%] text-xs font-semibold text-slate-500">소유자 / 호실</TableHead>
+                <TableHead className="w-[25%] text-xs font-semibold text-slate-500">칸 정보</TableHead>
+                <TableHead className="text-xs font-semibold text-slate-500">최근 업데이트</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {loading && (
+                <>
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <TableRow key={`issue-skeleton-${index}`}>
+                      <TableCell>
+                        <Skeleton className="h-5 w-32" />
+                        <Skeleton className="mt-2 h-4 w-24" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-5 w-40" />
+                        <Skeleton className="mt-2 h-4 w-28" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-5 w-32" />
+                        <Skeleton className="mt-2 h-4 w-28" />
+                      </TableCell>
+                      <TableCell>
+                        <Skeleton className="h-5 w-20" />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </>
+              )}
+              {!loading && issues.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={4} className="py-8 text-center text-sm text-slate-500">
+                    현재 권한 불일치 항목이 없습니다.
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && issues.length > 0 && issues.map((issue) => <IssueRow key={issue.bundleId} issue={issue} />)}
+            </TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  )
+}
+
+function IssueRow({ issue }: { issue: FridgeOwnershipIssueItem }) {
+  const meta = resolveIssueMeta(issue.issueType)
+  const badgeClass = ISSUE_TONE_CLASSES[meta.tone]
+  const issueHint = ISSUE_TYPE_HINTS[issue.issueType] ?? ISSUE_TYPE_HINTS.UNKNOWN
+  const ownerName = issue.ownerName?.trim() || issue.ownerLoginId || issue.ownerUserId.slice(0, 8)
+  const ownerLogin = issue.ownerLoginId ?? issue.ownerUserId
+  const roomLabel = formatRoomDisplay(issue)
+  const slotLabel = formatSlotDisplay(issue)
+  const updatedLabel = formatUpdatedLabel(issue)
+  const roomBadgeClass = issue.roomNumber
+    ? "border-slate-200 bg-slate-50 text-slate-700"
+    : "border-rose-200 bg-rose-50 text-rose-700"
+
+  return (
+    <TableRow>
+      <TableCell className="align-top">
+        <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className={`text-[11px] font-medium ${badgeClass}`}>
+              {meta.label}
+            </Badge>
+            <p className="text-sm font-semibold text-slate-900">{issue.bundleName}</p>
+          </div>
+          <p className="text-xs text-slate-500">라벨 #{issue.labelNumber ?? "-"}</p>
+          <p className="text-xs text-slate-500">{issueHint}</p>
+        </div>
+      </TableCell>
+      <TableCell className="align-top">
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-semibold text-slate-900">{ownerName}</p>
+          <p className="text-xs text-slate-500">{ownerLogin}</p>
+          <div className="pt-1">
+            <Badge variant="outline" className={`text-[11px] ${roomBadgeClass}`}>
+              {roomLabel}
+            </Badge>
+          </div>
+        </div>
+      </TableCell>
+      <TableCell className="align-top">
+        <div className="flex flex-col gap-1">
+          <p className="text-sm font-medium text-slate-900">{slotLabel}</p>
+          <p className="text-xs text-slate-500">
+            {issue.fridgeDisplayName?.trim() || issue.fridgeCompartmentId.slice(0, 8)}
+          </p>
+        </div>
+      </TableCell>
+      <TableCell className="align-top text-sm text-slate-600">{updatedLabel}</TableCell>
+    </TableRow>
+  )
+}
+
+function resolveIssueMeta(type?: string | null) {
+  if (!type) {
+    return ISSUE_TYPE_LABELS.UNKNOWN
+  }
+  return ISSUE_TYPE_LABELS[type] ?? ISSUE_TYPE_LABELS.UNKNOWN
+}
+
+function formatRoomDisplay(issue: FridgeOwnershipIssueItem) {
+  if (issue.roomNumber) {
+    const suffix = typeof issue.personalNo === "number" ? `-${issue.personalNo}` : ""
+    return `${issue.roomNumber}${suffix}`
+  }
+  return "호실 미배정"
+}
+
+function formatSlotDisplay(issue: FridgeOwnershipIssueItem) {
+  const slotNo = Number.isFinite(issue.slotIndex) ? `슬롯 ${issue.slotIndex + 1}` : null
+  const typeLabel =
+    issue.compartmentType === "FREEZE" ? "냉동" : issue.compartmentType === "CHILL" ? "냉장" : null
+  const floorLabel = typeof issue.fridgeFloorNo === "number" ? `${issue.fridgeFloorNo}F` : null
+  const displayName = issue.fridgeDisplayName?.trim()
+  return [displayName, floorLabel, slotNo, typeLabel].filter(Boolean).join(" · ") || "칸 정보 없음"
+}
+
+function formatUpdatedLabel(issue: FridgeOwnershipIssueItem) {
+  const timestamp = issue.updatedAt ?? issue.createdAt
+  if (!timestamp) {
+    return "시간 정보 없음"
+  }
+  try {
+    const parsed = parseISO(timestamp)
+    if (Number.isNaN(parsed.getTime())) {
+      return "시간 정보 없음"
+    }
+    return formatDistanceToNowStrict(parsed, { addSuffix: true })
+  } catch {
+    return "시간 정보 없음"
+  }
 }

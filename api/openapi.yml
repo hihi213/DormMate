@@ -928,18 +928,6 @@ paths:
             '*/*':
               schema:
                 $ref: '#/components/schemas/AdminUsersResponse'
-  /admin/resources:
-    get:
-      tags:
-        - admin-dashboard-controller
-      operationId: getResources
-      responses:
-        '200':
-          description: OK
-          content:
-            '*/*':
-              schema:
-                $ref: '#/components/schemas/AdminResourceResponse'
   /admin/fridge/compartments:
     get:
       tags:
@@ -2056,38 +2044,6 @@ components:
         penalties:
           type: integer
           format: int32
-    AdminResourceResponse:
-      type: object
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/Resource'
-    Resource:
-      type: object
-      properties:
-        id:
-          type: string
-        facility:
-          type: string
-        name:
-          type: string
-        location:
-          type: string
-        status:
-          type: string
-        capacity:
-          type: string
-        manager:
-          type: string
-        rooms:
-          type: string
-        labelRange:
-          type: string
-        issue:
-          type: string
-        lastInspection:
-          type: string
     AdminPoliciesResponse:
       type: object
       properties:

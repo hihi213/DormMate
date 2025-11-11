@@ -125,9 +125,12 @@ NotificationPreference는 임베디드 ID로 사용자·알림 종류를 묶고,
 - 로그/경고/운영 이슈 대응
   - `./auto` CLI에서 자주 만나는 오류에 대해 구체적인 안내를 추가 (예: ENOSPC 시 `docker system prune`, 포트 충돌 시 `sudo systemctl stop nginx`, Flyway 비번 mismatch 시 env 파일 점검).
   - 로그 레벨은 `LOG_LEVEL=json`, 주요 API/배치 작업은 `AuditLog` 테이블에 기록해 추적 가능.
+- 냉장고 권한 불일치 감시
+  - Flyway repeatable 스크립트 `R__fridge_views.sql`에서 `vw_fridge_bundle_owner_mismatch` 뷰를 정의해 번들-호실-칸 매핑 오류만 필터링한다.
+  - 관리자 UI의 감사 로그 페이지 상단에 “냉장고 권한 불일치 모니터” 카드가 배치되어, `GET /admin/fridge/issues` 결과를 실시간 표로 노출하고 `issueType`(방 배정 없음/권한 없음)을 배지로 표시한다.
+  - 뷰 결과는 향후 status-board·슬랙 경보와 연결할 수 있도록 `issue_type`, `bundle_id`, `updated_at` 기준으로 export 가능하다.
 - 배포 절차 및 문서화
   - `ReadMe.md`와 `docs/presentation-outline.md`에 배포 순서( `git pull → env 확인 → ./auto db migrate → ./auto deploy up --build → 헬스체크`)를 명문화.
   - 서버에서 필요한 명령, Secrets 관리 방식(`ENV_FILE_CONTENTS`), TLS 발급 흐름 등을 한 문서에서 모아 질문에 대비.
-
 
 
