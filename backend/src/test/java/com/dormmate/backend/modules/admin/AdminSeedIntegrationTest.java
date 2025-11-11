@@ -61,14 +61,17 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
                 "SELECT COUNT(*) FROM bundle_label_sequence WHERE next_number = 11",
                 Integer.class
         );
+        final int expectedBundles = 160;
+        final int expectedItems = 480;
+
         assertThat(bundleCount)
                 .withFailMessage("expected 160 bundles but found %s", bundleCount)
                 .isNotNull()
-                .isEqualTo(160);
+                .isEqualTo(expectedBundles);
         assertThat(itemCount)
-                .withFailMessage("expected 160 items but found %s", itemCount)
+                .withFailMessage("expected %s items but found %s", expectedItems, itemCount)
                 .isNotNull()
-                .isEqualTo(160);
+                .isEqualTo(expectedItems);
         assertThat(labelReady)
                 .withFailMessage("expected label sequences per compartment but found %s", labelReady)
                 .isNotNull()
@@ -88,13 +91,13 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
                 Integer.class
         );
         assertThat(bundleCountAfterSecondCall)
-                .withFailMessage("expected bundle count to remain 160 but found %s", bundleCountAfterSecondCall)
+                .withFailMessage("expected bundle count to remain %s but found %s", expectedBundles, bundleCountAfterSecondCall)
                 .isNotNull()
-                .isEqualTo(160);
+                .isEqualTo(expectedBundles);
         assertThat(itemCountAfterSecondCall)
-                .withFailMessage("expected item count to remain 160 but found %s", itemCountAfterSecondCall)
+                .withFailMessage("expected item count to remain %s but found %s", expectedItems, itemCountAfterSecondCall)
                 .isNotNull()
-                .isEqualTo(160);
+                .isEqualTo(expectedItems);
     }
 
     @Test
