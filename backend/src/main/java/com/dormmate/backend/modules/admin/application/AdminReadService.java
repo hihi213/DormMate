@@ -48,6 +48,7 @@ import com.dormmate.backend.modules.inspection.domain.InspectionScheduleStatus;
 import com.dormmate.backend.modules.inspection.infrastructure.persistence.InspectionScheduleRepository;
 import com.dormmate.backend.modules.notification.domain.NotificationDispatchStatus;
 import com.dormmate.backend.modules.notification.infrastructure.persistence.NotificationDispatchLogRepository;
+import com.dormmate.backend.modules.penalty.domain.PenaltyHistory;
 import com.dormmate.backend.modules.penalty.infrastructure.persistence.PenaltyHistoryRepository;
 
 @Service
@@ -218,6 +219,7 @@ public class AdminReadService {
         OffsetDateTime now = OffsetDateTime.now(clock);
         Set<UUID> userIds = usersById.keySet();
         Map<UUID, Integer> penaltyTotals = loadPenaltyTotals(userIds, now);
+        Map<UUID, List<AdminUsersResponse.PenaltyRecord>> penaltyRecords = loadPenaltyRecords(userIds);
         Map<UUID, RoomAssignment> activeAssignments = roomAssignmentRepository.findActiveAssignmentsByUserIds(userIds).stream()
                 .collect(Collectors.toMap(
                         assignment -> assignment.getDormUser().getId(),
@@ -235,7 +237,8 @@ public class AdminReadService {
                         now,
                         activeAssignments.get(user.getId()),
                         activeSessions.getOrDefault(user.getId(), List.of()),
-                        penaltyTotals
+                        penaltyTotals,
+                        penaltyRecords
                 ))
                 .toList();
 
@@ -281,7 +284,8 @@ public class AdminReadService {
             OffsetDateTime now,
             RoomAssignment activeAssignment,
             List<UserSession> sessions,
-            Map<UUID, Integer> penaltyTotals
+            Map<UUID, Integer> penaltyTotals,
+            Map<UUID, List<AdminUsersResponse.PenaltyRecord>> penaltyRecords
     ) {
         List<String> activeRoles = user.getRoles().stream()
                 .filter(role -> role.getRevokedAt() == null)
@@ -313,6 +317,18 @@ public class AdminReadService {
                 .orElse("-");
 
         int penaltyPoints = penaltyTotals.getOrDefault(user.getId(), 0);
+        List<AdminUsersResponse.PenaltyRecord> penaltyHistory = new java.util.ArrayList<>(
+                penaltyRecords.getOrDefault(user.getId(), List.of())
+        );
+        if (penaltyHistory.isEmpty() && penaltyPoints > 0) {
+            penaltyHistory.add(new AdminUsersResponse.PenaltyRecord(
+                    "냉장고",
+                    "FRIDGE_INSPECTION",
+                    penaltyPoints,
+                    "상세 기록 준비 중",
+                    "-"
+            ));
+        }
 
         return new AdminUsersResponse.User(
                 user.getId().toString(),
@@ -325,7 +341,8 @@ public class AdminReadService {
                 activeRoles,
                 user.getStatus().name(),
                 lastLogin,
-                penaltyPoints
+                penaltyPoints,
+                penaltyHistory
         );
     }
 
@@ -340,6 +357,32 @@ public class AdminReadService {
                 ));
     }
 
+    private static final int MAX_RECENT_PENALTY_RECORDS = 5;
+
+    private Map<UUID, List<AdminUsersResponse.PenaltyRecord>> loadPenaltyRecords(Set<UUID> userIds) {
+        if (userIds.isEmpty()) {
+            return Map.of();
+        }
+        Map<UUID, List<AdminUsersResponse.PenaltyRecord>> combined = new java.util.HashMap<>();
+        // Gather actual histories per user
+        userIds.forEach(userId -> {
+            List<PenaltyHistory> histories = penaltyHistoryRepository.findTop5ByUserIdOrderByIssuedAtDesc(userId);
+            if (!histories.isEmpty()) {
+                List<AdminUsersResponse.PenaltyRecord> bucket = histories.stream()
+                        .map(history -> new AdminUsersResponse.PenaltyRecord(
+                                resolvePenaltyModule(history.getSource()),
+                                history.getSource(),
+                                history.getPoints(),
+                                history.getReason(),
+                                formatDateTime(history.getIssuedAt())
+                        ))
+                        .collect(Collectors.toCollection(java.util.ArrayList::new));
+                combined.put(userId, bucket);
+            }
+        });
+        return combined;
+    }
+
     private String determinePrimaryRole(List<String> roles) {
         if (roles.contains("ADMIN")) {
             return "ADMIN";
@@ -351,6 +394,19 @@ public class AdminReadService {
             return "RESIDENT";
         }
         return roles.isEmpty() ? "RESIDENT" : roles.getFirst();
+    }
+
+    private String resolvePenaltyModule(String source) {
+        if (source == null || source.isBlank()) {
+            return "기타";
+        }
+        return switch (source) {
+            case "FRIDGE_INSPECTION" -> "냉장고";
+            case "LAUNDRY" -> "세탁실";
+            case "MULTIPURPOSE" -> "다목적실";
+            case "LIBRARY" -> "도서관";
+            default -> "기타";
+        };
     }
 
     public AdminFridgeOwnershipIssuesResponse getFridgeOwnershipIssues(int page, int size, UUID ownerUserId) {
