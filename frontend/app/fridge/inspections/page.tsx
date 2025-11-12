@@ -1161,15 +1161,21 @@ function HistoryList({
               </Badge>
             </div>
             <p className="text-xs text-muted-foreground">
-              {`시작: ${formatDateTimeLabel(session.startedAt)}`}
-              {session.endedAt ? ` · 종료: ${formatDateTimeLabel(session.endedAt)}` : ""}
+              {`검사일 ${formatShortDate(session.startedAt)}`}
+              {session.endedAt ? ` · 종료 ${formatShortDate(session.endedAt)}` : ""}
             </p>
             {session.summary.length > 0 && (
-              <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
+              <div className="space-y-1 text-xs text-muted-foreground">
                 {session.summary.map((entry) => (
-                  <span key={entry.action} className="inline-flex items-center gap-1 rounded-md border px-2 py-1">
-                    {`${friendlyActionLabel(entry.action)} ${entry.count}건`}
-                  </span>
+                  <div
+                    key={entry.action}
+                    className="flex items-center justify-between rounded-md border border-slate-100 bg-slate-50/80 px-2 py-1"
+                  >
+                    <span className="font-medium text-slate-600">{friendlyActionLabel(entry.action)}</span>
+                    <span className="min-w-[48px] text-right font-semibold tabular-nums text-slate-900">
+                      {entry.count}건
+                    </span>
+                  </div>
                 ))}
               </div>
             )}

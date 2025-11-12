@@ -8,7 +8,6 @@ import {
   AlertTriangle,
   ArrowLeftRight,
   ArrowRight,
-  History,
   Loader2,
   Lock,
   LockOpen,
@@ -19,6 +18,7 @@ import {
   RotateCcw,
 } from "lucide-react"
 import { format, formatDistanceToNowStrict, parseISO, subMonths } from "date-fns"
+import { formatShortDate } from "@/lib/date-utils"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -32,7 +32,6 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Separator } from "@/components/ui/separator"
-import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 import { getDefaultErrorMessage } from "@/lib/api-errors"
 import { useToast } from "@/hooks/use-toast"
@@ -185,6 +184,7 @@ const buildIssueActionSummary = (action: AdminInspectionActionDetail): string =>
 type InspectionActionType = keyof typeof INSPECTION_ACTION_LABELS
 const INSPECTION_ACTION_TYPES = Object.keys(INSPECTION_ACTION_LABELS) as InspectionActionType[]
 const DEFAULT_INSPECTION_ACTION: InspectionActionType = INSPECTION_ACTION_TYPES[0] ?? "PASS"
+const NEW_ACTION_ALLOWED_TYPE: InspectionActionType = "UNREGISTERED_DISPOSE"
 
 const isInspectionActionType = (value: string | null | undefined): value is InspectionActionType =>
   typeof value === "string" && value in INSPECTION_ACTION_LABELS
@@ -193,6 +193,12 @@ const BUNDLE_ALERT_LABELS: Record<string, { label: string; className: string }> 
   ACTION_REQUIRED: { label: "조치 필요", className: "bg-rose-100 text-rose-700" },
   PENDING_REVIEW: { label: "검토 대기", className: "bg-amber-100 text-amber-700" },
   CLEARED: { label: "정상화", className: "bg-emerald-100 text-emerald-700" },
+}
+
+const INSPECTION_SUMMARY_TONES = {
+  pass: "text-emerald-600",
+  warn: "text-amber-600",
+  dispose: "text-rose-600",
 }
 
 type InspectionActionDraft = {
@@ -204,9 +210,12 @@ type InspectionActionDraft = {
   targetUserId?: string | null
   roomNumber?: string | null
   personalNo?: number | null
+  items?: AdminInspectionActionDetail["items"]
   remove?: boolean
   isNew?: boolean
 }
+
+type DraftActionFilter = "ALL" | "WARN" | "DISPOSE" | "PASS"
 
 function getErrorCode(error: unknown): string | undefined {
   if (error && typeof error === "object" && "code" in error) {
@@ -371,7 +380,8 @@ export default function AdminFridgePage() {
   const ignoreQueryParamsRef = useRef(false)
   const [inspectionEditOpen, setInspectionEditOpen] = useState(false)
   const [inspectionDraftActions, setInspectionDraftActions] = useState<InspectionActionDraft[]>([])
-  const [inspectionDraftNotes, setInspectionDraftNotes] = useState("")
+  const [selectedDraftActionId, setSelectedDraftActionId] = useState<string | null>(null)
+  const [draftActionFilter, setDraftActionFilter] = useState<DraftActionFilter>("ALL")
   const [inspectionEditSubmitting, setInspectionEditSubmitting] = useState(false)
   const [inspectionReloadToken, setInspectionReloadToken] = useState(0)
   const inspectionOriginalActionsRef = useRef<AdminInspectionActionDetail[]>([])
@@ -1084,6 +1094,7 @@ export default function AdminFridgePage() {
       targetUserId: action.targetUserId ?? null,
       roomNumber: action.roomNumber ?? null,
       personalNo: action.personalNo ?? null,
+      items: action.items ?? [],
       remove: false,
       isNew: false,
     }),
@@ -1107,6 +1118,97 @@ export default function AdminFridgePage() {
     return selectedInspection.actions.filter((action) => isIssueActionType(action.actionType))
   }, [selectedInspection])
 
+  const resolveDraftActionCategory = useCallback((draft: InspectionActionDraft): DraftActionFilter => {
+    if (!draft?.actionType) return "ALL"
+    if (draft.actionType.startsWith("WARN")) {
+      return "WARN"
+    }
+    if (draft.actionType.startsWith("DISPOSE") || draft.actionType === "UNREGISTERED_DISPOSE") {
+      return "DISPOSE"
+    }
+    if (draft.actionType === "PASS") {
+      return "PASS"
+    }
+    return "PASS"
+  }, [])
+
+  const sortedDraftActions = useMemo(() => {
+    const collator =
+      typeof Intl !== "undefined" ? new Intl.Collator("ko-KR", { numeric: true, sensitivity: "base" }) : null
+    return [...inspectionDraftActions].sort((a, b) => {
+      const roomCompare = collator
+        ? collator.compare(a.roomNumber ?? "ZZZZ", b.roomNumber ?? "ZZZZ")
+        : (a.roomNumber ?? "").localeCompare(b.roomNumber ?? "")
+      if (roomCompare !== 0) {
+        return roomCompare
+      }
+      const personalA = typeof a.personalNo === "number" ? a.personalNo : Number.MAX_SAFE_INTEGER
+      const personalB = typeof b.personalNo === "number" ? b.personalNo : Number.MAX_SAFE_INTEGER
+      if (personalA !== personalB) {
+        return personalA - personalB
+      }
+      return a.localId.localeCompare(b.localId)
+    })
+  }, [inspectionDraftActions])
+
+  const filteredDraftActions = useMemo(() => {
+    if (draftActionFilter === "ALL") {
+      return sortedDraftActions
+    }
+    return sortedDraftActions.filter((draft) => resolveDraftActionCategory(draft) === draftActionFilter)
+  }, [sortedDraftActions, draftActionFilter, resolveDraftActionCategory])
+
+  const selectedDraftAction = useMemo(
+    () => inspectionDraftActions.find((draft) => draft.localId === selectedDraftActionId) ?? null,
+    [inspectionDraftActions, selectedDraftActionId],
+  )
+
+  const formatDraftOccupantLabel = useCallback(
+    (draft: InspectionActionDraft) => {
+      const roomLabel = formatRoomLabel(draft.roomNumber, selectedInspection?.floorNo ?? null)
+      const parts: string[] = []
+      if (roomLabel) {
+        parts.push(roomLabel)
+      }
+      if (typeof draft.personalNo === "number") {
+        parts.push(`${draft.personalNo}번`)
+      }
+      return parts.length ? parts.join(" · ") : "대상 없음"
+    },
+    [selectedInspection?.floorNo],
+  )
+
+  const getOriginalActionLabel = useCallback(
+    (draft: InspectionActionDraft) => {
+      if (!draft.actionId) {
+        return draft.isNew ? "신규 조치" : "기존 데이터 없음"
+      }
+      const original = inspectionOriginalActionsRef.current.find(
+        (action) => action.actionId === draft.actionId,
+      )
+      if (!original) {
+        return "기존 데이터 없음"
+      }
+      return INSPECTION_ACTION_LABELS[original.actionType] ?? original.actionType
+    },
+    [],
+  )
+
+  const buildDraftActionTitle = useCallback((draft: InspectionActionDraft) => {
+    const itemNames =
+      draft.items
+        ?.map((item) => formatAdminActionItemSummary(item))
+        .filter((text) => text && text.length > 0) ?? []
+    if (itemNames.length > 0) {
+      return itemNames.join(", ")
+    }
+    const noteText = draft.note?.trim()
+    if (noteText) {
+      return noteText
+    }
+    return INSPECTION_ACTION_LABELS[draft.actionType] ?? draft.actionType
+  }, [])
+
   const handleInspectionAdjust = useCallback(() => {
     if (!selectedInspection) {
       toast({
@@ -1117,14 +1219,15 @@ export default function AdminFridgePage() {
       return
     }
     inspectionOriginalActionsRef.current = selectedInspection.actions
-    setInspectionDraftNotes(selectedInspection.notes ?? "")
     if (selectedInspection.actions.length > 0) {
-      setInspectionDraftActions(
-        selectedInspection.actions.map((action, index) => createActionDraft(action, index)),
-      )
+      const drafts = selectedInspection.actions.map((action, index) => createActionDraft(action, index))
+      setInspectionDraftActions(drafts)
+      setSelectedDraftActionId(drafts[0]?.localId ?? null)
     } else {
       setInspectionDraftActions([])
+      setSelectedDraftActionId(null)
     }
+    setDraftActionFilter("ALL")
     setInspectionEditOpen(true)
   }, [createActionDraft, selectedInspection, toast])
 
@@ -1159,14 +1262,16 @@ export default function AdminFridgePage() {
       {
         localId,
         actionId: null,
-        actionType: DEFAULT_INSPECTION_ACTION,
+        actionType: NEW_ACTION_ALLOWED_TYPE,
         note: "",
         bundleId: null,
         targetUserId: null,
+        items: [],
         remove: false,
         isNew: true,
       },
     ])
+    setSelectedDraftActionId(localId)
   }, [])
 
   const handleToggleRemoveDraftAction = useCallback((localId: string) => {
@@ -1174,18 +1279,40 @@ export default function AdminFridgePage() {
       const target = prev.find((draft) => draft.localId === localId)
       if (!target) return prev
       if (target.isNew) {
-        return prev.filter((draft) => draft.localId !== localId)
+        const next = prev.filter((draft) => draft.localId !== localId)
+        setSelectedDraftActionId((current) => {
+          if (current === localId) {
+            return next[0]?.localId ?? null
+          }
+          return current
+        })
+        return next
       }
-      return prev.map((draft) =>
+      const next = prev.map((draft) =>
         draft.localId === localId ? { ...draft, remove: !draft.remove } : draft,
       )
+      return next
     })
   }, [])
 
+  useEffect(() => {
+    if (!inspectionEditOpen) {
+      return
+    }
+    if (inspectionDraftActions.length === 0) {
+      setSelectedDraftActionId(null)
+      return
+    }
+    const currentList = filteredDraftActions
+    if (!selectedDraftActionId || !currentList.some((draft) => draft.localId === selectedDraftActionId)) {
+      setSelectedDraftActionId(currentList[0]?.localId ?? null)
+    }
+  }, [inspectionDraftActions, inspectionEditOpen, selectedDraftActionId, filteredDraftActions])
+
   const resetInspectionDraft = useCallback(() => {
     setInspectionDraftActions([])
-    setInspectionDraftNotes("")
     inspectionOriginalActionsRef.current = []
+    setSelectedDraftActionId(null)
   }, [])
 
   const handleInspectionAdjustSubmit = useCallback(async () => {
@@ -1197,10 +1324,6 @@ export default function AdminFridgePage() {
         originalMap.set(action.actionId, action)
       }
     })
-    const trimmedNotes = inspectionDraftNotes.trim()
-    const originalNotes = (selectedInspection.notes ?? "").trim()
-    const noteChanged = trimmedNotes !== originalNotes
-
     const deleteActionIds = inspectionDraftActions
       .filter((draft) => draft.remove && draft.actionId != null)
       .map((draft) => draft.actionId as number)
@@ -1216,9 +1339,7 @@ export default function AdminFridgePage() {
         const originalAction = isInspectionActionType(original.actionType)
           ? original.actionType
           : DEFAULT_INSPECTION_ACTION
-        const originalNote = (original.note ?? "").trim()
-        const draftNote = draft.note.trim()
-        return originalAction !== draft.actionType || originalNote !== draftNote
+        return originalAction !== draft.actionType
       })
       .map((draft) => ({
         actionId: draft.actionId ?? null,
@@ -1228,7 +1349,7 @@ export default function AdminFridgePage() {
         note: draft.note.trim().length > 0 ? draft.note.trim() : null,
       }))
 
-    if (!noteChanged && mutations.length === 0 && deleteActionIds.length === 0) {
+    if (mutations.length === 0 && deleteActionIds.length === 0) {
       toast({
         title: "반영할 변경 사항이 없습니다.",
         description: "조치를 수정하거나 삭제 후 다시 저장해 주세요.",
@@ -1237,9 +1358,6 @@ export default function AdminFridgePage() {
     }
 
     const payload: AdminUpdateInspectionSessionRequestDto = {}
-    if (noteChanged) {
-      payload.notes = trimmedNotes.length > 0 ? trimmedNotes : null
-    }
     if (mutations.length > 0) {
       payload.mutations = mutations
     }
@@ -1275,7 +1393,6 @@ export default function AdminFridgePage() {
   }, [
     applyInspectionSessionUpdate,
     inspectionDraftActions,
-    inspectionDraftNotes,
     selectedInspection,
     toast,
     resetInspectionDraft,
@@ -1612,15 +1729,6 @@ export default function AdminFridgePage() {
               <RotateCcw className="size-4" aria-hidden />
               검색 초기화
             </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1"
-              onClick={() => handleDeletedOpenChange(true)}
-            >
-              <History className="size-4" aria-hidden />
-              삭제 이력
-            </Button>
           </div>
         ) : null}
       </div>
@@ -1719,9 +1827,6 @@ export default function AdminFridgePage() {
                         <TableHead className="px-2 text-xs font-semibold text-slate-500">
                           최근 검사 요약
                         </TableHead>
-                        <TableHead className="w-[96px] px-2 text-right text-xs font-semibold text-slate-500">
-                          
-                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1742,7 +1847,6 @@ export default function AdminFridgePage() {
                               className: "bg-amber-100 text-amber-700",
                             }
                           : null
-                        const hasInspection = Boolean(bundle.lastInspectionId)
                         return (
                           <TableRow
                             key={bundle.bundleId}
@@ -1805,24 +1909,6 @@ export default function AdminFridgePage() {
                                 </span>
                               </div>
                               <div className="mt-1 text-[11px] text-slate-500">{lastInspectionText}</div>
-                            </TableCell>
-                            <TableCell className="px-2 py-2 text-right align-top">
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-7 gap-1 text-slate-600"
-                                onClick={(event) => {
-                                  event.stopPropagation()
-                                  toast({
-                                    title: hasInspection ? "포장 상세 준비 중" : "포장 상세 준비 중",
-                                    description: "물품 구성 및 라벨 히스토리는 후속 업데이트에서 제공됩니다.",
-                                  })
-                                }}
-                              >
-                                상세 열기
-                                <ArrowRight className="size-3" aria-hidden />
-                              </Button>
                             </TableCell>
                           </TableRow>
                         )
@@ -1938,6 +2024,12 @@ export default function AdminFridgePage() {
                             : "벌점 없음"
                         const notificationText = "알림 -"
                         const hasIssue = inspection.hasIssue
+                        const inspectionDateLabel = formatShortDate(inspection.startedAt)
+                        const summaryItems = [
+                          { key: "pass", label: "통과", value: inspection.passCount, tone: INSPECTION_SUMMARY_TONES.pass },
+                          { key: "warn", label: "경고", value: inspection.warningCount, tone: INSPECTION_SUMMARY_TONES.warn },
+                          { key: "dispose", label: "폐기", value: inspection.disposalCount, tone: INSPECTION_SUMMARY_TONES.dispose },
+                        ]
 
                         return (
                           <TableRow
@@ -1955,7 +2047,7 @@ export default function AdminFridgePage() {
                             )}
                           >
                             <TableCell className="px-3 py-3 align-top text-sm text-slate-900">
-                              <div className="font-semibold">{formatDateTime(inspection.startedAt, "-")}</div>
+                              <div className="font-semibold">{inspectionDateLabel}</div>
                               <div className="text-xs text-slate-500">{formatInspectorDisplay(inspection)}</div>
                             </TableCell>
                             <TableCell className="px-3 py-3 align-top">
@@ -1964,15 +2056,23 @@ export default function AdminFridgePage() {
                               </Badge>
                             </TableCell>
                             <TableCell className="px-3 py-3 align-top text-xs text-slate-600">
-                              <div className="flex flex-wrap gap-2">
-                                <span className="inline-flex items-center gap-1">
-                                  <AlertTriangle className="size-3 text-amber-500" aria-hidden />
-                                  경고 {inspection.warningCount}
-                                </span>
-                                <span className="inline-flex items-center gap-1">
-                                  <AlertCircle className="size-3 text-rose-500" aria-hidden />
-                                  폐기 {inspection.disposalCount}
-                                </span>
+                              <div className="space-y-1">
+                                {summaryItems.map((item) => (
+                                  <div
+                                    key={`${inspection.sessionId}-${item.key}`}
+                                    className="flex items-center justify-between rounded-md border border-slate-100 bg-slate-50/80 px-2 py-1"
+                                  >
+                                    <span className="text-[11px] text-slate-600">{item.label}</span>
+                                    <span
+                                      className={cn(
+                                        "min-w-[48px] text-right text-xs font-semibold tabular-nums",
+                                        item.tone,
+                                      )}
+                                    >
+                                      {item.value}건
+                                    </span>
+                                  </div>
+                                ))}
                               </div>
                             </TableCell>
                             <TableCell className="px-3 py-3 align-top text-xs text-slate-600">
@@ -2298,165 +2398,232 @@ export default function AdminFridgePage() {
           }
         }}
       >
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
-            <DialogTitle>검사 정정</DialogTitle>
-            <DialogDescription>
-              조치 내용을 수정하거나 삭제해 최신 상태로 정정합니다. 저장 시 감사 로그에 기록됩니다.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-5">
-            <div className="space-y-2">
-              <Label htmlFor="inspection-notes" className="text-xs text-muted-foreground">
-                검사 메모
-              </Label>
-              <Textarea
-                id="inspection-notes"
-                value={inspectionDraftNotes}
-                onChange={(event) => setInspectionDraftNotes(event.target.value)}
-                placeholder="검사 메모를 입력하세요."
-                disabled={inspectionEditSubmitting}
-              />
+        <DialogContent className="max-w-3xl overflow-hidden p-0 max-h-[90vh] sm:max-h-[85vh]">
+          <div className="flex h-full min-h-0 flex-col">
+            <div className="border-b border-slate-100 px-5 py-4 sm:px-6">
+              <DialogHeader className="space-y-1">
+                <DialogTitle>검사 정정</DialogTitle>
+                <DialogDescription>
+                  조치 내용을 수정하거나 삭제해 최신 상태로 정정합니다. 저장 시 감사 로그에 기록됩니다.
+                </DialogDescription>
+              </DialogHeader>
             </div>
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-semibold text-slate-900">조치 목록</h3>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={handleAddDraftAction}
-                  disabled={inspectionEditSubmitting}
-                >
-                  조치 추가
-                </Button>
-              </div>
-              {inspectionDraftActions.length === 0 ? (
-                <p className="text-xs text-slate-500">
-                  추가된 조치가 없습니다. “조치 추가” 버튼으로 새 항목을 등록하세요.
-                </p>
-              ) : (
+            <div className="flex-1 min-h-0 overflow-y-auto px-5 py-4 sm:px-6 sm:py-5">
+              <div className="space-y-5">
                 <div className="space-y-3">
-                  {inspectionDraftActions.map((draft, index) => {
-                    const draftRoomLabel = formatRoomLabel(draft.roomNumber, selectedInspection?.floorNo ?? null)
-                    return (
-                      <div
-                        key={draft.localId}
-                        className={cn(
-                          "rounded-lg border px-3 py-3 text-xs shadow-sm",
-                          draft.remove ? "border-rose-200 bg-rose-50/70" : "border-slate-200 bg-slate-50",
-                        )}
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-semibold text-slate-900">조치 타임라인</h3>
+                      <div className="flex gap-1 rounded-full border border-slate-200 bg-slate-50 p-0.5 text-[11px]">
+                        {(
+                          [
+                            ["ALL", "전체"],
+                            ["WARN", "경고"],
+                            ["DISPOSE", "폐기"],
+                            ["PASS", "통과"],
+                          ] as Array<[DraftActionFilter, string]>
+                        ).map(([value, label]) => (
+                          <button
+                            key={value}
+                            type="button"
+                            onClick={() => setDraftActionFilter(value)}
+                            className={cn(
+                              "rounded-full px-3 py-1 transition",
+                              draftActionFilter === value
+                                ? "bg-white text-emerald-700 shadow"
+                                : "text-slate-500 hover:text-slate-700",
+                            )}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleAddDraftAction}
+                      disabled={inspectionEditSubmitting}
+                    >
+                      미등록 폐기 추가
+                    </Button>
+                  </div>
+                </div>
+                {inspectionDraftActions.length === 0 ? (
+                  <p className="text-xs text-slate-500">
+                    추가된 조치가 없습니다. “미등록 폐기 추가” 버튼으로 새 항목을 등록하세요.
+                  </p>
+                ) : (
+                  <div className="flex flex-col gap-4 md:min-h-0 md:flex-row md:items-start md:gap-6">
+                    <div className="flex-1 min-w-0 space-y-3 h-[320px] overflow-y-auto pr-1 sm:h-[360px] md:h-[420px] md:pr-2">
+                      {filteredDraftActions.length === 0 ? (
+                        <p className="text-xs text-slate-500">해당 필터에 조치가 없습니다.</p>
+                      ) : (
+                        filteredDraftActions.map((draft, index) => {
+                          const active = draft.localId === selectedDraftActionId
+                          const occupantLabel = formatDraftOccupantLabel(draft)
+                          return (
+                            <div key={draft.localId} className="relative pl-6">
+                              {index < filteredDraftActions.length - 1 && (
+                                <span className="absolute left-2 top-4 bottom-0 w-px bg-slate-200" aria-hidden />
+                              )}
+                              <span className="absolute left-[10px] top-3 size-2 rounded-full bg-emerald-500" aria-hidden />
+                              <button
+                                type="button"
+                                onClick={() => setSelectedDraftActionId(draft.localId)}
+                                disabled={inspectionEditSubmitting}
+                                className={cn(
+                                  "w-full min-w-0 rounded-2xl border px-4 py-3 text-left text-xs transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-emerald-500",
+                                  active ? "border-emerald-300 bg-emerald-50/80" : "border-slate-200 bg-white",
+                                  draft.remove ? "opacity-70" : "",
+                                )}
+                              >
+                                <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-slate-500">
+                                  <span className="font-medium text-slate-600 break-words">{occupantLabel}</span>
+                                  {draft.remove ? (
+                                    <Badge variant="destructive" className="px-2 py-0.5 text-[10px]">
+                                      삭제 예정
+                                    </Badge>
+                                  ) : draft.isNew ? (
+                                    <Badge variant="secondary" className="px-2 py-0.5 text-[10px]">
+                                      신규
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                                <p className="mt-1 text-sm font-semibold text-slate-900 break-words">
+                                  {buildDraftActionTitle(draft)}
+                                </p>
+                                <p className="mt-1 text-[11px] text-slate-500 break-words">
+                                  {INSPECTION_ACTION_LABELS[draft.actionType] ?? draft.actionType}
+                                </p>
+                              </button>
+                            </div>
+                          )
+                        })
+                      )}
+                    </div>
+                    <div className="min-w-0 rounded-2xl border border-slate-200 bg-white/80 p-4 h-[320px] overflow-y-auto sm:h-[360px] md:sticky md:top-6 md:w-[320px] md:h-[420px]">
+                      {selectedDraftAction ? (
+                        <div className="space-y-4">
                           <div className="space-y-1">
-                            <p className="text-sm font-semibold text-slate-900">조치 {index + 1}</p>
-                            <p className="text-[11px] text-slate-500">
-                              {draftRoomLabel ? `호실 ${draftRoomLabel}` : null}
-                              {draftRoomLabel && typeof draft.personalNo === "number" ? " · " : null}
-                              {typeof draft.personalNo === "number" ? `개인번호 ${draft.personalNo}` : null}
+                            <p className="text-sm font-semibold text-slate-900 break-words">
+                              {buildDraftActionTitle(selectedDraftAction)}{" "}
+                              <span className="text-xs font-normal text-slate-500">
+                                {formatDraftOccupantLabel(selectedDraftAction)}
+                              </span>
+                            </p>
+                            {selectedDraftAction.isNew ? (
+                              <>
+                                <div className="space-y-1">
+                                  <Label className="text-xs text-slate-600">물품 이름</Label>
+                                  <Input
+                                    value={selectedDraftAction.note}
+                                    onChange={(event) =>
+                                      updateDraftAction(selectedDraftAction.localId, { note: event.target.value })
+                                    }
+                                    placeholder="예: 302-1 김수현 간식"
+                                    className="h-9 text-sm"
+                                  />
+                                  <p className="text-[11px] text-slate-500">
+                                    미등록 물품 폐기 시 물품 이름만 입력하세요.
+                                  </p>
+                                </div>
+                                <p className="text-[11px] text-emerald-700">
+                                  새로 추가된 조치는 미등록 물품 폐기만 등록할 수 있습니다.
+                                </p>
+                              </>
+                            ) : null}
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex flex-wrap items-center justify-between text-[11px] text-muted-foreground">
+                              <Label className="text-[11px] text-muted-foreground">조치 유형</Label>
+                              <span className="text-[10px] text-slate-500">
+                                {`기존: ${getOriginalActionLabel(selectedDraftAction)}`}
+                              </span>
+                            </div>
+                            <Select
+                              value={selectedDraftAction.actionType}
+                              onValueChange={(value) =>
+                                updateDraftAction(selectedDraftAction.localId, {
+                                  actionType: (value as InspectionActionType) || DEFAULT_INSPECTION_ACTION,
+                                })
+                              }
+                              disabled={selectedDraftAction.isNew || inspectionEditSubmitting || selectedDraftAction.remove}
+                            >
+                              <SelectTrigger className="h-9 w-full text-xs">
+                                <SelectValue placeholder="조치 선택" />
+                              </SelectTrigger>
+                              <SelectContent>
+                                {(
+                                  selectedDraftAction.isNew
+                                    ? ([[NEW_ACTION_ALLOWED_TYPE, INSPECTION_ACTION_LABELS[NEW_ACTION_ALLOWED_TYPE]]] as Array<
+                                        [InspectionActionType, string]
+                                      >)
+                                    : (Object.entries(INSPECTION_ACTION_LABELS) as Array<[InspectionActionType, string]>)
+                                ).map(([value, label]) => (
+                                  <SelectItem key={value} value={value}>
+                                    {label}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="space-y-1">
+                            <Button
+                              type="button"
+                              size="sm"
+                              className="w-full justify-center"
+                              variant="outline"
+                              onClick={() => handleToggleRemoveDraftAction(selectedDraftAction.localId)}
+                              disabled={inspectionEditSubmitting}
+                            >
+                              {selectedDraftAction.remove ? "정정 취소" : "검사 정정"}
+                            </Button>
+                            <p className="text-center text-[11px] text-slate-500">
+                              {selectedDraftAction.remove
+                                ? "정정을 취소하려면 다시 누르세요."
+                                : "변경 후 저장을 누르면 정정이 반영됩니다."}
                             </p>
                           </div>
-                          <div className="flex flex-wrap items-center gap-2">
-                          {draft.remove ? (
-                            <Badge variant="destructive" className="px-2 py-0.5 text-[11px]">
-                              삭제 예정
-                            </Badge>
-                          ) : null}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="text-slate-600"
-                            onClick={() => handleToggleRemoveDraftAction(draft.localId)}
-                            disabled={inspectionEditSubmitting}
-                          >
-                            {draft.remove ? "복구" : draft.isNew ? "제거" : "삭제"}
-                          </Button>
-                          </div>
                         </div>
-                        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                        <div className="space-y-1">
-                          <Label className="text-[11px] text-muted-foreground">조치 유형</Label>
-                          <Select
-                            value={draft.actionType}
-                            onValueChange={(value) =>
-                              updateDraftAction(draft.localId, {
-                                actionType: (value as InspectionActionType) || DEFAULT_INSPECTION_ACTION,
-                              })
-                            }
-                            disabled={inspectionEditSubmitting || draft.remove}
-                          >
-                            <SelectTrigger className="h-9 text-xs">
-                              <SelectValue placeholder="조치 선택" />
-                            </SelectTrigger>
-                            <SelectContent>
-                              {Object.entries(INSPECTION_ACTION_LABELS).map(([value, label]) => (
-                                <SelectItem key={value} value={value}>
-                                  {label}
-                                </SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        </div>
-                        <div className="space-y-1">
-                          <Label className="text-[11px] text-muted-foreground">관련 사용자</Label>
-                          <p className="rounded-md border border-slate-200 bg-white/60 px-3 py-2 text-[11px] text-slate-600">
-                            {draft.targetUserId ? (
-                              <Link
-                                href={`/admin/users?focus=${draft.targetUserId}`}
-                                className="text-emerald-600 hover:underline"
-                              >
-                                사용자 상세 이동
-                              </Link>
-                            ) : (
-                              "연결된 사용자 없음"
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                      <div className="mt-2 space-y-1">
-                        <Label className="text-[11px] text-muted-foreground">메모</Label>
-                        <Textarea
-                          value={draft.note}
-                          onChange={(event) => updateDraftAction(draft.localId, { note: event.target.value })}
-                          placeholder="조치에 대한 추가 설명을 입력하세요."
-                          disabled={inspectionEditSubmitting || draft.remove}
-                          className="min-h-[80px]"
-                        />
-                      </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
+                      ) : (
+                        <p className="text-xs text-slate-500">조치를 선택해 내용을 수정하세요.</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+            <div className="border-t border-slate-100 px-5 py-4 sm:px-6">
+              <DialogFooter className="gap-2 sm:justify-end">
+                <Button
+                  type="button"
+                  variant="ghost"
+                  onClick={() => {
+                    setInspectionEditOpen(false)
+                    resetInspectionDraft()
+                  }}
+                  disabled={inspectionEditSubmitting}
+                >
+                  취소
+                </Button>
+                <Button
+                  type="button"
+                  onClick={handleInspectionAdjustSubmit}
+                  disabled={inspectionEditSubmitting}
+                >
+                  {inspectionEditSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> 저장 중…
+                    </>
+                  ) : (
+                    "저장"
+                  )}
+                </Button>
+              </DialogFooter>
             </div>
           </div>
-          <DialogFooter className="gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => {
-                setInspectionEditOpen(false)
-                resetInspectionDraft()
-              }}
-              disabled={inspectionEditSubmitting}
-            >
-              취소
-            </Button>
-            <Button
-              type="button"
-              onClick={handleInspectionAdjustSubmit}
-              disabled={inspectionEditSubmitting}
-            >
-              {inspectionEditSubmitting ? (
-                <>
-                  <Loader2 className="mr-2 size-4 animate-spin" aria-hidden /> 저장 중…
-                </>
-              ) : (
-                "저장"
-              )}
-            </Button>
-          </DialogFooter>
         </DialogContent>
       </Dialog>
 
