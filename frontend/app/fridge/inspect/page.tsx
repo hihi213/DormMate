@@ -210,9 +210,6 @@ function InspectInner() {
   }, [session])
   const storageKey = session?.sessionId ? `${STORAGE_KEY_PREFIX}${session.sessionId}` : null
   const totalItems = items.length
-  const processedRegisteredItems = results.filter((r) => r.itemId).length
-  const remainingItems = Math.max(totalItems - processedRegisteredItems, 0)
-  const isInspectionComplete = remainingItems === 0 && totalItems > 0
 
   const getSlotLabel = useCallback(
     (slotId: string, slotIndex: number) => {
@@ -229,6 +226,9 @@ function InspectInner() {
     }
     return ids
   }, [results])
+  const processedCount = processedUnitIds.size
+  const remainingItems = Math.max(totalItems - processedCount, 0)
+  const isInspectionComplete = remainingItems === 0 && totalItems > 0
 
   const filteredItems = useMemo(() => {
     let list: Item[] = items
@@ -788,7 +788,7 @@ function InspectInner() {
             <span>{"검사 중 · 로컬에 자동 저장됩니다."}</span>
             {totalItems > 0 && (
               <span className="text-gray-600">
-                {`(${processedRegisteredItems}건 처리됨 · ${remainingItems}건 남음${isInspectionComplete ? " · 검사 완료" : ""})`}
+                {`(${processedCount}건 처리됨 · ${remainingItems}건 남음${isInspectionComplete ? " · 검사 완료" : ""})`}
               </span>
             )}
           </div>
