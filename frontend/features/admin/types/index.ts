@@ -34,4 +34,11 @@ export type AdminUser = {
   status: "ACTIVE" | "INACTIVE"
   lastLogin: string
   penalties?: number
+  penaltyRecords?: Array<{
+    module: string
+    source: string
+    points: number
+    reason?: string | null
+    issuedAt: string
+  }>
 }

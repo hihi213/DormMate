@@ -30,4 +30,6 @@ public interface PenaltyHistoryRepository extends JpaRepository<PenaltyHistory, 
             @Param("userIds") Iterable<UUID> userIds,
             @Param("now") OffsetDateTime now
     );
+
+    List<PenaltyHistory> findTop5ByUserIdOrderByIssuedAtDesc(UUID userId);
 }

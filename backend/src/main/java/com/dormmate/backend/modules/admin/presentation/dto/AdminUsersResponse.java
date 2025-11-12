@@ -22,7 +22,17 @@ public record AdminUsersResponse(
             List<String> roles,
             String status,
             String lastLogin,
-            int penalties
+            int penalties,
+            List<PenaltyRecord> penaltyRecords
+    ) {
+    }
+
+    public record PenaltyRecord(
+            String module,
+            String source,
+            int points,
+            String reason,
+            String issuedAt
     ) {
     }
 }
