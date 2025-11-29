@@ -25,11 +25,38 @@
   - `./auto dev kill-ports [--ports …]`: 지정한 포트(기본 3000~3003, 8080)를 점유한 프로세스를 종료
   - `./auto tests core [--skip-backend --skip-frontend --skip-playwright --full-playwright]`: Step 6 테스트 번들
   - `./auto tests backend|frontend|playwright`: 계층별 테스트
-  - `./auto db migrate`, `./auto cleanup`, `./auto state show|update`
+- `./auto db migrate`, `./auto cleanup`, `./auto state show|update`
 - 명령 전체 목록은 `./auto --help`로 확인한다.
 - CLI는 `.codex/state.json`에 현재 프로필, 테스트 결과, 메모를 저장하므로 수동으로 수정하지 않는다.
 - 세션 중 실행한 주요 명령과 결과는 PR/이슈 코멘트 또는 팀이 지정한 회고 문서에 요약해 다음 단계 준비를 원활히 한다.
 - `/admin/seed/fridge-demo`는 데모 전용 API이므로 어떤 자동화 스크립트·CI에서도 호출하지 않는다. 필요 시 운영자가 직접 실행하고, 실행 전후 점검은 아래 "데모 데이터 초기화" 섹션을 따른다.
+
+### 로컬 실행(환경변수 로드 필수)
+1. 샘플 복사  
+   ```bash
+   cp deploy/env.sample deploy/.env.local
+   ```
+2. 환경 변수 로드  
+   ```bash
+   set -a && source deploy/.env.local && set +a   # dev/local 테스트용 .env
+   ```
+   프로필을 dev/local로 바꾸려면 `.env.local`에 `SPRING_PROFILES_ACTIVE=dev-local` 추가.
+3. 기동  
+   ```bash
+   ./auto dev up          # 전체 스택
+   # 또는 ./auto dev backend / ./backend/gradlew bootRun
+   ```
+   CORS 허용을 위해 `CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080` 등 필요한 오리진을 .env에 넣는다.
+
+### Docker Compose로 실행(권장)
+- 사람이 수동으로 `source`하지 않고 `--env-file`을 넘긴다.
+  ```bash
+  cp deploy/env.sample deploy/.env.local
+  docker compose --env-file deploy/.env.local \
+    -f docker-compose.yml -f docker-compose.prod.yml up -d
+  ```
+- CI/CD에서도 동일하게 `--env-file` 또는 환경변수 주입으로 처리한다.
+
 
 ## 데모 데이터 초기화 (관리자 전용)
 
