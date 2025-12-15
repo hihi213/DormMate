@@ -11,7 +11,7 @@
 - `docs/data-model.md`: 데이터 모델 및 엔터티 관계 정리
 - `docs/ops/security-checklist.md`: 보안 음성 흐름 API 호출 순서 및 로그 검증 가이드
 - `docs/ops/batch-notifications.md`: 임박/만료 알림 배치 운영 지침
-- `api/versions/v0.1.0.yml`: OpenAPI 버전 스냅샷(컨트롤러 변경 시 `/v3/api-docs`로 재생성 필요)
+- `api/versions/v0.1.1.yml`: OpenAPI 버전 스냅샷(컨트롤러 변경 시 `/v3/api-docs`로 재생성 필요)
 - `docs/ai-impl/README.md`: 프런트엔드·백엔드·Playground AI 협업 지침 인덱스
 
 ## AI 사용 지침

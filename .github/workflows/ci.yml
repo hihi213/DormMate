@@ -179,7 +179,7 @@ jobs:
             exit 1
           fi
           curl -fsS -H "Authorization: Bearer $ACCESS_TOKEN" http://localhost:8080/v3/api-docs > runtime-openapi.json
-          SPEC_PATH="$GITHUB_WORKSPACE/api/openapi.yml"
+          SPEC_PATH="$GITHUB_WORKSPACE/api/versions/v0.1.1.yml"
           if [ ! -f "$SPEC_PATH" ]; then
             echo "Spec file not found: $SPEC_PATH" >&2
             exit 1
