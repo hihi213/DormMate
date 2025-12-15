@@ -1,6 +1,6 @@
 # DormMate 보안 검증 체크리스트
 *용도: MVP 범위에서 보안·음성(부정) 흐름을 재현할 때 따라야 할 API 호출 순서와 검증 절차를 제공하는 실행 가이드다.*
-*목적: `docs/mvp-scenario.md`에 정의된 부정(음성) 흐름과 보안 시나리오를 API 호출 순서대로 재현하기 위한 실행 가이드를 제공한다. 테스트 전 `docs/feature-inventory.md`, `docs/mvp-implementation-plan.md`, `docs/data-model.md`의 정책과 시드 데이터를 최신 상태로 동기화한다.*
+*목적: `docs/2.Demo_Scenario.md`에 정의된 부정(음성) 흐름과 보안 시나리오를 API 호출 순서대로 재현하기 위한 실행 가이드를 제공한다. 테스트 전 `docs/1.Feature_Inventory.md`, `docs/2.1.Demo_Plan.md`, `docs/data-model.md`의 정책과 시드 데이터를 최신 상태로 동기화한다.*
 
 > **실행 원칙**
 > - 모든 호출은 HTTPS 환경과 정책에 맞는 도메인/포트를 사용한다.
@@ -11,52 +11,39 @@
 
 ## 1. 인증/세션 음성 시나리오
 
-> **사전 준비**: `alice` 정상 계정, `disabled_user` 비활성 계정, `admin`으로 잠금 해제 가능.  
+> **사전 준비**: `alice` 정상 계정, `disabled_user` 비활성 계정, 관리자 `admin`.  
 > **공통 헤더**: `Content-Type: application/json`
 >
 > **현재 구현 안내**  
-> - 로그인/리프레시/로그아웃 엔드포인트만 활성화돼 있으며, `user_session`은 SHA-256 해시된 리프레시 토큰과 7일 TTL을 사용한다.  
-> - `/admin/users/{userId}/unlock` 등 관리자 계정 잠금 해제 API는 아직 제공되지 않으므로, A3 항목은 *향후 구현 시 재검증*으로 분류한다. 현재는 DB 직접 조정이나 시드 재적용으로 대체한다.
+> - 지원 엔드포인트: `/auth/login`, `/auth/refresh`, `/auth/logout`, `/profile/me`만 무상태로 열려 있다.  
+> - 세션 구조: `user_session`에 리프레시 해시·`device_id`·만료(기본 7일)가 저장되며, 리프레시 시 deviceId 불일치면 `DEVICE_MISMATCH`로 세션이 즉시 폐기된다. 액세스 토큰은 데모 기준 45초, 리프레시는 5분(`application-prod.properties` 기본값).  
+> - 계정 잠금/해제 API, 비밀번호 재설정은 미구현 상태다. 잠금 시나리오는 401 응답 확인 수준으로만 검증하고 AU-103 일정에 남겨 둔다.
 
-### A1. 로그인 실패 누적 잠금
+### A1. 로그인 실패 반복
 - **Method & Path**: `POST /auth/login`
 - **Body**
   ```json
   { "loginId": "alice", "password": "wrong-pass", "deviceId": "qa-lock-test" }
   ```
-- **실행**: 동일 요청을 5회 연속 수행.
-- **기대 결과**: 401 응답. 5회 이상 실패 시 계정 잠금 또는 지연 정책이 적용되어 추가 로그인 차단.
-- **추가 검증**: `audit_log`에 `LOGIN_FAILED` 이벤트가 누적 기록되는지 확인.
+- **실행**: 동일 요청을 여러 차례 반복.
+- **기대 결과**: 매 요청 401. 별도 잠금/지연 정책은 없음(미구현).
+- **추가 검증**: 실패 후 `AuthService` 로그에서 `LOGIN_FAILED` 메시지 확인(감사 로그 스키마 없음).
 
-### A2. 잠금 지속 여부 확인
-- **Method & Path**: `POST /auth/login`
-- **Body**
-  ```json
-  { "loginId": "alice", "password": "correct-pass", "deviceId": "qa-lock-test" }
-  ```
-- **기대 결과**: 423 또는 401 응답으로 잠금이 유지되고, 응답 메시지에 잠금 안내가 포함.
-- **추가 검증**: 관리자 UI/DB에서 사용자 상태가 `LOCKED`로 표시되는지 확인.
-
-### A3. 관리자 잠금 해제 *(향후 구현 예정)*
-- **상태**: 관리자 잠금 해제 API는 아직 제공되지 않는다. 잠금 복구가 필요한 경우 운영자 권한으로 DB 값을 조정하거나 시드를 재적용한다.
-- **향후 계획**: `/admin/users/{userId}/unlock` 엔드포인트가 추가되면 본 항목을 다시 활성화하고, `audit_log` 기록 여부를 검증한다.
-
-### A4. 비활성 계정 로그인 차단
+### A2. 비활성 계정 로그인 차단
 - **Method & Path**: `POST /auth/login`
 - **Body**
   ```json
   { "loginId": "disabled_user", "password": "any-value", "deviceId": "qa-disabled-test" }
   ```
-- **기대 결과**: 401 또는 403 응답과 함께 비활성 계정 안내가 반환.
-- **추가 검증**: `audit_log`에 `LOGIN_DISABLED` 혹은 유사 이벤트 기록.
+- **기대 결과**: 401 또는 403과 함께 비활성 안내 메시지. 계정 잠금 해제 API 없음.
 
-### A5. 세션 만료 후 API 접근
+### A3. 세션 만료 후 API 접근
 - **Method & Path**: `GET /fridge/bundles`
 - **Headers**: `Authorization: Bearer {만료된 accessToken}`
 - **기대 결과**: 401/419 응답 → 프론트는 재로그인 플로우로 전환.
 - **추가 검증**: 서버 로그에서 `SESSION_EXPIRED` 이벤트 확인.
 
-### A6. 만료된 Refresh 토큰 재사용
+### A4. 만료된 Refresh 토큰 재사용
 - **Method & Path**: `POST /auth/refresh`
 - **Body**
   ```json
@@ -65,15 +52,15 @@
 - **기대 결과**: 401 응답. 기존 세션이 강제 종료되며 새 토큰 발급 불가.
 - **추가 검증**: `audit_log`에 `REFRESH_TOKEN_EXPIRED` 기록, 세션 테이블에서 만료 여부 확인.
 
-### A7. Refresh 토큰 재사용 방지
+### A5. Refresh 토큰 재사용/디바이스 불일치 차단
 - **Method & Path**: `POST /auth/refresh`
 - **Body (1차 요청)**
   ```json
   { "refreshToken": "{validToken}", "deviceId": "qa-refresh-reuse-1" }
   ```
 - **Body (2차 요청, 동일 토큰)**: `deviceId` 변경 가능.
-- **기대 결과**: 최초 요청만 200 응답, 두 번째 요청은 401.
-- **추가 검증**: 감사 로그에 `REFRESH_TOKEN_REUSE` 기록, 해당 토큰이 무효화되는지 확인.
+- **기대 결과**: 최초 요청만 200. 두 번째 요청 또는 deviceId 변경 시 401 `DEVICE_MISMATCH`로 기존 세션 폐기.
+- **추가 검증**: `user_session.revoked_reason=DEVICE_MISMATCH` 확인.
 
 ---
 
@@ -156,36 +143,32 @@
 
 ## 4. 알림 정책 음성 검증
 
-> **상태**: 알림 설정/배치 관련 공개 API가 아직 구현되지 않은 것으로 보인다. 구현 완료 시 아래 항목에 실제 Method & Path, Request DTO를 기입하고 검증을 수행한다.
+> **상태**: 알림 설정/배치는 구현되어 있으며, 임박/만료 배치는 매일 09:00에 스케줄러(`FridgeExpiryNotificationScheduler`)가 실행한다. 수동 트리거 API는 없다.
 
-### D1. 검사 결과 알림 OFF 설정
-- **예상 Method & Path**: `PATCH /notifications/preferences/{kindCode}`
+### D1. 검사 결과 알림 OFF
+- **Method & Path**: `PATCH /notifications/preferences/FRIDGE_RESULT`
 - **Body**
   ```json
-  { "isEnabled": false }
+  { "enabled": false, "allowBackground": false }
   ```
-- **기대 결과**: 200 응답. `notification_preference`에서 해당 kind가 비활성화.
-- **추가 검증**: `audit_log`에 `NOTIFICATION_PREFERENCE_UPDATED` 기록.
+- **기대 결과**: 200 응답, `notification_preference`에 enabled=false 반영.
+- **추가 검증**: 이후 `POST /fridge/inspections/{sessionId}/submit` 시 해당 사용자에게 알림이 생성되지 않는다.
 
-### D2. 검사 결과 알림 미발송 확인
-- **Method & Path**: `POST /fridge/inspections/{sessionId}/submit` (층별장 계정)
-- **기대 결과**: 알림 비활성 사용자에게 `FRIDGE_RESULT` 알림이 생성되지 않는다.
-
-### D3. 백그라운드 허용 OFF 설정
-- **예상 Method & Path**: `PATCH /notifications/preferences/{kindCode}`
+### D2. 백그라운드 허용 OFF
+- **Method & Path**: `PATCH /notifications/preferences/FRIDGE_EXPIRY`
 - **Body**
   ```json
-  { "allowBackground": false }
+  { "enabled": true, "allowBackground": false }
   ```
-- **기대 결과**: 200 응답. 해당 사용자는 푸시 송신 목록에서 제외.
+- **기대 결과**: 200 응답. 임박/만료 배치 실행 후 `notification_dispatch_log`에서 해당 사용자가 SUCCESS 채널에서 제외되거나 `allowBackground=false` 메타데이터가 반영됐는지 확인.
 
-### D4. 임박 배치 수동 실행
-- **예상 Method & Path**: `POST /admin/notifications/trigger-expiry`
-- **기대 결과**: 백그라운드 허용 OFF 사용자(`diana`)는 푸시 미발송, 앱 내 레코드만 생성.
-- **추가 검증**: `notification_dispatch_log`에서 제외 여부 확인.
+### D3. 알림 dedupe 확인
+- **Method & Path**: `POST /fridge/inspections/{sessionId}/submit`을 동일 세션/사용자 조합으로 2회 호출.
+- **기대 결과**: 첫 호출만 `FRIDGE_RESULT` 알림 생성, 두 번째는 `notification` 테이블에 추가 레코드 없음(`dedupe_key=FRIDGE_RESULT:<sessionId>:<userId>`).
 
-### D5. 배치 재실행
-- 동일 배치를 같은 일시에 재실행했을 때 새 알림이 생성되지 않는지 확인(`dedupe_key` 활용).
+### D4. 임박 배치 스케줄 확인
+- **Action**: 09:00 cron 직후 로그 또는 `notification_dispatch_log` 확인.
+- **기대 결과**: `channel=INTERNAL_BATCH`, 성공/실패 코드 기록. 배치 수동 트리거 API 없음.
 
 ---
 

@@ -4,15 +4,17 @@
 이 디렉터리는 프로젝트 전반에서 공통으로 참고해야 하는 운영/계획 문서를 모아 둡니다. 각 문서는 항상 최신 상태를 유지하고, 변경 시 다른 문서와의 싱크를 확인하세요.
 
 ## 주요 문서
-- `docs/feature-inventory.md`: DormMate 기능·정책 카탈로그(무엇/왜)
-- `docs/mvp-scenario.md`: MVP 범위와 시연 흐름(어떻게)
-- `docs/mvp-plan.md`: 역할별 구현 단계와 체크리스트
+- `docs/1.Feature_Inventory.md`: DormMate 기능·정책 카탈로그(무엇/왜)
+- `docs/2.Demo_Scenario.md`: MVP 범위와 시연 흐름(어떻게)
+- `docs/2.1.Demo_Plan.md`: 역할별 구현 단계와 체크리스트
+- `docs/2.2.Status_Board.md`: 진행/테스트 로그
 - `docs/data-model.md`: 데이터 모델 및 엔터티 관계 정리
 - `docs/ops/security-checklist.md`: 보안 음성 흐름 API 호출 순서 및 로그 검증 가이드
 - `docs/ops/batch-notifications.md`: 임박/만료 알림 배치 운영 지침
+- `api/versions/v0.1.1.yml`: OpenAPI 버전 스냅샷(컨트롤러 변경 시 `/v3/api-docs`로 재생성 필요)
 - `docs/ai-impl/README.md`: 프런트엔드·백엔드·Playground AI 협업 지침 인덱스
 
-## 사용 지침
+## AI 사용 지침
 1. 새로운 세션을 시작할 때는 위 핵심 문서(MVP 시나리오·구현 계획·기능 정의)를 먼저 검토하고, 역할별 세부 지침은 `docs/ai-impl/README.md`에서 확인합니다.
 2. 기능 정의/데이터/시나리오 문서는 항상 함께 갱신하고, 변경 이력은 PR/이슈, 팀 노트 등 프로젝트가 지정한 채널에 기록합니다.
 3. 구현 AI, 학습용 AI, 사람이 모두 동일한 용어를 사용할 수 있도록 문서 간 용어를 일관되게 유지합니다.
@@ -25,11 +27,42 @@
   - `./auto dev kill-ports [--ports …]`: 지정한 포트(기본 3000~3003, 8080)를 점유한 프로세스를 종료
   - `./auto tests core [--skip-backend --skip-frontend --skip-playwright --full-playwright]`: Step 6 테스트 번들
   - `./auto tests backend|frontend|playwright`: 계층별 테스트
-  - `./auto db migrate`, `./auto cleanup`, `./auto state show|update`
+- `./auto db migrate`, `./auto cleanup`, `./auto state show|update`
 - 명령 전체 목록은 `./auto --help`로 확인한다.
 - CLI는 `.codex/state.json`에 현재 프로필, 테스트 결과, 메모를 저장하므로 수동으로 수정하지 않는다.
 - 세션 중 실행한 주요 명령과 결과는 PR/이슈 코멘트 또는 팀이 지정한 회고 문서에 요약해 다음 단계 준비를 원활히 한다.
 - `/admin/seed/fridge-demo`는 데모 전용 API이므로 어떤 자동화 스크립트·CI에서도 호출하지 않는다. 필요 시 운영자가 직접 실행하고, 실행 전후 점검은 아래 "데모 데이터 초기화" 섹션을 따른다.
+- OpenAPI 재생성: 백엔드 기동 후 `curl http://localhost:8080/v3/api-docs > api/openapi.yml`로 추출한 뒤 `api/versions/`에 버전을 올리고 `docs/2.1.Demo_Plan.md` 링크를 갱신한다.
+
+### 로컬 실행(환경변수 로드 필수)
+1. 샘플 복사  
+   ```bash
+   cp deploy/env.sample deploy/.env.local
+   ```
+2. 환경 변수 로드  
+   ```bash
+   set -a && source deploy/.env.local && set +a   # dev/local 테스트용 .env
+   ```
+   프로필을 dev/local로 바꾸려면 `.env.local`에 `SPRING_PROFILES_ACTIVE=dev-local` 추가.
+3. 기동  
+   ```bash
+   ./auto dev up          # 전체 스택
+   # 또는 ./auto dev backend / ./backend/gradlew bootRun
+   ```
+   CORS 허용을 위해 `CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080` 등 필요한 오리진을 .env에 넣는다.
+   JWT 기본값: access 45초(`jwt.expiration=45000`), refresh 5분(`jwt.refresh-expiration=300000`), 세션은 deviceId로 묶인다.
+
+### Docker Compose로 실행(권장)
+- 사람이 수동으로 `source`하지 않고 `--env-file`을 넘긴다.
+  ```bash
+  cp deploy/env.sample deploy/.env.local
+  docker compose --env-file deploy/.env.local \
+    -f docker-compose.yml -f docker-compose.prod.yml up -d
+  ```
+- CI/CD에서도 동일하게 `--env-file` 또는 환경변수 주입으로 처리한다.
+  - 주요 포트: `PROXY_HTTP_PORT` 기본 8080(로컬)/80(운영), `PROXY_HTTPS_PORT` 기본 8443(로컬)/443(운영). DB/Redis는 prod 컴포즈에서 외부 포트 노출이 없다.
+  - TLS: `ENABLE_TLS=true`, `SERVER_NAME`, `TLS_DOMAIN`, `TLS_EMAIL`, `TLS_SELF_SIGNED=false` 설정 후 한 번만 `./auto deploy tls issue --domain <도메인> --email <메일>`을 실행한다. 셀프사인(`TLS_SELF_SIGNED=true`)은 데모/로컬 전용.
+  - 필수 보안 env: `JWT_SECRET`는 prod에서 반드시 지정(`application-prod.properties`는 미지정 시 실패), CORS 오리진(`CORS_ALLOWED_ORIGINS`), 관리자 계정/비밀번호.
 
 ## 데모 데이터 초기화 (관리자 전용)
 
@@ -46,8 +79,13 @@
 > **주의**: API 대신 수동 SQL로 초기화해야 한다면 FK 참조를 거꾸로 타지 않도록 `inspection_action_item → inspection_action → penalty_history` 순으로 먼저 삭제한 뒤 `fridge_item`, `fridge_bundle`, `bundle_label_sequence`를 정리한다. 이 순서는 `AdminSeedIntegrationTest`에서도 검증되므로, 동일하게 따르면 `/admin/seed/fridge-demo` 실행 전 FK 오류를 예방할 수 있다.
 
 ### 비상/경고 문구 표기 위치
-- 본 섹션 외에도 `docs/mvp-scenario.md §2 사전 준비` 및 `docs/ops/status-board.md`에 동일 경고를 반복 노출한다.
+- 본 섹션 외에도 `docs/2.Demo_Scenario.md §2 사전 준비` 및 `docs/2.2.Status_Board.md`에 동일 경고를 반복 노출한다.
 - 운영 절차 문서, 배포 체크리스트, 페이지 데크 등에 “/admin/seed/fridge-demo는 데모 전용”이라는 문구를 추가하고, 자동화나 예약 작업에 포함시키지 않는다.
+
+### 알림/배치 운영 메모
+- 임박/만료 배치: 매일 09:00 `FridgeExpiryNotificationScheduler`가 실행되며, 결과는 `notification_dispatch_log`에 기록된다(채널 `INTERNAL_BATCH`).
+- 검사 결과 알림 dedupe 키: `FRIDGE_RESULT:<sessionId>:<userId>`. 중복 제출 시 추가 발송되지 않는다.
+- 사용자 알림 설정: `PATCH /notifications/preferences/{kindCode}`로 종류별 ON/OFF 및 `allowBackground`를 저장한다. 기본 정책/TTL/일일 한도는 `admin_policy`로 관리하며 별도 `notification_policy` 테이블은 미도입 상태.
 
 ## 운영 점검 루틴
 - **검사 → 알림 연동**: `inspection_action`에서 `correlation_id`가 채워진 알림을 `notification`에서 확인하고, 거주자 알림을 통해 조치 상세로 이동하는 흐름을 주기적으로 리허설한다.
