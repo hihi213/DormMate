@@ -11,6 +11,7 @@
 - `docs/data-model.md`: 데이터 모델 및 엔터티 관계 정리
 - `docs/ops/security-checklist.md`: 보안 음성 흐름 API 호출 순서 및 로그 검증 가이드
 - `docs/ops/batch-notifications.md`: 임박/만료 알림 배치 운영 지침
+- `api/versions/v0.1.0.yml`: OpenAPI 버전 스냅샷(컨트롤러 변경 시 `/v3/api-docs`로 재생성 필요)
 - `docs/ai-impl/README.md`: 프런트엔드·백엔드·Playground AI 협업 지침 인덱스
 
 ## AI 사용 지침
@@ -31,6 +32,7 @@
 - CLI는 `.codex/state.json`에 현재 프로필, 테스트 결과, 메모를 저장하므로 수동으로 수정하지 않는다.
 - 세션 중 실행한 주요 명령과 결과는 PR/이슈 코멘트 또는 팀이 지정한 회고 문서에 요약해 다음 단계 준비를 원활히 한다.
 - `/admin/seed/fridge-demo`는 데모 전용 API이므로 어떤 자동화 스크립트·CI에서도 호출하지 않는다. 필요 시 운영자가 직접 실행하고, 실행 전후 점검은 아래 "데모 데이터 초기화" 섹션을 따른다.
+- OpenAPI 재생성: 백엔드 기동 후 `curl http://localhost:8080/v3/api-docs > api/openapi.yml`로 추출한 뒤 `api/versions/`에 버전을 올리고 `docs/2.1.Demo_Plan.md` 링크를 갱신한다.
 
 ### 로컬 실행(환경변수 로드 필수)
 1. 샘플 복사  
@@ -48,6 +50,7 @@
    # 또는 ./auto dev backend / ./backend/gradlew bootRun
    ```
    CORS 허용을 위해 `CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080` 등 필요한 오리진을 .env에 넣는다.
+   JWT 기본값: access 45초(`jwt.expiration=45000`), refresh 5분(`jwt.refresh-expiration=300000`), 세션은 deviceId로 묶인다.
 
 ### Docker Compose로 실행(권장)
 - 사람이 수동으로 `source`하지 않고 `--env-file`을 넘긴다.
@@ -78,6 +81,11 @@
 ### 비상/경고 문구 표기 위치
 - 본 섹션 외에도 `docs/2.Demo_Scenario.md §2 사전 준비` 및 `docs/2.2.Status_Board.md`에 동일 경고를 반복 노출한다.
 - 운영 절차 문서, 배포 체크리스트, 페이지 데크 등에 “/admin/seed/fridge-demo는 데모 전용”이라는 문구를 추가하고, 자동화나 예약 작업에 포함시키지 않는다.
+
+### 알림/배치 운영 메모
+- 임박/만료 배치: 매일 09:00 `FridgeExpiryNotificationScheduler`가 실행되며, 결과는 `notification_dispatch_log`에 기록된다(채널 `INTERNAL_BATCH`).
+- 검사 결과 알림 dedupe 키: `FRIDGE_RESULT:<sessionId>:<userId>`. 중복 제출 시 추가 발송되지 않는다.
+- 사용자 알림 설정: `PATCH /notifications/preferences/{kindCode}`로 종류별 ON/OFF 및 `allowBackground`를 저장한다. 기본 정책/TTL/일일 한도는 `admin_policy`로 관리하며 별도 `notification_policy` 테이블은 미도입 상태.
 
 ## 운영 점검 루틴
 - **검사 → 알림 연동**: `inspection_action`에서 `correlation_id`가 채워진 알림을 `notification`에서 확인하고, 거주자 알림을 통해 조치 상세로 이동하는 흐름을 주기적으로 리허설한다.

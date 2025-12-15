@@ -5,6 +5,7 @@ info:
   description: |
     DormMate MVP contract-first specification. 모든 코드는 이 명세와 동기화되어야 하며,
     CI에서는 런타임 OpenAPI와 본 파일을 비교해 드리프트를 감지한다.
+    (2025-11 업데이트 예정: inspection submit/조치/알림 dedupe, allow_background, admin 재배분/seed 등 최신 컨트롤러 반영 필요)
 servers:
   - url: http://localhost:8080
     description: 로컬 개발 기본 URL
