@@ -1,6 +1,6 @@
 # DormMate 보안 검증 체크리스트
 *용도: MVP 범위에서 보안·음성(부정) 흐름을 재현할 때 따라야 할 API 호출 순서와 검증 절차를 제공하는 실행 가이드다.*
-*목적: `docs/mvp-scenario.md`에 정의된 부정(음성) 흐름과 보안 시나리오를 API 호출 순서대로 재현하기 위한 실행 가이드를 제공한다. 테스트 전 `docs/feature-inventory.md`, `docs/mvp-implementation-plan.md`, `docs/data-model.md`의 정책과 시드 데이터를 최신 상태로 동기화한다.*
+*목적: `docs/2.Demo_Scenario.md`에 정의된 부정(음성) 흐름과 보안 시나리오를 API 호출 순서대로 재현하기 위한 실행 가이드를 제공한다. 테스트 전 `docs/1.Feature_Inventory.md`, `docs/2.1.Demo_Plan.md`, `docs/data-model.md`의 정책과 시드 데이터를 최신 상태로 동기화한다.*
 
 > **실행 원칙**
 > - 모든 호출은 HTTPS 환경과 정책에 맞는 도메인/포트를 사용한다.

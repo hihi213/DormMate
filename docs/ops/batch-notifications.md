@@ -1,6 +1,6 @@
 # 배치 알림 운영 가이드
 
-DormMate의 냉장고 임박/만료 알림 배치 스케줄러 운영 기준을 정리한 문서다. 운영자는 본 가이드를 기준으로 재시도, 오류 대응, 복구 절차를 수행한다.
+ DormMate의 냉장고 임박/만료 알림 배치 스케줄러 운영 기준을 정리한 문서다. 운영자는 본 가이드를 기준으로 재시도, 오류 대응, 복구 절차를 수행한다.
 
 ## 1. 배치 스케줄 및 현재 동작
 
@@ -39,7 +39,7 @@ DormMate의 냉장고 임박/만료 알림 배치 스케줄러 운영 기준을 
 
 - 매일 배치 구현 상세: `backend/src/main/java/com/dormmate/backend/modules/notification/application/FridgeExpiryNotificationScheduler.java`
 - 알림 및 로그 도메인: `Notification`, `NotificationDispatchLog`
-- 상태 보드 진행 이력: `docs/ops/status-board.md` NO-501 섹션
+- 상태 보드 진행 이력: `docs/2.2.Status_Board.md` NO-501 섹션
 
 ## 5. 회귀 테스트 체크리스트
 

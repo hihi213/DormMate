@@ -1,8 +1,8 @@
 # DormMate
 
-DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위한 Spring Boot 기반 백엔드와 Next.js 프론트엔드 프로젝트입니다. 이 저장소는 백엔드 우선 MVP를 목표로 하며, 운영 환경과 개발 환경을 빠르게 재현할 수 있도록 Makefile·Docker Compose·Flyway를 이용한 통합 개발 경험을 제공합니다.
+DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위한 Spring Boot 기반 백엔드와 Next.js 프론트엔드 프로젝트입니다. 백엔드 우선 MVP를 목표로 하며, 운영 환경을 로컬에서 빠르게 재현할 수 있도록 Docker Compose·Flyway·자동화 스크립트를 제공합니다.
 
-> 최신 MVP 범위와 구현 단계는 `docs/mvp-scenario.md`, `docs/mvp-plan.md`를 참고하세요. 기능·정책의 전체 정의는 `docs/feature-inventory.md`에 정리되어 있습니다.
+> 바로가기(문서 지도): `docs/1.Feature_Inventory.md`(정책 SSOT), `docs/2.Demo_Scenario.md`(데모/범위), `docs/2.1.Demo_Plan.md`(체크리스트), `docs/2.2.Status_Board.md`(진행 로그), `docs/ops/README.md`(운영/배포), `docs/tests/admin-playwright-plan.md`(관리자 E2E), `docs/data-model.md`(엔터티).
 
 ## 현재 구현된 핵심 기능 스냅샷
 
@@ -19,8 +19,8 @@ DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위�
 
 ## 주요 스택 & 권장 버전
 
-- **Backend**: Spring Boot 3.3.4, Java 21, Gradle 8.9, Flyway 10.17, PostgreSQL 16
-- **Frontend**: Next.js 15.5.6, React 18.2, TypeScript 5.6, Tailwind CSS 3.4
+- **Backend**: Spring Boot 3.3.4, Java 21, Gradle 8.9, Flyway 10.17, PostgreSQL 16 (`backend/build.gradle`)
+- **Frontend**: Next.js 15.5.6, React 18.2, TypeScript 5.6, Tailwind CSS 3.4 (`frontend/package.json`)
 - **Infrastructure**: Docker Compose, Redis 7.2, pgAdmin 4 (8.6)
 - **Tooling**: Node.js 22.11 (LTS), npm 10, 자동화 CLI(`./auto`, `.nvmrc` 기반)
 
@@ -29,8 +29,8 @@ DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위�
 ## 빠른 시작
 
 ```bash
-# 개발용 DB/Redis 기동 (애플리케이션은 로컬에서 직접 실행)
-docker compose --env-file deploy/.env.prod up -d db redis
+# 개발용 DB/Redis 기동 (애플리케이션은 로컬에서 직접 실행, 필요 시 env.sample를 .env.local로 복사)
+docker compose --env-file deploy/.env.local up -d db redis
 
 # 운영과 동일한 전체 스택(prod 파일 포함) 기동
 docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d proxy
@@ -54,13 +54,13 @@ docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compo
 # 백엔드 애플리케이션 실행
 ./auto dev backend  # 또는 cd backend && ./gradlew bootRun
 
-# 프론트엔드 개발 서버
+# 프론트엔드 개발 서버 (API_BASE 필요 시 .env.local에서 지정)
 cd frontend && npm install && npm run dev
 ```
 
-> proxy 컨테이너는 기본적으로 호스트 8080 포트를 사용합니다. 운영 서버에서는 `deploy/.env.prod`에서 `PROXY_HTTP_PORT=80`, `PROXY_HTTPS_PORT=443`으로 바꿔두면 됩니다.
+> proxy 컨테이너는 기본적으로 호스트 8080/8443 포트를 사용합니다. 운영 서버에서는 `deploy/.env.prod`에서 `PROXY_HTTP_PORT=80`, `PROXY_HTTPS_PORT=443`으로 바꿔두면 됩니다.
 >
-> HTTPS를 활성화하려면 `ENABLE_TLS=true`, `SERVER_NAME=<도메인>`, `TLS_DOMAIN=<도메인>`, `TLS_EMAIL=<연락 이메일>`, `PROXY_HTTPS_PORT=443`을 지정한 뒤 한 번만 `./auto deploy tls issue --domain <도메인> --email <이메일>`을 실행해 인증서를 발급하세요. 이후에는 `certbot` 볼륨이 유지되므로 `./auto deploy tls renew`만 주기적으로 실행하면 됩니다(예: cron). 운영 환경에서는 `TLS_SELF_SIGNED=false`로 설정해 Let's Encrypt 인증서가 없으면 배포가 중단되도록 만드는 것이 좋습니다.
+> HTTPS를 활성화하려면 `ENABLE_TLS=true`, `SERVER_NAME=<도메인>`, `TLS_DOMAIN=<도메인>`, `TLS_EMAIL=<연락 이메일>`, `TLS_SELF_SIGNED=false`, `PROXY_HTTPS_PORT=443`을 지정한 뒤 한 번만 `./auto deploy tls issue --domain <도메인> --email <이메일>`을 실행해 인증서를 발급하세요. 이후에는 `./auto deploy tls renew`만 주기적으로 실행하면 됩니다(예: cron). 셀프사인(`TLS_SELF_SIGNED=true`)은 데모/로컬 전용입니다.
 >
 > 헬스체크는 `/healthz`(백엔드)와 `/frontend-healthz`(프런트) 두 엔드포인트를 통해 분리 확인할 수 있습니다. proxy 컨테이너도 동일 경로를 그대로 노출합니다.
 
@@ -167,7 +167,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 ## 추가 문서
 
-- `backend/ENV_SETUP.md`: 환경 변수와 보안 체크리스트
+- `backend/ENV_SETUP.md`: 환경 변수와 보안 체크리스트 (prod에서는 `JWT_SECRET` 필수)
 - `api/openapi.yml`: OpenAPI seed 명세
 - `tools/db/README.md`: 스키마 드리프트 감지 가이드 (CLI 연동 예정)
 - `docs/presentation-outline.md`: 질문 대비용 전체 구현 개요(문제 정의, 아키텍처, 인프라/운영 상세)
