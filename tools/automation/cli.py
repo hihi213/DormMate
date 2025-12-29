@@ -833,19 +833,19 @@ def print_top_level_summary(parser: argparse.ArgumentParser) -> None:
     summary = """
 자주 쓰는 명령 요약
   ./auto dev warmup [--refresh] [--with-playwright]  Gradle·Node 의존성 예열 (필요 시 Playwright)
-  ./auto dev up                      개발용 Docker 서비스 기동
-  ./auto dev down                    개발용 Docker 서비스 중지
-  ./auto dev status                  개발용 Docker 서비스 상태 확인
-  ./auto dev backend                 Spring Boot 서버 실행
-  ./auto dev frontend                Next.js 개발 서버 실행
+  ./auto dev up [--env local|prod]                  개발용 Docker 서비스 기동
+  ./auto dev down [--env local|prod]                개발용 Docker 서비스 중지
+  ./auto dev status [--env local|prod]              개발용 Docker 서비스 상태 확인
+  ./auto dev backend [--env local|prod]             Spring Boot 서버 실행
+  ./auto dev frontend [--env local|prod]            Next.js 개발 서버 실행
   ./auto dev kill-ports              지정한 포트(기본 3000~3003, 8080) 정리
   ./auto tests core                  백엔드·프론트·Playwright 테스트 번들
   ./auto tests backend               백엔드 테스트만 실행
   ./auto tests frontend              프론트엔드 Lint 실행
   ./auto tests playwright [--full]   Playwright 스모크/전체 실행
-  ./auto db migrate [--repair]       Flyway 마이그레이션 (필요 시 repair)
-  ./auto deploy up [--build --push]   docker-compose.prod 스택 기동 / 이미지 빌드·푸시
-  ./auto deploy reset                down --volumes → migrate → up proxy
+  ./auto db migrate [--env local|prod] [--repair]   Flyway 마이그레이션 (필요 시 repair)
+  ./auto deploy up [--env local|prod] [--build --push]   docker-compose.prod 스택 기동 / 이미지 빌드·푸시
+  ./auto deploy reset [--env local|prod]                down --volumes → migrate → up proxy
   ./auto cleanup                     빌드 산출물 정리
 
 세부 옵션은 각 명령 뒤에 `--help`를 붙여 확인하세요. 예) `./auto dev --help`, `./auto tests core --help`
@@ -860,8 +860,8 @@ def build_parser() -> argparse.ArgumentParser:
             "\n"
             "주요 플로우 예시:\n"
             "  ./auto dev warmup [--refresh] [--with-playwright]  # Gradle/Node 캐시 및 (옵션) Playwright 설치\n"
-            "  ./auto dev up                  # 개발용 Docker 서비스 기동\n"
-            "  ./auto dev backend             # Spring Boot 서버 실행\n"
+            "  ./auto dev up [--env local|prod]                  # 개발용 Docker 서비스 기동\n"
+            "  ./auto dev backend [--env local|prod]             # Spring Boot 서버 실행\n"
             "  ./auto dev kill-ports          # 지정한 포트를 한 번에 정리\n"
             "  ./auto tests core              # 백엔드·프론트·Playwright 번들 테스트\n"
         ),

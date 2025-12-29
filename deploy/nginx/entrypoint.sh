@@ -35,7 +35,7 @@ if [ "$ENABLE_TLS" = "true" ]; then
     else
       cat >&2 <<EOF
 [proxy] $TLS_DOMAIN 인증서를 찾을 수 없습니다.
-먼저 ./auto deploy tls issue --domain $TLS_DOMAIN --email <EMAIL> 명령으로 Let's Encrypt 인증서를 발급하세요.
+먼저 ./auto deploy tls issue --env prod --domain $TLS_DOMAIN --email <EMAIL> 명령으로 Let's Encrypt 인증서를 발급하세요.
 EOF
       exit 1
     fi
