@@ -2,7 +2,7 @@
 # 멀티스테이지 빌드로 최적화된 이미지 생성
 
 # 빌드 스테이지
-FROM eclipse-temurin:21-jdk-alpine AS builder
+FROM eclipse-temurin:25-jdk-alpine-3.22 AS builder
 # 작업 디렉토리 설정
 WORKDIR /app
 
@@ -26,7 +26,7 @@ COPY src/ src/
 RUN ./gradlew build -x test -x generateGitProperties --no-daemon
 
 # 실행 스테이지
-FROM eclipse-temurin:21-jre-jammy
+FROM eclipse-temurin:25-jre-jammy
 
 # 작업 디렉토리 설정
 WORKDIR /app

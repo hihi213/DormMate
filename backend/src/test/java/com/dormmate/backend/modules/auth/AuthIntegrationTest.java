@@ -7,10 +7,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
+import com.dormmate.backend.support.TestUserFactory;
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,6 +25,8 @@ import org.springframework.test.web.servlet.MvcResult;
 class AuthIntegrationTest extends AbstractPostgresIntegrationTest {
 
     private static final String ADMIN_DEVICE_ID = "mock-admin-device";
+    private static final String ADMIN_LOGIN_ID = "test-admin";
+    private static final String ADMIN_PASSWORD = "admin1!";
 
     @Autowired
     private MockMvc mockMvc;
@@ -32,6 +36,14 @@ class AuthIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private DormUserRepository dormUserRepository;
+
+    @Autowired
+    private TestUserFactory testUserFactory;
+
+    @BeforeEach
+    void setUp() {
+        testUserFactory.ensureAdmin(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
+    }
 
     @Test
     void loginWithSeedAdminReturnsTokenAndProfile() throws Exception {
@@ -56,7 +68,7 @@ class AuthIntegrationTest extends AbstractPostgresIntegrationTest {
                                 .header("Authorization", "Bearer " + accessToken)
                 )
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.loginId").value("dormmate"))
+                .andExpect(jsonPath("$.loginId").value(ADMIN_LOGIN_ID))
                 .andExpect(jsonPath("$.isAdmin").value(true));
     }
 
@@ -134,16 +146,16 @@ class AuthIntegrationTest extends AbstractPostgresIntegrationTest {
                                 .contentType(MediaType.APPLICATION_JSON)
                                 .content("""
                                         {
-                                          "loginId": "dormmate",
-                                          "password": "admin1!",
+                                          "loginId": "%s",
+                                          "password": "%s",
                                           "deviceId": "%s"
                                         }
-                                        """.formatted(ADMIN_DEVICE_ID))
+                                        """.formatted(ADMIN_LOGIN_ID, ADMIN_PASSWORD, ADMIN_DEVICE_ID))
                 )
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.tokens.accessToken").isNotEmpty())
                 .andExpect(jsonPath("$.tokens.refreshToken").isNotEmpty())
-                .andExpect(jsonPath("$.user.loginId").value("dormmate"))
+                .andExpect(jsonPath("$.user.loginId").value(ADMIN_LOGIN_ID))
                 .andReturn();
 
         return objectMapper.readTree(result.getResponse().getContentAsString());

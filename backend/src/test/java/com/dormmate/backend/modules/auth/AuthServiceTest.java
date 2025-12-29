@@ -17,7 +17,9 @@ import com.dormmate.backend.modules.auth.application.AuthService;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.UserSessionRepository;
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
+import com.dormmate.backend.support.TestUserFactory;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -25,6 +27,9 @@ import org.springframework.web.server.ResponseStatusException;
 
 @SpringBootTest
 class AuthServiceTest extends AbstractPostgresIntegrationTest {
+
+    private static final String ADMIN_LOGIN_ID = "test-admin";
+    private static final String ADMIN_PASSWORD = "admin1!";
 
     @Autowired
     AuthService authService;
@@ -35,15 +40,23 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
     @Autowired
     UserSessionRepository userSessionRepository;
 
+    @Autowired
+    TestUserFactory testUserFactory;
+
+    @BeforeEach
+    void setUp() {
+        testUserFactory.ensureAdmin(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
+    }
+
     @Test
     void loginSucceedsWithSeedAdmin() {
-        var response = authService.login(new LoginRequest("dormmate", "admin1!", "seed-device"));
-        assertThat(response.user().loginId()).isEqualTo("dormmate");
+        var response = authService.login(new LoginRequest(ADMIN_LOGIN_ID, ADMIN_PASSWORD, "seed-device"));
+        assertThat(response.user().loginId()).isEqualTo(ADMIN_LOGIN_ID);
     }
 
     @Test
     void loginStoresDeviceIdAndRevokesExpiredSessions() {
-        DormUser admin = dormUserRepository.findByLoginIdIgnoreCase("dormmate").orElseThrow();
+        DormUser admin = dormUserRepository.findByLoginIdIgnoreCase(ADMIN_LOGIN_ID).orElseThrow();
 
         UserSession expired = new UserSession();
         expired.setDormUser(admin);
@@ -54,7 +67,7 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
         expired.setDeviceId("legacy-device");
         userSessionRepository.save(expired);
 
-        var response = authService.login(new LoginRequest("dormmate", "admin1!", "  ios-device-1234567890   "));
+        var response = authService.login(new LoginRequest(ADMIN_LOGIN_ID, ADMIN_PASSWORD, "  ios-device-1234567890   "));
 
         UserSession freshSession = userSessionRepository.findByRefreshTokenHash(hashToken(response.tokens().refreshToken())).orElseThrow();
         assertThat(freshSession.getDeviceId()).isEqualTo("ios-device-1234567890");
@@ -69,7 +82,7 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void refreshFailsWhenDeviceChanges() {
-        var login = authService.login(new LoginRequest("dormmate", "admin1!", "web-browser"));
+        var login = authService.login(new LoginRequest(ADMIN_LOGIN_ID, ADMIN_PASSWORD, "web-browser"));
         String refreshToken = login.tokens().refreshToken();
 
         ResponseStatusException exception = assertThrows(
@@ -85,7 +98,7 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void refreshFailsWhenDeviceIdMissing() {
-        var login = authService.login(new LoginRequest("dormmate", "admin1!", "macbook-pro"));
+        var login = authService.login(new LoginRequest(ADMIN_LOGIN_ID, ADMIN_PASSWORD, "macbook-pro"));
         String refreshToken = login.tokens().refreshToken();
 
         ResponseStatusException exception = assertThrows(
@@ -100,7 +113,7 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void refreshFailsWhenSessionHasMissingDeviceId() {
-        var login = authService.login(new LoginRequest("dormmate", "admin1!", "surface-pro"));
+        var login = authService.login(new LoginRequest(ADMIN_LOGIN_ID, ADMIN_PASSWORD, "surface-pro"));
         String refreshToken = login.tokens().refreshToken();
 
         UserSession session = userSessionRepository.findByRefreshTokenHash(hashToken(refreshToken)).orElseThrow();

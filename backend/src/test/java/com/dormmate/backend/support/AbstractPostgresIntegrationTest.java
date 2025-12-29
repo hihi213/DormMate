@@ -12,6 +12,7 @@ import org.springframework.jdbc.datasource.init.ScriptException;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
@@ -29,6 +30,43 @@ public abstract class AbstractPostgresIntegrationTest {
     private static boolean initialized = false;
 
     static {
+        // Prefer system properties (from Gradle -D) over environment variables
+        // System properties are set by build.gradle from cli.py's -D options
+        String dockerHost = System.getProperty("docker.host");
+        if (dockerHost == null || dockerHost.isBlank()) {
+            dockerHost = System.getenv("DOCKER_HOST");
+        }
+        if (dockerHost != null && !dockerHost.isBlank()) {
+            System.setProperty("docker.host", dockerHost);
+        }
+        
+        String socketOverride = System.getProperty("testcontainers.docker.socket.override");
+        if (socketOverride == null || socketOverride.isBlank()) {
+            socketOverride = System.getenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE");
+        }
+        if (socketOverride != null && !socketOverride.isBlank()) {
+            System.setProperty("testcontainers.docker.socket.override", socketOverride);
+        }
+        
+        String apiVersion = System.getProperty("docker.api.version");
+        if (apiVersion == null || apiVersion.isBlank()) {
+            apiVersion = System.getenv("DOCKER_API_VERSION");
+        }
+        if (apiVersion == null || apiVersion.isBlank()) {
+            apiVersion = "1.44";
+        }
+        System.setProperty("docker.api.version", apiVersion);
+        // Force docker-java to use the specified API version
+        System.setProperty("docker.client.apiVersion", apiVersion);
+        System.setProperty("com.github.dockerjava.api.version", apiVersion);
+        System.setProperty("DOCKER_API_VERSION", apiVersion);
+        System.setProperty("api.version", apiVersion);
+        
+        System.setProperty(
+                "testcontainers.docker.client.strategy",
+                "org.testcontainers.dockerclient.EnvironmentAndSystemPropertyClientProviderStrategy"
+        );
+        logDockerDiagnostics();
         POSTGRES.start();
     }
 
@@ -78,6 +116,22 @@ public abstract class AbstractPostgresIntegrationTest {
         remainder.migrate();
 
         ensureCompartmentAccessCoverage();
+    }
+
+    private static void logDockerDiagnostics() {
+        try {
+            System.out.println("[testcontainers] DOCKER_HOST=" + System.getenv("DOCKER_HOST"));
+            System.out.println("[testcontainers] DOCKER_API_VERSION=" + System.getenv("DOCKER_API_VERSION"));
+            System.out.println("[testcontainers] docker.api.version=" + System.getProperty("docker.api.version"));
+            System.out.println("[testcontainers] TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="
+                    + System.getenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE"));
+            System.out.println("[testcontainers] testcontainers.docker.socket.override="
+                    + System.getProperty("testcontainers.docker.socket.override"));
+            DockerClientFactory factory = DockerClientFactory.instance();
+            System.out.println("[testcontainers] dockerHost=" + factory.getTransportConfig().getDockerHost());
+        } catch (Exception ex) {
+            System.out.println("[testcontainers] diagnostics failed: " + ex.getMessage());
+        }
     }
 
     private static void applyRepeatableSeed() {

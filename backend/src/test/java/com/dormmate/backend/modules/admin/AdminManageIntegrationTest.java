@@ -18,6 +18,7 @@ import com.dormmate.backend.modules.auth.domain.DormUserStatus;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.DormUserRepository;
 import com.dormmate.backend.modules.auth.infrastructure.persistence.UserRoleRepository;
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
+import com.dormmate.backend.support.TestUserFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -35,6 +36,8 @@ import org.springframework.test.web.servlet.MvcResult;
 class AdminManageIntegrationTest extends AbstractPostgresIntegrationTest {
 
     private static final String FLOOR_MANAGER_ROLE = "FLOOR_MANAGER";
+    private static final String ADMIN_LOGIN_ID = "test-admin";
+    private static final String ADMIN_PASSWORD = "admin1!";
 
     @Autowired
     private MockMvc mockMvc;
@@ -48,11 +51,18 @@ class AdminManageIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private UserRoleRepository userRoleRepository;
 
+    @Autowired
+    private TestUserFactory testUserFactory;
+
     private String adminToken;
 
     @BeforeEach
     void setUp() throws Exception {
-        adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        testUserFactory.ensureAdmin(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
+        ensureResident(FLOOR2_ROOM05_SLOT3);
+        ensureResident(FLOOR2_ROOM17_SLOT2);
+        ensureResident(FLOOR3_ROOM05_SLOT1);
+        adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
     }
 
     @Test
@@ -164,5 +174,12 @@ class AdminManageIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andReturn();
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
         return response.path("tokens").path("accessToken").asText();
+    }
+
+    private void ensureResident(String loginId) {
+        String roomNumber = loginId.split("-")[0];
+        short floor = Short.parseShort(roomNumber.substring(0, 1));
+        short personalNo = Short.parseShort(loginId.split("-")[1]);
+        testUserFactory.ensureResident(loginId, "user2025!", floor, roomNumber, personalNo);
     }
 }

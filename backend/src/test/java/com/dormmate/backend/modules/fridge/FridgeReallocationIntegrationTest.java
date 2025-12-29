@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
+import com.dormmate.backend.support.TestUserFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -35,6 +36,8 @@ import org.springframework.test.web.servlet.MvcResult;
 class FridgeReallocationIntegrationTest extends AbstractPostgresIntegrationTest {
 
     private static final short FLOOR_2 = 2;
+    private static final String ADMIN_LOGIN_ID = "test-admin";
+    private static final String ADMIN_PASSWORD = "admin1!";
 
     @Autowired
     private MockMvc mockMvc;
@@ -45,12 +48,17 @@ class FridgeReallocationIntegrationTest extends AbstractPostgresIntegrationTest 
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private TestUserFactory testUserFactory;
+
     private String adminToken;
     private String residentToken;
 
     @BeforeEach
     void setUp() throws Exception {
-        adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        testUserFactory.ensureAdmin(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
+        ensureResident(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+        adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
     }
 
@@ -148,8 +156,9 @@ class FridgeReallocationIntegrationTest extends AbstractPostgresIntegrationTest 
         JsonNode chillAllocation = findFirstChillAllocation(allocations);
         UUID compartmentId = UUID.fromString(chillAllocation.path("compartmentId").asText());
         UUID adminId = jdbcTemplate.queryForObject(
-                "SELECT id FROM dorm_user WHERE login_id = 'dormmate'",
-                (rs, rowNum) -> UUID.fromString(rs.getString("id"))
+                "SELECT id FROM dorm_user WHERE login_id = ?",
+                (rs, rowNum) -> UUID.fromString(rs.getString("id")),
+                ADMIN_LOGIN_ID
         );
 
         ObjectNode applyPayload = buildApplyPayload(FLOOR_2, allocations);
@@ -369,5 +378,12 @@ class FridgeReallocationIntegrationTest extends AbstractPostgresIntegrationTest 
 
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
         return response.path("tokens").path("accessToken").asText();
+    }
+
+    private void ensureResident(String loginId, String password) {
+        String roomNumber = loginId.split("-")[0];
+        short floor = Short.parseShort(roomNumber.substring(0, 1));
+        short personalNo = Short.parseShort(loginId.split("-")[1]);
+        testUserFactory.ensureResident(loginId, password, floor, roomNumber, personalNo);
     }
 }

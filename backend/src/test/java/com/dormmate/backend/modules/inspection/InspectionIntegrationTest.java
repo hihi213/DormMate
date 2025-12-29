@@ -19,6 +19,7 @@ import com.dormmate.backend.modules.inspection.application.InspectionService;
 import com.dormmate.backend.modules.inspection.domain.InspectionScheduleStatus;
 import com.dormmate.backend.modules.inspection.domain.InspectionStatus;
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
+import com.dormmate.backend.support.TestUserFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -47,6 +48,8 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
 
     private static final int FLOOR_2 = 2;
     private static final int SLOT_INDEX_A = 0;
+    private static final String ADMIN_LOGIN_ID = "test-admin";
+    private static final String ADMIN_PASSWORD = "admin1!";
 
     @Autowired
     private MockMvc mockMvc;
@@ -66,6 +69,9 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private InspectionService inspectionService;
 
+    @Autowired
+    private TestUserFactory testUserFactory;
+
     private String managerToken;
     private String residentToken;
     private String adminToken;
@@ -77,9 +83,12 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
     @BeforeEach
     void setUp() throws Exception {
         bundlesToCleanup = new ArrayList<>();
+        ensureResidentWithRole(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD, "FLOOR_MANAGER", "층장");
+        ensureResident(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+        testUserFactory.ensureAdmin(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         managerToken = login(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD);
         residentToken = login(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
-        adminToken = login("dormmate", "admin1!");
+        adminToken = login(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         slot2FAId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
         residentId = fetchUserId(FLOOR2_ROOM05_SLOT1);
         residentRoomId = ensureResidentAssignment(residentId);
@@ -665,6 +674,22 @@ class InspectionIntegrationTest extends AbstractPostgresIntegrationTest {
                 floorNo,
                 slotIndex
         );
+    }
+
+    private void ensureResident(String loginId, String password) {
+        String roomNumber = loginId.split("-")[0];
+        short floor = Short.parseShort(roomNumber.substring(0, 1));
+        short personalNo = Short.parseShort(loginId.split("-")[1]);
+        testUserFactory.ensureResident(loginId, password, floor, roomNumber, personalNo);
+    }
+
+    private void ensureResidentWithRole(String loginId, String password, String roleCode, String roleName) {
+        var resident = testUserFactory.ensureResident(loginId, password,
+                Short.parseShort(loginId.split("-")[0].substring(0, 1)),
+                loginId.split("-")[0],
+                Short.parseShort(loginId.split("-")[1]));
+        testUserFactory.ensureRole(roleCode, roleName);
+        testUserFactory.grantRole(resident, roleCode);
     }
 
     private UUID fetchRoomId(int floorNo, String roomNumber) {

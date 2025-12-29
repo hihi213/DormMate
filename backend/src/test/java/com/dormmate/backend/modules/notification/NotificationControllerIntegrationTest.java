@@ -16,6 +16,7 @@ import com.dormmate.backend.modules.notification.domain.NotificationState;
 import com.dormmate.backend.modules.notification.infrastructure.persistence.NotificationPreferenceRepository;
 import com.dormmate.backend.modules.notification.infrastructure.persistence.NotificationRepository;
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
+import com.dormmate.backend.support.TestUserFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -55,11 +56,15 @@ class NotificationControllerIntegrationTest extends AbstractPostgresIntegrationT
     @Autowired
     private DormUserRepository dormUserRepository;
 
+    @Autowired
+    private TestUserFactory testUserFactory;
+
     private DormUser resident;
     private String residentToken;
 
     @BeforeEach
     void setUp() throws Exception {
+        ensureResident(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         resident = dormUserRepository.findByLoginIdIgnoreCase(FLOOR2_ROOM05_SLOT1)
                 .orElseThrow(() -> new IllegalStateException("primary resident user not found"));
         residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
@@ -226,5 +231,12 @@ class NotificationControllerIntegrationTest extends AbstractPostgresIntegrationT
 
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
         return response.path("tokens").path("accessToken").asText();
+    }
+
+    private void ensureResident(String loginId, String password) {
+        String roomNumber = loginId.split("-")[0];
+        short floor = Short.parseShort(roomNumber.substring(0, 1));
+        short personalNo = Short.parseShort(loginId.split("-")[1]);
+        testUserFactory.ensureResident(loginId, password, floor, roomNumber, personalNo);
     }
 }

@@ -29,7 +29,11 @@ DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위�
 ## 빠른 시작
 
 ```bash
-# 개발용 DB/Redis 기동 (애플리케이션은 로컬에서 직접 실행, 필요 시 env.sample를 .env.local로 복사)
+# 로컬 env 준비 (최초 1회)
+touch deploy/.env.local
+# 운영용 env는 키만 유지하고 값은 배포 직전에 채웁니다.
+
+# 개발용 DB/Redis 기동 (애플리케이션은 로컬에서 직접 실행)
 docker compose --env-file deploy/.env.local up -d db redis
 
 # 운영과 동일한 전체 스택(prod 파일 포함) 기동
@@ -37,22 +41,22 @@ docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compo
 # proxy 서비스만 명시하면 depends_on에 의해 app/frontend도 함께 기동됩니다.
 
 # 동일 작업을 자동화 스크립트로 실행하려면:
-./auto deploy up --build [--push]
+./auto deploy up --build [--push] --env prod
 
 # (DB 초기화 포함) 전체 스택을 재기동하려면:
-./auto deploy reset --build [--push]
+./auto deploy reset --build [--push] --env prod
 
 # 또는 자동화 스크립트 사용
-./auto dev up
+./auto dev up --env local
 
 # 스키마 마이그레이션 적용
-./auto db migrate
+./auto db migrate --env local
 
 # (최초 1회) 의존성 사전 설치 (Playwright 필요 시 --with-playwright 추가)
 ./scripts/dev-warmup.sh
 
 # 백엔드 애플리케이션 실행
-./auto dev backend  # 또는 cd backend && ./gradlew bootRun
+./auto dev backend --env local
 
 # 프론트엔드 개발 서버 (API_BASE 필요 시 .env.local에서 지정)
 cd frontend && npm install && npm run dev
@@ -60,9 +64,9 @@ cd frontend && npm install && npm run dev
 
 > proxy 컨테이너는 기본적으로 호스트 8080/8443 포트를 사용합니다. 운영 서버에서는 `deploy/.env.prod`에서 `PROXY_HTTP_PORT=80`, `PROXY_HTTPS_PORT=443`으로 바꿔두면 됩니다.
 >
-> HTTPS를 활성화하려면 `ENABLE_TLS=true`, `SERVER_NAME=<도메인>`, `TLS_DOMAIN=<도메인>`, `TLS_EMAIL=<연락 이메일>`, `TLS_SELF_SIGNED=false`, `PROXY_HTTPS_PORT=443`을 지정한 뒤 한 번만 `./auto deploy tls issue --domain <도메인> --email <이메일>`을 실행해 인증서를 발급하세요. 이후에는 `./auto deploy tls renew`만 주기적으로 실행하면 됩니다(예: cron). 셀프사인(`TLS_SELF_SIGNED=true`)은 데모/로컬 전용입니다.
+> HTTPS를 활성화하려면 `ENABLE_TLS=true`, `SERVER_NAME=<도메인>`, `TLS_DOMAIN=<도메인>`, `TLS_EMAIL=<연락 이메일>`, `TLS_SELF_SIGNED=false`, `PROXY_HTTPS_PORT=443`을 지정한 뒤 한 번만 `./auto deploy tls issue --env prod --domain <도메인> --email <이메일>`을 실행해 인증서를 발급하세요. 이후에는 `./auto deploy tls renew --env prod`만 주기적으로 실행하면 됩니다(예: cron). 셀프사인(`TLS_SELF_SIGNED=true`)은 데모/로컬 전용입니다.
 >
-> 헬스체크는 `/healthz`(백엔드)와 `/frontend-healthz`(프런트) 두 엔드포인트를 통해 분리 확인할 수 있습니다. proxy 컨테이너도 동일 경로를 그대로 노출합니다.
+> 헬스체크는 `http://localhost:8080/healthz`(백엔드)와 `http://localhost:8080/frontend-healthz`(프런트) 두 엔드포인트로 분리 확인할 수 있습니다. proxy 컨테이너도 동일 경로를 그대로 노출합니다.
 
 > DB 컨테이너는 5432 포트를 호스트에 노출합니다. 로컬 툴(IDE, psql)에서는 `localhost:5432`로 접속하고, 다른 컨테이너에서 접근할 때는 `db:5432` 호스트명을 사용하세요. 필요한 환경 변수 목록은 `backend/ENV_SETUP.md`를 참고해 `deploy/.env.prod`를 작성하세요.
 
@@ -71,16 +75,17 @@ cd frontend && npm install && npm run dev
 Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` 디렉터리를 참고하세요.
 
 ## 자동화 명령 요약
+> 모든 명령은 `--env local|prod` 또는 `--env-file <path>`로 명시 실행하는 것을 표준으로 한다.
 
 - `./auto dev warmup [--refresh] [--with-playwright]`: Gradle/Node 의존성 사전 준비(Playwright 브라우저 설치는 `--with-playwright` 사용, `scripts/dev-warmup.sh`는 이 명령을 위임 실행)
-- `./auto dev up` / `./auto dev down`: 개발용 Docker 서비스 기동·종료
-- `./auto dev backend` / `./auto dev frontend`: Spring Boot · Next.js 개발 서버 실행
+- `./auto dev up --env local` / `./auto dev down --env local`: 개발용 Docker 서비스 기동·종료
+- `./auto dev backend --env local` / `./auto dev frontend --env local`: Spring Boot · Next.js 개발 서버 실행
 - `./auto dev kill-ports [--ports 3000 8080 …]`: 지정한 포트(미지정 시 3000~3003, 8080)를 점유한 프로세스를 정리
 - `./auto tests core [--skip-backend --skip-frontend --skip-playwright --full-playwright]`: Step6 테스트 번들(Gradle은 오프라인 우선, 실패 시 의존성 갱신)
 - `./auto tests backend|frontend|playwright`: 개별 계층 테스트(`backend`는 오프라인 → 리프레시 순으로 자동 시도, `frontend`는 `npm run lint` 실행)
-- `./auto db migrate [--repair] [--env-file deploy/.env.prod]`: Flyway 마이그레이션 / 필요 시 `flywayRepair`
-- `./auto deploy up|down|status|reset`: 운영용 docker-compose(prod) 스택 제어 (프론트·프록시 포함)
-- `./auto deploy tls issue|renew`: Let's Encrypt 인증서 발급/갱신 헬퍼(`certbot` webroot 방식)
+- `./auto db migrate [--repair] --env <local|prod>`: Flyway 마이그레이션 / 필요 시 `flywayRepair`
+- `./auto deploy up|down|status|reset --env <local|prod>`: 운영용 docker-compose(prod) 스택 제어 (프론트·프록시 포함)
+- `./auto deploy tls issue|renew --env <local|prod>`: Let's Encrypt 인증서 발급/갱신 헬퍼(`certbot` webroot 방식)
 - `./auto cleanup`: 빌드 산출물 정리
 - `./auto state show` / `./auto state update --notes "..."`
   : Codex 상태 기록 및 Verify & Record 단계 메모 업데이트
@@ -98,7 +103,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
    ```
 3. 확장 e2e를 돌리려면 `./auto tests core --full-playwright` 또는 `npm run playwright:test --prefix frontend`를 사용하세요. CI에서는 Playwright 브라우저를 설치한 뒤 동일 명령을 실행하며, 베이스 URL은 `PLAYWRIGHT_BASE_URL` 환경 변수로 덮어쓸 수 있습니다(기본값 `http://localhost:3000`).
 
-> ❗️ 모든 Playwright 실행은 Next.js 앱이 기동된 상태를 전제로 합니다. `docker compose up` 또는 `npm run dev` 등으로 서비스가 준비됐는지 확인하세요.
+> ❗️ 모든 Playwright 실행은 Next.js 앱이 기동된 상태를 전제로 합니다. `./auto dev up --env local` 또는 `npm run dev` 등으로 서비스가 준비됐는지 확인하세요.
 
 ## 배포 체크리스트 (MVP)
 
@@ -116,12 +121,13 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
    ```bash
    docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d proxy
    # proxy 기동 시 backend/frontend 컨테이너가 함께 올라갑니다.
-   # 또는 ./auto deploy up --build
+   # 또는 ./auto deploy up --build --env prod
    ```
 4. 실패 시 롤백  
    ```bash
    docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml down
-   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d proxy --build --no-cache  # 안정 버전으로 재배포
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml build --no-cache app frontend
+   docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d proxy --build  # 안정 버전으로 재배포
    ```
 
 > 운영 배포 전에는 `./auto tests core --full-playwright` 결과를 확인하세요.
@@ -136,34 +142,34 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
    git pull
    ```
 2. **환경 변수 확인**
-   - `deploy/.env.prod` 내용을 로컬과 동일하게 업데이트하고 `chmod 600 deploy/.env.prod`.
+   - `deploy/.env.prod`는 키만 유지하고 값은 배포 직전에 채운다. `chmod 600 deploy/.env.prod`.
    - 비밀번호나 도메인이 변경됐다면 GitHub Secrets(`ENV_FILE_CONTENTS`)도 함께 갱신.
 3. **데이터베이스 마이그레이션**
    ```bash
-   ./auto db migrate                 # 실패 시 ./auto db migrate --repair 후 재실행
+   ./auto db migrate --env prod                 # 실패 시 ./auto db migrate --repair --env prod 후 재실행
    ```
-   - DB 초기화가 필요하면 `./auto deploy reset --build`를 사용하면 된다.
+   - DB 초기화가 필요하면 `./auto deploy reset --build --env prod`를 사용하면 된다.
 4. **스택 재배포**
    ```bash
-   ./auto deploy down                # 필요 시 --volumes 제거 가능
-   ./auto deploy up --build          # 이미지 빌드 후 proxy(app/frontend) 기동
+   ./auto deploy down --env prod                # 필요 시 --volumes 제거 가능
+   ./auto deploy up --build --env prod          # 이미지 빌드 후 proxy(app/frontend) 기동
    ```
    - 이미지 push/pull이 필요하면 `--push`, `--pull` 옵션을 추가한다.
 5. **검증**
    ```bash
-   ./auto deploy status
+   ./auto deploy status --env prod
    curl http://<서버IP>/healthz
    curl http://<서버IP>/frontend-healthz
    ```
    - 브라우저에서 `http://<서버IP>` 접속 후 로그인/주요 기능 확인.
 6. **문제 발생 시 정리**
    ```bash
-   ./auto deploy down --volumes --remove-orphans
+   ./auto deploy down --volumes --remove-orphans --env prod
    ```
    - 포트 충돌 시 `sudo systemctl stop nginx` 또는 `PROXY_HTTP_PORT` 변경.
    - 디스크 부족 시 `docker system prune -af`, `docker volume prune` 등으로 공간 확보 후 다시 실행.
 
-> `./auto deploy up --build`를 기준 흐름으로 사용하면 로컬과 동일한 환경이 서버에도 재현된다.
+> `./auto deploy up --build --env prod`를 기준 흐름으로 사용하면 로컬과 동일한 환경이 서버에도 재현된다.
 
 ## 추가 문서
 
