@@ -30,7 +30,6 @@ configurations.maybeCreate('flyway')
 // Vulnerability fixes: override managed dependency versions.
 ext['spring-security.version'] = '6.3.4'
 ext['tomcat.version'] = '10.1.35'
-ext['testcontainers.version'] = '1.20.4'
 
 // group, version: Maven이나 Ivy 같은 저장소에서 이 프로젝트를 고유하게 식별하기 위한 좌표입니다.
 // com.dormmate 그룹의 0.0.1-SNAPSHOT 버전을 의미합니다.
@@ -67,7 +66,6 @@ repositories {
 
 // dependencies: 이 프로젝트가 필요로 하는 라이브러리(의존성) 목록입니다.
 dependencies {
-    testImplementation platform("org.testcontainers:testcontainers-bom:${project.ext['testcontainers.version']}")
     // Spring Boot Starters
     // Spring Boot Starter는 특정 기능에 필요한 의존성들을 모아놓은 '꾸러미'입니다.
     // JPA(Java Persistence API)를 사용하기 위한 스타터. Hibernate, Spring Data JPA 등이 포함됩니다.
@@ -128,18 +126,8 @@ dependencies {
     // testRuntimeOnly: 테스트를 실행하는 시점에만 필요한 의존성입니다.
     // JUnit Platform을 실행하는 런처 역할을 합니다.
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-    // Use latest Testcontainers version (1.20.7+) with updated docker-java
-    testImplementation("org.testcontainers:testcontainers:${project.ext['testcontainers.version']}") {
-        exclude group: 'com.github.docker-java', module: 'docker-java-transport-zerodep'
-    }
-    testImplementation "org.testcontainers:junit-jupiter:${project.ext['testcontainers.version']}"
-    testImplementation "org.testcontainers:postgresql:${project.ext['testcontainers.version']}"
-    // Force latest docker-java versions to support Docker API 1.44+
-    // Testcontainers 1.20.7 uses docker-java 3.4.1+ which supports API 1.44+
-    testImplementation 'com.github.docker-java:docker-java-api:3.4.1'
-    testImplementation 'com.github.docker-java:docker-java-core:3.4.1'
-    testImplementation 'com.github.docker-java:docker-java-transport-zerodep:3.4.1'
-    testImplementation 'com.github.docker-java:docker-java-transport-httpclient5:3.4.1'
+    testImplementation 'org.testcontainers:junit-jupiter'
+    testImplementation 'org.testcontainers:postgresql'
 }
 
 // tasks: Gradle이 수행하는 작업(Task)의 설정을 변경합니다.
@@ -147,27 +135,6 @@ tasks.named('test') {
     // 'test'라는 이름의 Task를 찾아서 설정을 추가합니다.
     // JUnit 5를 테스트 프레임워크로 사용하도록 지정합니다.
     useJUnitPlatform()
-    // Prefer system properties (from Gradle -D) over environment variables
-    // System properties are set by cli.py via Gradle -D options
-    def dockerApiVersion = System.getProperty("docker.api.version") 
-        ?: System.getenv("DOCKER_API_VERSION") 
-        ?: "1.52"
-    def dockerHost = System.getProperty("docker.host") 
-        ?: System.getenv("DOCKER_HOST")
-    def dockerSocketOverride = System.getProperty("testcontainers.docker.socket.override")
-        ?: System.getenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE")
-    
-    // Set system properties for test JVM
-    systemProperty "docker.api.version", dockerApiVersion
-    if (dockerHost) {
-        systemProperty "docker.host", dockerHost
-        environment "DOCKER_HOST", dockerHost
-    }
-    if (dockerSocketOverride) {
-        systemProperty "testcontainers.docker.socket.override", dockerSocketOverride
-        environment "TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE", dockerSocketOverride
-    }
-    environment "DOCKER_API_VERSION", dockerApiVersion
 }
 
 tasks.withType(org.flywaydb.gradle.task.AbstractFlywayTask).configureEach {

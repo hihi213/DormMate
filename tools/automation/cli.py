@@ -8,12 +8,10 @@
 from __future__ import annotations
 
 import argparse
-import http.client
 import json
 import os
 import shutil
 import signal
-import socket
 import subprocess
 import sys
 import textwrap
@@ -69,7 +67,6 @@ def run_gradle_task(
     check: bool = True,
     offline: bool = False,
     refresh: bool = False,
-    env: Optional[dict[str, str]] = None,
 ) -> CommandResult:
     cmd = ["./gradlew"]
     if offline:
@@ -78,27 +75,8 @@ def run_gradle_task(
         cmd.append("--refresh-dependencies")
     if clean:
         cmd.append("clean")
-    # Add system properties directly to Gradle command
-    # This ensures they're passed to the test JVM even if daemon is already running
-    if env:
-        # Add Docker system properties from _DOCKER_SYSTEM_PROPS
-        docker_props = env.get("_DOCKER_SYSTEM_PROPS", "")
-        if docker_props:
-            for opt in docker_props.split():
-                if opt.startswith("-D"):
-                    cmd.append(opt)
-        # Also add from JAVA_TOOL_OPTIONS as fallback
-        java_opts = env.get("JAVA_TOOL_OPTIONS", "")
-        if java_opts:
-            for opt in java_opts.split():
-                if opt.startswith("-D") and opt not in cmd:
-                    cmd.append(opt)
     cmd.extend(tasks)
-    return run_command(cmd, cwd=BACKEND_DIR, check=check, env=env)
-
-
-def stop_gradle_daemons() -> None:
-    run_command(["./gradlew", "--stop"], cwd=BACKEND_DIR, check=False)
+    return run_command(cmd, cwd=BACKEND_DIR, check=check)
 
 
 def run_npm_command(*args: str, check: bool = True) -> CommandResult:
@@ -111,107 +89,6 @@ def npm_install() -> None:
 
 def npm_playwright_install() -> None:
     run_npm_command("run", "playwright:install")
-
-def _docker_env_overrides() -> dict[str, str]:
-    """Returns environment variables and system properties for Docker/Testcontainers."""
-    overrides: dict[str, str] = {}
-    # Docker Desktop on macOS: prefer docker.raw.sock for API access, then .docker/run/docker.sock
-    # docker-cli.sock is CLI-only and doesn't work with Testcontainers
-    docker_raw_sock = Path.home() / "Library/Containers/com.docker.docker/Data/docker.raw.sock"
-    docker_sock = Path.home() / ".docker" / "run" / "docker.sock"
-    preferred_sock = None
-    if docker_raw_sock.exists():
-        preferred_sock = docker_raw_sock
-    elif docker_sock.exists():
-        preferred_sock = docker_sock
-    
-    if preferred_sock and preferred_sock.exists():
-        docker_host = f"unix://{preferred_sock}"
-        overrides["DOCKER_HOST"] = docker_host
-        # Ryuk mounts the Docker socket; use the in-VM path to avoid host filesystem mounts.
-        overrides["TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE"] = "/var/run/docker.sock"
-        overrides["DOCKER_JAVA_PROPERTIES"] = str(Path.home() / ".docker-java.properties")
-        # Store system properties for direct Gradle -D option passing
-        overrides["_DOCKER_SYSTEM_PROPS"] = " ".join([
-            f"-Ddocker.host={docker_host}",
-            "-Dtestcontainers.docker.socket.override=/var/run/docker.sock",
-        ])
-    else:
-        overrides["_DOCKER_SYSTEM_PROPS"] = ""
-    
-    # Use a compatible API version for Docker Desktop/Testcontainers.
-    overrides.setdefault("DOCKER_API_VERSION", "1.44")
-    overrides["_DOCKER_SYSTEM_PROPS"] = (
-        overrides.get("_DOCKER_SYSTEM_PROPS", "")
-        + " -Ddocker.api.version=1.44 -Ddocker.client.apiVersion=1.44"
-        + " -Dcom.github.dockerjava.api.version=1.44 -DDOCKER_API_VERSION=1.44 -Dapi.version=1.44"
-    ).strip()
-    
-    base_java_opts = load_env_cache().get("JAVA_TOOL_OPTIONS", "")
-    existing_opts = base_java_opts.split() if base_java_opts else []
-    # Add Docker system properties to JAVA_TOOL_OPTIONS for test JVM
-    for opt in overrides["_DOCKER_SYSTEM_PROPS"].split():
-        if opt.startswith("-D"):
-            opt_key = opt.split("=")[0]
-            if not any(o.startswith(opt_key) for o in existing_opts):
-                existing_opts.append(opt)
-    if existing_opts:
-        overrides["JAVA_TOOL_OPTIONS"] = " ".join(existing_opts)
-    overrides.setdefault("TESTCONTAINERS_LOG_LEVEL", "DEBUG")
-    return overrides
-
-def _resolve_docker_socket() -> str:
-    docker_host = load_env_cache().get("DOCKER_HOST", "")
-    if docker_host.startswith("unix://"):
-        return docker_host.removeprefix("unix://")
-    # Fallback: try to find Docker Desktop socket on macOS
-    # Prefer docker.raw.sock for API access (docker-cli.sock is CLI-only)
-    docker_raw_sock = Path.home() / "Library/Containers/com.docker.docker/Data/docker.raw.sock"
-    docker_sock = Path.home() / ".docker" / "run" / "docker.sock"
-    if docker_raw_sock.exists():
-        return str(docker_raw_sock)
-    elif docker_sock.exists():
-        return str(docker_sock)
-    return "/var/run/docker.sock"
-
-
-def _probe_docker_info(sock_path: str) -> tuple[bool, str]:
-    try:
-        sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        sock.connect(sock_path)
-        conn = http.client.HTTPConnection("localhost")
-        conn.sock = sock
-        conn.request("GET", "/info")
-        resp = conn.getresponse()
-        body = resp.read().decode("utf-8", errors="replace")
-        if resp.status != 200:
-            return False, f"Docker API /info 응답이 비정상입니다. status={resp.status}"
-        if '"ServerVersion":""' in body or '"OperatingSystem":""' in body:
-            return False, "Docker API /info가 비어 있습니다. Docker Desktop 상태를 확인하세요."
-        return True, "ok"
-    except FileNotFoundError:
-        return False, f"Docker 소켓을 찾을 수 없습니다. ({sock_path})"
-    except ConnectionRefusedError:
-        return False, "Docker 소켓에 연결할 수 없습니다. Docker Desktop이 실행 중인지 확인하세요."
-    except OSError as exc:
-        return False, f"Docker API 호출 실패: {exc}"
-
-
-def _check_docker_info() -> tuple[bool, str]:
-    sock_path = _resolve_docker_socket()
-    docker_host = load_env_cache().get("DOCKER_HOST", "")
-    if docker_host:
-        print(f"ℹ️  Docker host: {docker_host}")
-    print(f"ℹ️  Docker socket: {sock_path}")
-    last_message = "Docker API 호출 실패"
-    for _ in range(20):
-        ok, message = _probe_docker_info(sock_path)
-        if ok:
-            return True, "ok"
-        last_message = message
-        time.sleep(0.5)
-    return False, last_message
-
 
 # ---------------------------------------------------------------------------
 # Codex state helpers
@@ -281,6 +158,12 @@ def _iter_env_files() -> list[Path]:
         if not override_path.is_absolute():
             override_path = (PROJECT_ROOT / override_path).resolve()
         env_files.append(override_path)
+    env_files.extend(
+        [
+            DEFAULT_ENV_FILE,
+            PROJECT_ROOT / ".env",
+        ]
+    )
     seen: set[Path] = set()
     ordered: list[Path] = []
     for path in env_files:
@@ -320,7 +203,7 @@ def _load_env_from_file(path: Path) -> dict[str, str]:
 
 
 def load_env_cache() -> dict[str, str]:
-    """시스템 환경을 기본으로 쓰고, 필요 시 DM_ENV_FILE만 병합한다."""
+    """deploy/.env.prod와 .env를 읽어 환경 변수를 통합한다."""
     global _ENV_CACHE, _ENV_WARNING_EMITTED, _JAVA_WARNING_EMITTED, _NODE_WARNING_EMITTED
     if _ENV_CACHE is not None:
         return _ENV_CACHE
@@ -329,8 +212,8 @@ def load_env_cache() -> dict[str, str]:
     env_files = _iter_env_files()
     for env_path in env_files:
         _apply_env_file(env_path, env)
-    if env_files and not _ENV_WARNING_EMITTED and not any(path.exists() for path in env_files):
-        print("ℹ️  DM_ENV_FILE이 지정됐지만 파일이 없어 시스템 환경 변수를 사용합니다.")
+    if not _ENV_WARNING_EMITTED and not any(path.exists() for path in env_files):
+        print("ℹ️  적용 가능한 env 파일이 없어 시스템 환경 변수를 사용합니다.")
         _ENV_WARNING_EMITTED = True
 
     path_entries = env.get("PATH", "").split(os.pathsep) if env.get("PATH") else []
@@ -364,13 +247,9 @@ def load_env_cache() -> dict[str, str]:
         env["PATH"] = os.pathsep.join(path_entries)
 
     if "DOCKER_HOST" not in env:
-        # Try Docker Desktop sockets in order of preference
-        # Prefer docker.raw.sock for API access (docker-cli.sock is CLI-only)
-        docker_raw_sock = Path.home() / "Library/Containers/com.docker.docker/Data/docker.raw.sock"
+        # Prefer ~/.docker/run/docker.sock to avoid docker.raw.sock mount issues
         docker_sock = Path.home() / ".docker" / "run" / "docker.sock"
-        if docker_raw_sock.exists():
-            env["DOCKER_HOST"] = f"unix://{docker_raw_sock}"
-        elif docker_sock.exists():
+        if docker_sock.exists():
             env["DOCKER_HOST"] = f"unix://{docker_sock}"
 
     _ENV_CACHE = env
@@ -457,24 +336,15 @@ def cmd_tests_core(args: argparse.Namespace) -> None:
 
 def gradle_tests(*, clean: bool) -> None:
     offline_first = os.environ.get("DM_GRADLE_OFFLINE_FIRST", "1") != "0"
-    docker_env = _docker_env_overrides()
-    # Stop daemons to ensure new environment variables are picked up
-    stop_gradle_daemons()
     if offline_first:
-        result = run_gradle_task("test", clean=clean, offline=True, check=False, env=docker_env)
+        result = run_gradle_task("test", clean=clean, offline=True, check=False)
         if result.returncode == 0:
             return
         print("ℹ️  오프라인 실행이 실패해 의존성을 새로 고칩니다.")
-        retry = run_gradle_task("test", clean=clean, refresh=True, env=docker_env, check=False)
-        if retry.returncode != 0:
-            stop_gradle_daemons()
-            raise subprocess.CalledProcessError(retry.returncode, retry.command)
+        run_gradle_task("test", clean=clean, refresh=True)
         return
 
-    result = run_gradle_task("test", clean=clean, env=docker_env, check=False)
-    if result.returncode != 0:
-        stop_gradle_daemons()
-        raise subprocess.CalledProcessError(result.returncode, result.command)
+    run_gradle_task("test", clean=clean)
 
 
 def npm_lint() -> None:
@@ -540,12 +410,6 @@ def cmd_dev_warmup(args: argparse.Namespace) -> None:
 
 
 def cmd_tests_backend(_: argparse.Namespace) -> None:
-    ok, message = _check_docker_info()
-    if not ok:
-        print("❌ Docker 접근 실패로 백엔드 테스트를 중단합니다.")
-        print(f"    {message}")
-        print("    해결 후 다시 실행하세요: ./auto tests backend")
-        return
     gradle_tests(clean=False)
     run_gradle_task("flywayInfo")
     persist_state(last_tests="auto tests backend")
@@ -570,7 +434,8 @@ def cmd_db_migrate(args: argparse.Namespace) -> None:
     env_file = resolve_env_file_option(
         env=args.env,
         env_file=args.env_file,
-        default=DEFAULT_ENV_FILE,
+        default=LOCAL_ENV_FILE,
+        fallback=DEFAULT_ENV_FILE,
     )
     script = BACKEND_DIR / "scripts" / "flyway.sh"
     if args.info:

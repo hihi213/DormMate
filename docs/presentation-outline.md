@@ -121,7 +121,7 @@ NotificationPreference는 임베디드 ID로 사용자·알림 종류를 묶고,
   - nginx(proxy)는 `/healthz`, `/frontend-healthz`를 그대로 프록시하여 외부에서 레이어별 상태를 한 번에 확인 가능.
 - TLS 구성
   - 초기에는 `ENABLE_TLS=false`로 HTTP만 사용. 도메인이 준비되면 `ENABLE_TLS=true`, `TLS_DOMAIN`, `TLS_EMAIL` 설정 후 `./auto deploy tls issue --domain <도메인> --email <이메일>`로 Let’s Encrypt 인증서 발급.
-  - 초기에는 `ENABLE_TLS=false`로 HTTP만 사용. 도메인이 준비되면 `ENABLE_TLS=true`, `TLS_DOMAIN`, `TLS_EMAIL` 설정 후 `./auto deploy tls issue --env prod --domain <도메인> --email <이메일>`로 Let’s Encrypt 인증서 발급.
+  - 초기에는 `ENABLE_TLS=false`로 HTTP만 사용. 도메인이 준비되면 `ENABLE_TLS=true`, `TLS_DOMAIN`, `TLS_EMAIL` 설정 후 `./auto deploy tls issue --domain <도메인> --email <이메일>`로 Let’s Encrypt 인증서 발급.
   - `TLS_SELF_SIGNED=true`인 경우, 인증서가 없으면 entrypoint에서 openssl을 사용해 임시 self-signed 인증서를 생성해 개발용 HTTPS 테스트 가능.
 - 로그/경고/운영 이슈 대응
   - `./auto` CLI에서 자주 만나는 오류에 대해 구체적인 안내를 추가 (예: ENOSPC 시 `docker system prune`, 포트 충돌 시 `sudo systemctl stop nginx`, Flyway 비번 mismatch 시 env 파일 점검).

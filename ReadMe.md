@@ -29,11 +29,7 @@ DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위�
 ## 빠른 시작
 
 ```bash
-# 로컬 env 준비 (최초 1회)
-touch deploy/.env.local
-# 운영용 env는 키만 유지하고 값은 배포 직전에 채웁니다.
-
-# 개발용 DB/Redis 기동 (애플리케이션은 로컬에서 직접 실행)
+# 개발용 DB/Redis 기동 (애플리케이션은 로컬에서 직접 실행, 필요 시 env.sample를 .env.local로 복사)
 docker compose --env-file deploy/.env.local up -d db redis
 
 # 운영과 동일한 전체 스택(prod 파일 포함) 기동
@@ -56,7 +52,7 @@ docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compo
 ./scripts/dev-warmup.sh
 
 # 백엔드 애플리케이션 실행
-./auto dev backend --env local
+./auto dev backend --env local  # 또는 cd backend && ./gradlew bootRun
 
 # 프론트엔드 개발 서버 (API_BASE 필요 시 .env.local에서 지정)
 cd frontend && npm install && npm run dev
@@ -76,6 +72,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
 
 ## 자동화 명령 요약
 > 모든 명령은 `--env local|prod` 또는 `--env-file <path>`로 명시 실행하는 것을 표준으로 한다.
+> 기본값: dev/db 명령은 `local`, deploy 명령은 `prod`.
 
 - `./auto dev warmup [--refresh] [--with-playwright]`: Gradle/Node 의존성 사전 준비(Playwright 브라우저 설치는 `--with-playwright` 사용, `scripts/dev-warmup.sh`는 이 명령을 위임 실행)
 - `./auto dev up --env local` / `./auto dev down --env local`: 개발용 Docker 서비스 기동·종료
@@ -121,7 +118,7 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
    ```bash
    docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d proxy
    # proxy 기동 시 backend/frontend 컨테이너가 함께 올라갑니다.
-   # 또는 ./auto deploy up --build --env prod
+  # 또는 ./auto deploy up --build --env prod
    ```
 4. 실패 시 롤백  
    ```bash
@@ -146,25 +143,25 @@ Flyway 마이그레이션 파일은 `backend/src/main/resources/db/migration` �
    - 비밀번호나 도메인이 변경됐다면 GitHub Secrets(`ENV_FILE_CONTENTS`)도 함께 갱신.
 3. **데이터베이스 마이그레이션**
    ```bash
-   ./auto db migrate --env prod                 # 실패 시 ./auto db migrate --repair --env prod 후 재실행
+  ./auto db migrate --env prod                 # 실패 시 ./auto db migrate --repair --env prod 후 재실행
    ```
-   - DB 초기화가 필요하면 `./auto deploy reset --build --env prod`를 사용하면 된다.
+- DB 초기화가 필요하면 `./auto deploy reset --build --env prod`를 사용하면 된다.
 4. **스택 재배포**
    ```bash
-   ./auto deploy down --env prod                # 필요 시 --volumes 제거 가능
-   ./auto deploy up --build --env prod          # 이미지 빌드 후 proxy(app/frontend) 기동
+  ./auto deploy down --env prod                # 필요 시 --volumes 제거 가능
+  ./auto deploy up --build --env prod          # 이미지 빌드 후 proxy(app/frontend) 기동
    ```
    - 이미지 push/pull이 필요하면 `--push`, `--pull` 옵션을 추가한다.
 5. **검증**
    ```bash
-   ./auto deploy status --env prod
+  ./auto deploy status --env prod
    curl http://<서버IP>/healthz
    curl http://<서버IP>/frontend-healthz
    ```
    - 브라우저에서 `http://<서버IP>` 접속 후 로그인/주요 기능 확인.
 6. **문제 발생 시 정리**
    ```bash
-   ./auto deploy down --volumes --remove-orphans --env prod
+  ./auto deploy down --volumes --remove-orphans --env prod
    ```
    - 포트 충돌 시 `sudo systemctl stop nginx` 또는 `PROXY_HTTP_PORT` 변경.
    - 디스크 부족 시 `docker system prune -af`, `docker volume prune` 등으로 공간 확보 후 다시 실행.

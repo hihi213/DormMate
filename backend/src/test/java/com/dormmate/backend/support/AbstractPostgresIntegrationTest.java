@@ -28,45 +28,17 @@ public abstract class AbstractPostgresIntegrationTest {
 
     private static final Object MIGRATION_LOCK = new Object();
     private static boolean initialized = false;
+    private static final boolean DOCKER_DIAGNOSTICS = Boolean.parseBoolean(
+            System.getProperty(
+                    "dm.docker.diagnostics",
+                    System.getenv().getOrDefault("DM_DOCKER_DIAGNOSTICS", "false")
+            )
+    );
 
     static {
-        // Prefer system properties (from Gradle -D) over environment variables
-        // System properties are set by build.gradle from cli.py's -D options
-        String dockerHost = System.getProperty("docker.host");
-        if (dockerHost == null || dockerHost.isBlank()) {
-            dockerHost = System.getenv("DOCKER_HOST");
+        if (DOCKER_DIAGNOSTICS) {
+            logDockerDiagnostics();
         }
-        if (dockerHost != null && !dockerHost.isBlank()) {
-            System.setProperty("docker.host", dockerHost);
-        }
-        
-        String socketOverride = System.getProperty("testcontainers.docker.socket.override");
-        if (socketOverride == null || socketOverride.isBlank()) {
-            socketOverride = System.getenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE");
-        }
-        if (socketOverride != null && !socketOverride.isBlank()) {
-            System.setProperty("testcontainers.docker.socket.override", socketOverride);
-        }
-        
-        String apiVersion = System.getProperty("docker.api.version");
-        if (apiVersion == null || apiVersion.isBlank()) {
-            apiVersion = System.getenv("DOCKER_API_VERSION");
-        }
-        if (apiVersion == null || apiVersion.isBlank()) {
-            apiVersion = "1.44";
-        }
-        System.setProperty("docker.api.version", apiVersion);
-        // Force docker-java to use the specified API version
-        System.setProperty("docker.client.apiVersion", apiVersion);
-        System.setProperty("com.github.dockerjava.api.version", apiVersion);
-        System.setProperty("DOCKER_API_VERSION", apiVersion);
-        System.setProperty("api.version", apiVersion);
-        
-        System.setProperty(
-                "testcontainers.docker.client.strategy",
-                "org.testcontainers.dockerclient.EnvironmentAndSystemPropertyClientProviderStrategy"
-        );
-        logDockerDiagnostics();
         POSTGRES.start();
     }
 

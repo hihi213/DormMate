@@ -29,6 +29,7 @@
   - `./auto tests backend|frontend|playwright`: 계층별 테스트
 - `./auto db migrate --env <local|prod>`, `./auto cleanup`, `./auto state show|update`
 - 명령 전체 목록은 `./auto --help`로 확인한다.
+- 기본값은 dev/db=`local`, deploy=`prod`이다.
 - CLI는 `.codex/state.json`에 현재 프로필, 테스트 결과, 메모를 저장하므로 수동으로 수정하지 않는다.
 - 세션 중 실행한 주요 명령과 결과는 PR/이슈 코멘트 또는 팀이 지정한 회고 문서에 요약해 다음 단계 준비를 원활히 한다.
 - `/admin/seed/fridge-demo`는 데모 전용 API이므로 어떤 자동화 스크립트·CI에서도 호출하지 않는다. 필요 시 운영자가 직접 실행하고, 실행 전후 점검은 아래 "데모 데이터 초기화" 섹션을 따른다.
@@ -42,14 +43,14 @@
    `deploy/.env.prod`는 키만 유지하고 값은 배포 직전에 채운다.
 2. 기동  
    ```bash
-   ./auto dev up --env local         # 전체 스택
-   # 또는 ./auto dev backend --env local
+  ./auto dev up --env local        # 전체 스택
+  # 또는 ./auto dev backend --env local
    ```
   CORS 허용을 위해 `CORS_ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8080` 등 필요한 오리진을 `deploy/.env.local`에 넣는다.
    JWT 기본값: access 45초(`jwt.expiration=45000`), refresh 5분(`jwt.refresh-expiration=300000`), 세션은 deviceId로 묶인다.
 
 ### Docker Compose로 실행(권장)
-- 사람이 수동으로 `source`하지 않고 `--env-file`을 넘긴다.
+- 사람이 수동으로 `source`하지 않고 `--env-file` 또는 `--env`를 넘긴다.
   ```bash
   touch deploy/.env.local
   docker compose --env-file deploy/.env.local \
