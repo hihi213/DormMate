@@ -69,11 +69,15 @@ class AuthServiceTest extends AbstractPostgresIntegrationTest {
 
         var response = authService.login(new LoginRequest(ADMIN_LOGIN_ID, ADMIN_PASSWORD, "  ios-device-1234567890   "));
 
-        UserSession freshSession = userSessionRepository.findByRefreshTokenHash(hashToken(response.tokens().refreshToken())).orElseThrow();
+        UserSession freshSession = userSessionRepository.findByRefreshTokenHash(
+                hashToken(response.tokens().refreshToken())
+        ).orElseThrow();
+        OffsetDateTime expectedRefreshExpiry = response.tokens()
+                .issuedAt()
+                .plusSeconds(response.tokens().refreshExpiresIn());
         assertThat(freshSession.getDeviceId()).isEqualTo("ios-device-1234567890");
         assertThat(freshSession.getRevokedAt()).isNull();
-        assertThat(freshSession.getExpiresAt()).isAfter(freshSession.getIssuedAt().plusMinutes(4));
-        assertThat(freshSession.getExpiresAt()).isBefore(freshSession.getIssuedAt().plusMinutes(6));
+        assertThat(freshSession.getExpiresAt()).isEqualTo(expectedRefreshExpiry);
 
         UserSession revoked = userSessionRepository.findByRefreshTokenHash(hashToken("expired-token")).orElseThrow();
         assertThat(revoked.getRevokedAt()).isNotNull();

@@ -335,7 +335,7 @@ def cmd_tests_core(args: argparse.Namespace) -> None:
 
 
 def gradle_tests(*, clean: bool) -> None:
-    offline_first = os.environ.get("DM_GRADLE_OFFLINE_FIRST", "1") != "0"
+    offline_first = os.environ.get("DM_GRADLE_OFFLINE_FIRST", "0") != "0"
     if offline_first:
         result = run_gradle_task("test", clean=clean, offline=True, check=False)
         if result.returncode == 0:
