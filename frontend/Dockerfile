@@ -3,13 +3,13 @@
 # 멀티스테이지 빌드로 의존성 → 빌드 → 실행 스테이지를 분리한다.
 #
 
-FROM node:22-alpine AS deps
+FROM node:22-alpine3.20 AS deps
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
 RUN npm ci
 
-FROM node:22-alpine AS builder
+FROM node:22-alpine3.20 AS builder
 WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1 \
     NODE_ENV=production
@@ -21,7 +21,7 @@ ENV NEXT_PUBLIC_API_BASE=${NEXT_PUBLIC_API_BASE} \
     NEXT_PUBLIC_FIXTURE=${NEXT_PUBLIC_FIXTURE:-0}
 RUN npm run build
 
-FROM node:22-alpine AS runner
+FROM node:22-alpine3.20 AS runner
 WORKDIR /app
 ENV NODE_ENV=production \
     NEXT_TELEMETRY_DISABLED=1

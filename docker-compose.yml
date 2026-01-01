@@ -6,7 +6,7 @@ services: # 이 파일로 관리할 컨테이너(서비스)들의 목록을 정�
   # PostgreSQL Database
   # 우리 애플리케이션의 핵심 데이터를 저장할 PostgreSQL 데이터베이스 서비스입니다.
   db:
-    image: postgres:16.4-alpine # 사용할 도커 이미지입니다. 'postgres'의 16 버전을 사용하며, 'alpine'은 경량화된 리눅스 배포판으로 이미지 크기를 줄여줍니다.
+    image: postgres:16.11-alpine # 사용할 도커 이미지입니다. 'postgres' 16의 최신 패치(alpine)로 유지합니다.
     container_name: dorm_postgres # 컨테이너에 고정된 이름을 부여하여 다른 서비스에서 쉽게 참조하고 관리할 수 있게 합니다.
     environment: # 컨테이너 내부에 환경 변수를 설정합니다. 주로 설정이나 비밀번호 등에 사용됩니다.
       # .env 파일이나 셸 환경변수가 없으면 ':-' 뒤의 기본값을 사용합니다.

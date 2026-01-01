@@ -12,6 +12,7 @@ import org.springframework.jdbc.datasource.init.ScriptException;
 import org.springframework.jdbc.datasource.init.ScriptUtils;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.testcontainers.DockerClientFactory;
 import org.testcontainers.containers.PostgreSQLContainer;
 
 /**
@@ -27,8 +28,17 @@ public abstract class AbstractPostgresIntegrationTest {
 
     private static final Object MIGRATION_LOCK = new Object();
     private static boolean initialized = false;
+    private static final boolean DOCKER_DIAGNOSTICS = Boolean.parseBoolean(
+            System.getProperty(
+                    "dm.docker.diagnostics",
+                    System.getenv().getOrDefault("DM_DOCKER_DIAGNOSTICS", "false")
+            )
+    );
 
     static {
+        if (DOCKER_DIAGNOSTICS) {
+            logDockerDiagnostics();
+        }
         POSTGRES.start();
     }
 
@@ -78,6 +88,22 @@ public abstract class AbstractPostgresIntegrationTest {
         remainder.migrate();
 
         ensureCompartmentAccessCoverage();
+    }
+
+    private static void logDockerDiagnostics() {
+        try {
+            System.out.println("[testcontainers] DOCKER_HOST=" + System.getenv("DOCKER_HOST"));
+            System.out.println("[testcontainers] DOCKER_API_VERSION=" + System.getenv("DOCKER_API_VERSION"));
+            System.out.println("[testcontainers] docker.api.version=" + System.getProperty("docker.api.version"));
+            System.out.println("[testcontainers] TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE="
+                    + System.getenv("TESTCONTAINERS_DOCKER_SOCKET_OVERRIDE"));
+            System.out.println("[testcontainers] testcontainers.docker.socket.override="
+                    + System.getProperty("testcontainers.docker.socket.override"));
+            DockerClientFactory factory = DockerClientFactory.instance();
+            System.out.println("[testcontainers] dockerHost=" + factory.getTransportConfig().getDockerHost());
+        } catch (Exception ex) {
+            System.out.println("[testcontainers] diagnostics failed: " + ex.getMessage());
+        }
     }
 
     private static void applyRepeatableSeed() {

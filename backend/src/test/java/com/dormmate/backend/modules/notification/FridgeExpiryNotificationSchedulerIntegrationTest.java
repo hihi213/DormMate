@@ -1,5 +1,6 @@
 package com.dormmate.backend.modules.notification;
 
+import static com.dormmate.backend.support.TestResidentAccounts.DEFAULT_PASSWORD;
 import static com.dormmate.backend.support.TestResidentAccounts.FLOOR2_ROOM05_SLOT1;
 import static com.dormmate.backend.modules.notification.application.NotificationService.KIND_FRIDGE_EXPIRED;
 import static com.dormmate.backend.modules.notification.application.NotificationService.KIND_FRIDGE_EXPIRY;
@@ -45,6 +46,7 @@ import com.dormmate.backend.modules.notification.infrastructure.persistence.Noti
 import com.dormmate.backend.modules.notification.infrastructure.persistence.NotificationPreferenceRepository;
 import com.dormmate.backend.modules.notification.infrastructure.persistence.NotificationRepository;
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
+import com.dormmate.backend.support.TestUserFactory;
 
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -93,6 +95,9 @@ class FridgeExpiryNotificationSchedulerIntegrationTest extends AbstractPostgresI
     @Autowired
     private JdbcTemplate jdbcTemplate;
 
+    @Autowired
+    private TestUserFactory testUserFactory;
+
     @SpyBean
     private NotificationService notificationService;
 
@@ -104,6 +109,7 @@ class FridgeExpiryNotificationSchedulerIntegrationTest extends AbstractPostgresI
     @BeforeEach
     void setUp() {
         resetNotificationArtifacts();
+        ensureResident(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         owner = dormUserRepository.findByLoginIdIgnoreCase(FLOOR2_ROOM05_SLOT1)
                 .orElseThrow(() -> new IllegalStateException("primary resident user not found"));
         slot2FAId = fetchSlotId((short) 2, SLOT_INDEX_A);
@@ -120,6 +126,13 @@ class FridgeExpiryNotificationSchedulerIntegrationTest extends AbstractPostgresI
         if (ownerBundle != null) {
             fridgeBundleRepository.deleteById(ownerBundle.getId());
         }
+    }
+
+    private void ensureResident(String loginId, String password) {
+        String roomNumber = loginId.split("-")[0];
+        short floor = Short.parseShort(roomNumber.substring(0, 1));
+        short personalNo = Short.parseShort(loginId.split("-")[1]);
+        testUserFactory.ensureResident(loginId, password, floor, roomNumber, personalNo);
     }
 
     @Test

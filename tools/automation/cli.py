@@ -32,6 +32,7 @@ GRADLE_CACHE_DIR = PROJECT_ROOT / ".gradle-cache"
 NODE_CACHE_ROOT = PROJECT_ROOT / ".cache" / "node"
 DEFAULT_DEV_PORTS = (3000, 3001, 3002, 3003, 8080)
 DEFAULT_ENV_FILE = PROJECT_ROOT / "deploy" / ".env.prod"
+LOCAL_ENV_FILE = PROJECT_ROOT / "deploy" / ".env.local"
 DEFAULT_COMPOSE_FILES = ("-f", "docker-compose.yml", "-f", "docker-compose.prod.yml")
 
 
@@ -88,7 +89,6 @@ def npm_install() -> None:
 
 def npm_playwright_install() -> None:
     run_npm_command("run", "playwright:install")
-
 
 # ---------------------------------------------------------------------------
 # Codex state helpers
@@ -192,8 +192,8 @@ def _apply_env_file(path: Path, env: dict[str, str]) -> None:
             line = line[len("export ") :].strip()
         if "=" not in line:
             continue
-            key, value = line.split("=", 1)
-            env[key.strip()] = value.strip()
+        key, value = line.split("=", 1)
+        env[key.strip()] = value.strip()
 
 
 def _load_env_from_file(path: Path) -> dict[str, str]:
@@ -203,7 +203,7 @@ def _load_env_from_file(path: Path) -> dict[str, str]:
 
 
 def load_env_cache() -> dict[str, str]:
-    """Load deploy/.env.prod (우선)과 .env를 읽어 환경 변수를 통합한다."""
+    """deploy/.env.prod와 .env를 읽어 환경 변수를 통합한다."""
     global _ENV_CACHE, _ENV_WARNING_EMITTED, _JAVA_WARNING_EMITTED, _NODE_WARNING_EMITTED
     if _ENV_CACHE is not None:
         return _ENV_CACHE
@@ -246,6 +246,12 @@ def load_env_cache() -> dict[str, str]:
     if path_entries:
         env["PATH"] = os.pathsep.join(path_entries)
 
+    if "DOCKER_HOST" not in env:
+        # Prefer ~/.docker/run/docker.sock to avoid docker.raw.sock mount issues
+        docker_sock = Path.home() / ".docker" / "run" / "docker.sock"
+        if docker_sock.exists():
+            env["DOCKER_HOST"] = f"unix://{docker_sock}"
+
     _ENV_CACHE = env
     return _ENV_CACHE
 
@@ -260,6 +266,35 @@ def resolve_env_file_argument(value: Optional[str]) -> Path:
     if not candidate.exists():
         raise FileNotFoundError(f"env 파일을 찾을 수 없습니다: {candidate}")
     return candidate
+
+
+def resolve_env_selector(value: Optional[str]) -> Optional[Path]:
+    if not value:
+        return None
+    if value == "local":
+        return LOCAL_ENV_FILE
+    if value == "prod":
+        return DEFAULT_ENV_FILE
+    raise ValueError(f"지원하지 않는 env 선택입니다: {value}")
+
+
+def resolve_env_file_option(
+    *,
+    env: Optional[str],
+    env_file: Optional[str],
+    default: Path,
+    fallback: Optional[Path] = None,
+) -> Path:
+    if env_file:
+        return resolve_env_file_argument(env_file)
+    selected = resolve_env_selector(env)
+    if selected:
+        return resolve_env_file_argument(str(selected))
+    if default.exists():
+        return default
+    if fallback and fallback.exists():
+        return fallback
+    return resolve_env_file_argument(None)
 
 
 def compose_base_args(env_file: Path) -> list[str]:
@@ -300,7 +335,7 @@ def cmd_tests_core(args: argparse.Namespace) -> None:
 
 
 def gradle_tests(*, clean: bool) -> None:
-    offline_first = os.environ.get("DM_GRADLE_OFFLINE_FIRST", "1") != "0"
+    offline_first = os.environ.get("DM_GRADLE_OFFLINE_FIRST", "0") != "0"
     if offline_first:
         result = run_gradle_task("test", clean=clean, offline=True, check=False)
         if result.returncode == 0:
@@ -339,9 +374,14 @@ def run_playwright(smoke_only: bool, allow_empty: bool = True) -> None:
         sys.stderr.write(process.stderr)
     if process.returncode != 0:
         combined = (process.stdout or "") + (process.stderr or "")
-        if allow_empty and "No tests found" in combined:
-            print("ℹ️  Playwright 테스트가 없어 스킵했습니다.")
-            return
+        if "No tests found" in combined:
+            if smoke_only:
+                print("ℹ️  @smoke 태그가 없어 전체 테스트로 전환합니다.")
+                run_playwright(smoke_only=False, allow_empty=False)
+                return
+            if allow_empty:
+                print("ℹ️  Playwright 테스트가 없어 스킵했습니다.")
+                return
         raise subprocess.CalledProcessError(process.returncode, command)
 
 
@@ -391,7 +431,12 @@ def cmd_tests_playwright(args: argparse.Namespace) -> None:
 
 
 def cmd_db_migrate(args: argparse.Namespace) -> None:
-    env_file = resolve_env_file_argument(args.env_file)
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=LOCAL_ENV_FILE,
+        fallback=DEFAULT_ENV_FILE,
+    )
     script = BACKEND_DIR / "scripts" / "flyway.sh"
     if args.info:
         run_command([str(script), str(env_file), "flywayInfo"], cwd=PROJECT_ROOT)
@@ -404,25 +449,57 @@ def cmd_db_migrate(args: argparse.Namespace) -> None:
 
 def cmd_dev_up(args: argparse.Namespace) -> None:
     services = args.services or ["db", "redis"]
-    run_command(["docker", "compose", "up", "-d", *services])
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=LOCAL_ENV_FILE,
+        fallback=DEFAULT_ENV_FILE,
+    )
+    run_command(["docker", "compose", "--env-file", str(env_file), "up", "-d", *services])
 
 
-def cmd_dev_down(_: argparse.Namespace) -> None:
-    run_command(["docker", "compose", "down"])
+def cmd_dev_down(args: argparse.Namespace) -> None:
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=LOCAL_ENV_FILE,
+        fallback=DEFAULT_ENV_FILE,
+    )
+    run_command(["docker", "compose", "--env-file", str(env_file), "down"])
 
 
-def cmd_dev_status(_: argparse.Namespace) -> None:
-    run_command(["docker", "compose", "ps"])
+def cmd_dev_status(args: argparse.Namespace) -> None:
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=LOCAL_ENV_FILE,
+        fallback=DEFAULT_ENV_FILE,
+    )
+    run_command(["docker", "compose", "--env-file", str(env_file), "ps"])
 
 
-def cmd_dev_backend(_: argparse.Namespace) -> None:
+def cmd_dev_backend(args: argparse.Namespace) -> None:
     print("ℹ️  Spring Boot 서버를 실행합니다. 종료하려면 Ctrl+C.")
-    run_command(["./gradlew", "bootRun"], cwd=BACKEND_DIR, check=False)
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=LOCAL_ENV_FILE,
+        fallback=DEFAULT_ENV_FILE,
+    )
+    env = _load_env_from_file(env_file)
+    run_command(["./gradlew", "bootRun"], cwd=BACKEND_DIR, env=env, check=False)
 
 
-def cmd_dev_frontend(_: argparse.Namespace) -> None:
+def cmd_dev_frontend(args: argparse.Namespace) -> None:
     print("ℹ️  Next.js 개발 서버를 실행합니다. 종료하려면 Ctrl+C.")
-    run_command(["npm", "run", "dev"], cwd=FRONTEND_DIR, check=False)
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=LOCAL_ENV_FILE,
+        fallback=DEFAULT_ENV_FILE,
+    )
+    env = _load_env_from_file(env_file)
+    run_command(["npm", "run", "dev"], cwd=FRONTEND_DIR, env=env, check=False)
 
 
 def _pid_alive(pid: int) -> bool:
@@ -575,7 +652,11 @@ def _deploy_up(
 
 
 def cmd_deploy_up(args: argparse.Namespace) -> None:
-    env_file = resolve_env_file_argument(args.env_file)
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=DEFAULT_ENV_FILE,
+    )
     services = args.services or ["proxy"]
     _deploy_up(
         env_file,
@@ -588,7 +669,11 @@ def cmd_deploy_up(args: argparse.Namespace) -> None:
 
 
 def cmd_deploy_down(args: argparse.Namespace) -> None:
-    env_file = resolve_env_file_argument(args.env_file)
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=DEFAULT_ENV_FILE,
+    )
     down_cmd = ["down"]
     if args.volumes:
         down_cmd.append("--volumes")
@@ -600,12 +685,20 @@ def cmd_deploy_down(args: argparse.Namespace) -> None:
 
 
 def cmd_deploy_status(args: argparse.Namespace) -> None:
-    env_file = resolve_env_file_argument(args.env_file)
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=DEFAULT_ENV_FILE,
+    )
     run_compose(env_file, "ps")
 
 
 def cmd_deploy_reset(args: argparse.Namespace) -> None:
-    env_file = resolve_env_file_argument(args.env_file)
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=DEFAULT_ENV_FILE,
+    )
     print("🔁 기존 컨테이너를 중지하고 볼륨을 초기화합니다.")
     run_compose(env_file, "down", "--volumes", "--remove-orphans")
     print("🧱 인프라 기반(db, redis)을 재기동합니다.")
@@ -625,7 +718,11 @@ def cmd_deploy_reset(args: argparse.Namespace) -> None:
 
 
 def cmd_deploy_logs(args: argparse.Namespace) -> None:
-    env_file = resolve_env_file_argument(args.env_file)
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=DEFAULT_ENV_FILE,
+    )
     services = args.services or ["proxy"]
     run_compose(env_file, "logs", "-f", *services)
 
@@ -642,7 +739,11 @@ def _resolve_tls_inputs(args: argparse.Namespace, env_file: Path) -> tuple[str, 
 
 
 def cmd_deploy_tls_issue(args: argparse.Namespace) -> None:
-    env_file = resolve_env_file_argument(args.env_file)
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=DEFAULT_ENV_FILE,
+    )
     domain, email = _resolve_tls_inputs(args, env_file)
     cmd = [
         "run",
@@ -666,7 +767,11 @@ def cmd_deploy_tls_issue(args: argparse.Namespace) -> None:
 
 
 def cmd_deploy_tls_renew(args: argparse.Namespace) -> None:
-    env_file = resolve_env_file_argument(args.env_file)
+    env_file = resolve_env_file_option(
+        env=args.env,
+        env_file=args.env_file,
+        default=DEFAULT_ENV_FILE,
+    )
     cmd = [
         "run",
         "--rm",
@@ -728,19 +833,19 @@ def print_top_level_summary(parser: argparse.ArgumentParser) -> None:
     summary = """
 자주 쓰는 명령 요약
   ./auto dev warmup [--refresh] [--with-playwright]  Gradle·Node 의존성 예열 (필요 시 Playwright)
-  ./auto dev up                      개발용 Docker 서비스 기동
-  ./auto dev down                    개발용 Docker 서비스 중지
-  ./auto dev status                  개발용 Docker 서비스 상태 확인
-  ./auto dev backend                 Spring Boot 서버 실행
-  ./auto dev frontend                Next.js 개발 서버 실행
+  ./auto dev up [--env local|prod]                  개발용 Docker 서비스 기동
+  ./auto dev down [--env local|prod]                개발용 Docker 서비스 중지
+  ./auto dev status [--env local|prod]              개발용 Docker 서비스 상태 확인
+  ./auto dev backend [--env local|prod]             Spring Boot 서버 실행
+  ./auto dev frontend [--env local|prod]            Next.js 개발 서버 실행
   ./auto dev kill-ports              지정한 포트(기본 3000~3003, 8080) 정리
   ./auto tests core                  백엔드·프론트·Playwright 테스트 번들
   ./auto tests backend               백엔드 테스트만 실행
   ./auto tests frontend              프론트엔드 Lint 실행
   ./auto tests playwright [--full]   Playwright 스모크/전체 실행
-  ./auto db migrate [--repair]       Flyway 마이그레이션 (필요 시 repair)
-  ./auto deploy up [--build --push]   docker-compose.prod 스택 기동 / 이미지 빌드·푸시
-  ./auto deploy reset                down --volumes → migrate → up proxy
+  ./auto db migrate [--env local|prod] [--repair]   Flyway 마이그레이션 (필요 시 repair)
+  ./auto deploy up [--env local|prod] [--build --push]   docker-compose.prod 스택 기동 / 이미지 빌드·푸시
+  ./auto deploy reset [--env local|prod]                down --volumes → migrate → up proxy
   ./auto cleanup                     빌드 산출물 정리
 
 세부 옵션은 각 명령 뒤에 `--help`를 붙여 확인하세요. 예) `./auto dev --help`, `./auto tests core --help`
@@ -755,8 +860,8 @@ def build_parser() -> argparse.ArgumentParser:
             "\n"
             "주요 플로우 예시:\n"
             "  ./auto dev warmup [--refresh] [--with-playwright]  # Gradle/Node 캐시 및 (옵션) Playwright 설치\n"
-            "  ./auto dev up                  # 개발용 Docker 서비스 기동\n"
-            "  ./auto dev backend             # Spring Boot 서버 실행\n"
+            "  ./auto dev up [--env local|prod]                  # 개발용 Docker 서비스 기동\n"
+            "  ./auto dev backend [--env local|prod]             # Spring Boot 서버 실행\n"
             "  ./auto dev kill-ports          # 지정한 포트를 한 번에 정리\n"
             "  ./auto tests core              # 백엔드·프론트·Playwright 번들 테스트\n"
         ),
@@ -791,6 +896,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     db_migrate = db_sub.add_parser("migrate", help="Flyway 마이그레이션 실행")
     db_migrate.add_argument("--env-file", help="기본: deploy/.env.prod")
+    db_migrate.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     db_migrate.add_argument("--repair", action="store_true", help="flywayRepair 실행 후 migrate")
     db_migrate.add_argument("--info", action="store_true", help="flywayInfo만 실행")
     db_migrate.set_defaults(func=cmd_db_migrate)
@@ -806,18 +912,28 @@ def build_parser() -> argparse.ArgumentParser:
 
     dev_up = dev_sub.add_parser("up", help="도커 서비스 기동")
     dev_up.add_argument("--services", nargs="+", help="기동할 서비스 지정 (기본: db redis)")
+    dev_up.add_argument("--env-file", help="기본: deploy/.env.local (없으면 deploy/.env.prod)")
+    dev_up.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     dev_up.set_defaults(func=cmd_dev_up)
 
     dev_down = dev_sub.add_parser("down", help="도커 서비스 중지")
+    dev_down.add_argument("--env-file", help="기본: deploy/.env.local (없으면 deploy/.env.prod)")
+    dev_down.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     dev_down.set_defaults(func=cmd_dev_down)
 
     dev_status = dev_sub.add_parser("status", help="도커 서비스 상태 확인")
+    dev_status.add_argument("--env-file", help="기본: deploy/.env.local (없으면 deploy/.env.prod)")
+    dev_status.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     dev_status.set_defaults(func=cmd_dev_status)
 
     dev_backend = dev_sub.add_parser("backend", help="Spring Boot dev 서버 실행")
+    dev_backend.add_argument("--env-file", help="기본: deploy/.env.local (없으면 deploy/.env.prod)")
+    dev_backend.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     dev_backend.set_defaults(func=cmd_dev_backend)
 
     dev_frontend = dev_sub.add_parser("frontend", help="Next.js dev 서버 실행")
+    dev_frontend.add_argument("--env-file", help="기본: deploy/.env.local (없으면 deploy/.env.prod)")
+    dev_frontend.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     dev_frontend.set_defaults(func=cmd_dev_frontend)
 
     dev_kill_ports = dev_sub.add_parser("kill-ports", help="지정한 포트(기본 3000~3003, 8080) 정리")
@@ -834,6 +950,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     deploy_up = deploy_sub.add_parser("up", help="배포 스택 기동 (기본 proxy)")
     deploy_up.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_up.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     deploy_up.add_argument("--services", nargs="+", help="기동할 서비스 지정 (기본: proxy)")
     deploy_up.add_argument("--build", action="store_true", help="app/frontend 이미지를 빌드 후 up --build")
     deploy_up.add_argument("--pull", action="store_true", help="up 전에 docker compose pull 실행")
@@ -843,6 +960,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     deploy_down = deploy_sub.add_parser("down", help="배포 스택 중지")
     deploy_down.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_down.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     deploy_down.add_argument("--services", nargs="+", help="중지할 서비스 목록 (미지정 시 전체)")
     deploy_down.add_argument("--volumes", action="store_true", help="볼륨까지 함께 제거")
     deploy_down.add_argument("--remove-orphans", action="store_true", help="불필요한 컨테이너 제거")
@@ -850,10 +968,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     deploy_status = deploy_sub.add_parser("status", help="배포 스택 상태 조회")
     deploy_status.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_status.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     deploy_status.set_defaults(func=cmd_deploy_status)
 
     deploy_reset = deploy_sub.add_parser("reset", help="down --volumes → migrate → up proxy 순으로 재기동")
     deploy_reset.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_reset.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     deploy_reset.add_argument("--services", nargs="+", help="최종 up 대상 (기본: proxy)")
     deploy_reset.add_argument("--build", action="store_true", help="app/frontend 이미지를 빌드 후 up --build")
     deploy_reset.add_argument("--pull", action="store_true", help="up 전에 docker compose pull 실행")
@@ -863,6 +983,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     deploy_logs = deploy_sub.add_parser("logs", help="배포 스택 로그 스트리밍")
     deploy_logs.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_logs.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     deploy_logs.add_argument("--services", nargs="+", help="로그를 확인할 서비스 (기본: proxy)")
     deploy_logs.set_defaults(func=cmd_deploy_logs)
 
@@ -871,6 +992,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     deploy_tls_issue = deploy_tls_sub.add_parser("issue", help="Let's Encrypt 인증서 발급")
     deploy_tls_issue.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_tls_issue.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     deploy_tls_issue.add_argument("--domain", help="발급 대상 도메인 (기본: TLS_DOMAIN)")
     deploy_tls_issue.add_argument("--email", help="연락 이메일 (기본: TLS_EMAIL)")
     deploy_tls_issue.add_argument("--staging", action="store_true", help="Let's Encrypt 스테이징 서버 사용")
@@ -878,6 +1000,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     deploy_tls_renew = deploy_tls_sub.add_parser("renew", help="기존 인증서 갱신")
     deploy_tls_renew.add_argument("--env-file", help="기본: deploy/.env.prod")
+    deploy_tls_renew.add_argument("--env", choices=["local", "prod"], help="env 약어 (local|prod)")
     deploy_tls_renew.add_argument("--staging", action="store_true", help="Let's Encrypt 스테이징 서버 사용")
     deploy_tls_renew.set_defaults(func=cmd_deploy_tls_renew)
 

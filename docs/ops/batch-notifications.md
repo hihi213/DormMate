@@ -31,7 +31,7 @@
 
 1. 장애 원인을 제거했는지 확인한다 (DB/네트워크/시스템 상태).
 2. 수동 재실행 명령은 아직 스크립트화되어 있지 않다. 필요 시 `FridgeExpiryNotificationScheduler#runDailyBatch`를 Spring Shell/Actuator 혹은 임시 Admin API로 노출해야 한다.
-   - **임시 조치**: 로컬에서 `./gradlew bootRun` 실행 후 `/admin/notifications/run-expiry-batch`(임시 엔드포인트)와 같은 관리용 API를 마련하거나, IDE에서 빈을 수동 실행한다.
+   - **임시 조치**: 로컬에서 `./auto dev backend --env local` 실행 후 `/admin/notifications/run-expiry-batch`(임시 엔드포인트)와 같은 관리용 API를 마련하거나, IDE에서 빈을 수동 실행한다.
 3. 실행 후 `notification_dispatch_log`를 조회해 성공 로그를 확인한다.
 4. 여전히 실패 시 운영 채널에 결과와 오류 메시지를 공유하고, 재시도 시점을 합의한다.
 

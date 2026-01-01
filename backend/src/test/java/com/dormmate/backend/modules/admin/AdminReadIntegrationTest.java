@@ -8,9 +8,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
+import com.dormmate.backend.support.TestUserFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -23,15 +25,27 @@ import org.springframework.test.web.servlet.MvcResult;
 @AutoConfigureMockMvc
 class AdminReadIntegrationTest extends AbstractPostgresIntegrationTest {
 
+    private static final String ADMIN_LOGIN_ID = "test-admin";
+    private static final String ADMIN_PASSWORD = "admin1!";
+
     @Autowired
     private MockMvc mockMvc;
 
     @Autowired
     private ObjectMapper objectMapper;
 
+    @Autowired
+    private TestUserFactory testUserFactory;
+
+    @BeforeEach
+    void setUp() {
+        testUserFactory.ensureAdmin(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
+        ensureResident(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+    }
+
     @Test
     void adminCanReadDashboardUsersAndPolicies() throws Exception {
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
 
         mockMvc.perform(get("/admin/dashboard")
                         .header("Authorization", "Bearer " + adminToken))
@@ -52,7 +66,7 @@ class AdminReadIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminCanFilterUsersByFloorSearchAndPagination() throws Exception {
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
 
         mockMvc.perform(get("/admin/users")
                         .header("Authorization", "Bearer " + adminToken)
@@ -94,5 +108,12 @@ class AdminReadIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andReturn();
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
         return response.path("tokens").path("accessToken").asText();
+    }
+
+    private void ensureResident(String loginId, String password) {
+        String roomNumber = loginId.split("-")[0];
+        short floor = Short.parseShort(roomNumber.substring(0, 1));
+        short personalNo = Short.parseShort(loginId.split("-")[1]);
+        testUserFactory.ensureResident(loginId, password, floor, roomNumber, personalNo);
     }
 }

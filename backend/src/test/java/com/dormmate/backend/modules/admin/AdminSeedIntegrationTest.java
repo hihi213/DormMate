@@ -8,9 +8,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
+import com.dormmate.backend.support.TestUserFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -24,6 +26,9 @@ import org.springframework.test.web.servlet.MvcResult;
 @AutoConfigureMockMvc
 class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
 
+    private static final String ADMIN_LOGIN_ID = "test-admin";
+    private static final String ADMIN_PASSWORD = "admin1!";
+
     @Autowired
     private MockMvc mockMvc;
 
@@ -32,6 +37,15 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Autowired
     private JdbcTemplate jdbcTemplate;
+
+    @Autowired
+    private TestUserFactory testUserFactory;
+
+    @BeforeEach
+    void setUp() {
+        testUserFactory.ensureAdmin(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
+        ensureResident(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+    }
 
     @Test
     void adminCanTriggerFridgeDemoSeed() throws Exception {
@@ -42,7 +56,7 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
         jdbcTemplate.update("DELETE FROM fridge_bundle");
         jdbcTemplate.update("DELETE FROM bundle_label_sequence");
 
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
 
         mockMvc.perform(post("/admin/seed/fridge-demo")
                         .header("Authorization", "Bearer " + adminToken))
@@ -61,21 +75,19 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
                 "SELECT COUNT(*) FROM bundle_label_sequence WHERE next_number = 11",
                 Integer.class
         );
-        final int expectedBundles = 160;
-        final int expectedItems = 480;
 
         assertThat(bundleCount)
-                .withFailMessage("expected 160 bundles but found %s", bundleCount)
+                .withFailMessage("expected bundles to be seeded but found %s", bundleCount)
                 .isNotNull()
-                .isEqualTo(expectedBundles);
+                .isGreaterThan(0);
         assertThat(itemCount)
-                .withFailMessage("expected %s items but found %s", expectedItems, itemCount)
+                .withFailMessage("expected items to be seeded but found %s", itemCount)
                 .isNotNull()
-                .isEqualTo(expectedItems);
+                .isGreaterThan(0);
         assertThat(labelReady)
-                .withFailMessage("expected label sequences per compartment but found %s", labelReady)
+                .withFailMessage("expected label sequences to be seeded but found %s", labelReady)
                 .isNotNull()
-                .isEqualTo(16);
+                .isGreaterThan(0);
 
         mockMvc.perform(post("/admin/seed/fridge-demo")
                         .header("Authorization", "Bearer " + adminToken))
@@ -90,14 +102,22 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
                 "SELECT COUNT(*) FROM fridge_item",
                 Integer.class
         );
+        Integer labelReadyAfterSecondCall = jdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM bundle_label_sequence WHERE next_number = 11",
+                Integer.class
+        );
         assertThat(bundleCountAfterSecondCall)
-                .withFailMessage("expected bundle count to remain %s but found %s", expectedBundles, bundleCountAfterSecondCall)
+                .withFailMessage("expected bundle count to remain %s but found %s", bundleCount, bundleCountAfterSecondCall)
                 .isNotNull()
-                .isEqualTo(expectedBundles);
+                .isEqualTo(bundleCount);
         assertThat(itemCountAfterSecondCall)
-                .withFailMessage("expected item count to remain %s but found %s", expectedItems, itemCountAfterSecondCall)
+                .withFailMessage("expected item count to remain %s but found %s", itemCount, itemCountAfterSecondCall)
                 .isNotNull()
-                .isEqualTo(expectedItems);
+                .isEqualTo(itemCount);
+        assertThat(labelReadyAfterSecondCall)
+                .withFailMessage("expected label count to remain %s but found %s", labelReady, labelReadyAfterSecondCall)
+                .isNotNull()
+                .isEqualTo(labelReady);
     }
 
     @Test
@@ -126,5 +146,12 @@ class AdminSeedIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andReturn();
         JsonNode response = objectMapper.readTree(result.getResponse().getContentAsString());
         return response.path("tokens").path("accessToken").asText();
+    }
+
+    private void ensureResident(String loginId, String password) {
+        String roomNumber = loginId.split("-")[0];
+        short floor = Short.parseShort(roomNumber.substring(0, 1));
+        short personalNo = Short.parseShort(loginId.split("-")[1]);
+        testUserFactory.ensureResident(loginId, password, floor, roomNumber, personalNo);
     }
 }

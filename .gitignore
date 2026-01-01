@@ -1,5 +1,6 @@
-
-
+.codex/*
+AGENTS.md
+.github/AGENTS
 # Environment files
 .env*
 !.env.example
@@ -17,11 +18,6 @@ frontend/node_modules/
 # Build artifacts
 backend/build/
 **/dist/
-
-# IDE
-.idea/
-.vscode/
-
 
 # Dependencies
 node_modules/
@@ -55,6 +51,9 @@ Thumbs.db
 
 # Logs
 *.log
+*.log.prev
+logs/
+log/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -129,11 +128,6 @@ deploy/.env.*
 .pnp.js
 .pnpm-store/
 
-# Temporary folders
-tmp/
-temp/
-.tmp/
-
 # Database
 db_data/
 pgdata/
@@ -157,8 +151,6 @@ application-local.properties
 application-local.yml
 
 # 빌드/캐시
-backend/build/
-frontend/node_modules/
 artifacts/
 
 # Frontend artifacts
@@ -187,7 +179,6 @@ with-java-env.sh
 venv/
 env/
 .venv/
-.env/
 ENV/
 
 # Python 관련
@@ -273,8 +264,6 @@ application-*.yml
 # 테스트 결과
 test-results/
 test-output/
-coverage/
-.nyc_output/
 
 # 로컬 개발 도구
 .vscode/settings.json
@@ -301,7 +290,6 @@ db_data_postgres15_backup/
 db_data_postgres15_*/
 
 # Docker 볼륨 데이터
-pgdata/
 pgadmin-data/
 
 # Flyway 마이그레이션 실행 로그
@@ -335,22 +323,8 @@ playground/
 .cache/
 .temp/
 tmp/
-
-# 로그 파일 (개발용)
-*.log
-logs/
-log/
-
-# 백업 파일
-*.backup
-*.bak
-*.old
-*.orig
-
-# 임시 데이터베이스 파일
-*.db
-*.sqlite
-*.sqlite3
+temp/
+.tmp/
 
 # --- 추가 무시 항목 (프로젝트 맞춤) ---
 
@@ -385,14 +359,6 @@ frontend/.pnpm-store/
 *.local
 *.local.*
 
-# Python 가상환경
-venv/
-
-# 임시 파일
-.tmp/
-tmp/
-temp/
-
 # 스크립트 관련 임시/로그
 scripts/*.log
 scripts/.env
@@ -400,28 +366,9 @@ scripts/local/
 
 # 클라이언트 빌드/캐시(보강)
 frontend/dist/
-frontend/.vite/
-frontend/.cache/
-frontend/.turbo/
-
-# 백엔드 Gradle 캐시(보강)
-backend/.gradle/
-
-# 백업 파일
-*.bak
-*.backup
-*.old
-*.orig
 
 # 로그 파일
-logs/
 *.log.*
-
-# 환경별 설정 (로컬 개발용)
-.env.local
-.env.development.local
-.env.test.local
-.env.production.local
 
 # IDE 워크스페이스
 *.code-workspace
@@ -438,3 +385,4 @@ logs/
 # 개인 계획/기능 정리 문서
 /nogitReadME.md
 docs/ai-impl/
+.codex

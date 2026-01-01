@@ -17,6 +17,7 @@ import com.dormmate.backend.modules.fridge.domain.FridgeItemStatus;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeBundleRepository;
 import com.dormmate.backend.modules.fridge.infrastructure.persistence.FridgeItemRepository;
 import com.dormmate.backend.support.AbstractPostgresIntegrationTest;
+import com.dormmate.backend.support.TestUserFactory;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
@@ -62,6 +63,8 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     private static final int FLOOR_3 = 3;
     private static final int SLOT_INDEX_A = 0;
     private static final int SLOT_INDEX_B = 1;
+    private static final String ADMIN_LOGIN_ID = "test-admin";
+    private static final String ADMIN_PASSWORD = "admin1!";
 
     @Autowired
     private MockMvc mockMvc;
@@ -78,11 +81,19 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     @Autowired
     private FridgeItemRepository fridgeItemRepository;
 
+    @Autowired
+    private TestUserFactory testUserFactory;
+
     private final List<UUID> bundlesToCleanup = new ArrayList<>();
     private final Map<String, String> tokenOwners = new HashMap<>();
 
     @BeforeEach
     void ensureDefaultAccess() {
+        testUserFactory.ensureAdmin(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
+        ensureResident(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
+        ensureResident(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD);
+        ensureResident(FLOOR2_ROOM17_SLOT2, DEFAULT_PASSWORD);
+        ensureResident(FLOOR3_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slot2A = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
         ensureResidentHasAccess(FLOOR2_ROOM05_SLOT1, slot2A);
         ensureResidentHasAccess(FLOOR2_ROOM05_SLOT3, slot2A);
@@ -480,7 +491,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     }
     @Test
     void adminCanUpdateCompartmentConfigViaApi() throws Exception {
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -628,7 +639,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminCannotLowerCapacityBelowActiveBundles() throws Exception {
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -704,7 +715,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     void bundleListAndDetailIncludeOwnerAndCounts() throws Exception {
         String aliceToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         String managerToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT3, DEFAULT_PASSWORD);
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -757,7 +768,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void bundleSearchSupportsMultiLetterSlotCodeAndOwnerRoom() throws Exception {
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -820,7 +831,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void deletedBundleListingCanFilterBySlotId() throws Exception {
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         String aliceToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         String dianaToken = loginAndGetAccessToken(FLOOR3_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotFloor2 = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
@@ -945,7 +956,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
     @Test
     void adminCanViewAllBundlesButMemoIsHidden() throws Exception {
         String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
         clearSlotBundles(slotId);
@@ -1005,7 +1016,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminBundleSearchSupportsKeywordAndCaseInsensitiveMatch() throws Exception {
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -1038,7 +1049,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminBundleSearchSupportsLabelLookup() throws Exception {
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -1068,7 +1079,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminBundleListWithDeletedFilterReturnsOnlyDeletedBundles() throws Exception {
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -1125,7 +1136,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void adminGetsDeletedBundlesWithinDefaultWindow() throws Exception {
-        String adminToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String adminToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         String residentToken = loginAndGetAccessToken(FLOOR2_ROOM05_SLOT1, DEFAULT_PASSWORD);
         UUID slotId = fetchSlotId(FLOOR_2, SLOT_INDEX_A);
 
@@ -1265,7 +1276,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
 
     @Test
     void deletingBundleRecyclesLabelForNextCreation() throws Exception {
-        String managerToken = loginAndGetAccessToken("dormmate", "admin1!");
+        String managerToken = loginAndGetAccessToken(ADMIN_LOGIN_ID, ADMIN_PASSWORD);
         UUID slotId = fetchSlotId(4, SLOT_INDEX_A);
 
         LabelSequenceState originalLabelState = jdbcTemplate.query(
@@ -1425,7 +1436,7 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 .andExpect(status().isCreated())
                 .andReturn();
         String ownerLogin = tokenOwners.get(accessToken);
-        if (ownerLogin != null && !"dormmate".equalsIgnoreCase(ownerLogin)) {
+        if (ownerLogin != null && !ADMIN_LOGIN_ID.equalsIgnoreCase(ownerLogin)) {
             ensureResidentHasAccess(ownerLogin, slotId);
         }
         JsonNode bundle = readJson(result);
@@ -1673,6 +1684,13 @@ class FridgeIntegrationTest extends AbstractPostgresIntegrationTest {
                 compartmentId,
                 roomId
         );
+    }
+
+    private void ensureResident(String loginId, String password) {
+        String roomNumber = loginId.split("-")[0];
+        short floor = Short.parseShort(roomNumber.substring(0, 1));
+        short personalNo = Short.parseShort(loginId.split("-")[1]);
+        testUserFactory.ensureResident(loginId, password, floor, roomNumber, personalNo);
     }
 
     private UUID fetchUserId(String loginId) {

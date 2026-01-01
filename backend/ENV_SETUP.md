@@ -34,15 +34,10 @@
      ```bash
      echo "SPRING_PROFILES_ACTIVE=dev-local" >> deploy/.env.local
      ```
-3. **환경 변수 로드**
+3. **마이그레이션 & 실행**
    ```bash
-   set -a && source deploy/.env.local && set +a
-   ```
-   `direnv`를 사용할 경우 `.envrc`에 `dotenv deploy/.env.local`을 추가하면 자동으로 로드된다.
-4. **마이그레이션 & 실행**
-   ```bash
-   backend/scripts/flyway.sh deploy/.env.local
-   ./gradlew bootRun --args='--spring.profiles.active=dev-local'
+   ./auto db migrate --env local
+   ./auto dev backend --env local
    ```
    `backend/scripts/flyway.sh`는 지정한 파일을 자동으로 `set -a` → `source`한 뒤 Flyway 태스크를 실행한다. DB 정보가 비어 있으면 즉시 실패하므로 값 확인 후 실행한다.
 
@@ -56,18 +51,14 @@
    printf "%s" "$ENV_FILE_CONTENTS" > deploy/.env.prod
 
    # 2) 마이그레이션
-   backend/scripts/flyway.sh deploy/.env.prod
-
-   # 3) 애플리케이션 실행
-   set -a && source deploy/.env.prod && set +a
-   ./gradlew bootRun --args='--spring.profiles.active=prod'
+   ./auto db migrate --env prod
    ```
 3. **Docker Compose**
    ```bash
    docker compose --env-file deploy/.env.prod -f docker-compose.yml -f docker-compose.prod.yml up -d proxy
    # proxy 서비스에는 app/frontend가 depends_on으로 연결되어 전체 스택을 동시에 기동합니다.
-   # 또는 ./auto deploy up --build
-   # (DB 초기화까지 포함하려면 ./auto deploy reset --build)
+   # 또는 ./auto deploy up --build --env prod
+   # (DB 초기화까지 포함하려면 ./auto deploy reset --build --env prod)
    ```
 4. **관리(Actuator) 포트 설정**
    - 기본값은 `SERVER_PORT`와 동일하며, CI에서도 이 구성을 사용한다. 별도 포트(예: 8081)를 두고 싶다면 `.env.prod`에 `MANAGEMENT_SERVER_PORT=8081`을 추가한다.
@@ -78,8 +69,8 @@
 
 6. **TLS/HTTPS 구성**
    - `ENABLE_TLS=true`, `SERVER_NAME`, `TLS_DOMAIN`, `TLS_EMAIL`, `PROXY_HTTPS_PORT=443`를 지정한다.
-   - 최초 1회 인증서 발급: `./auto deploy tls issue --domain <도메인> --email <이메일>` (또는 `docker compose ... run --rm certbot ...`)
-   - 이후 갱신은 `./auto deploy tls renew`로 실행하면 `proxy` 컨테이너가 자동으로 새 인증서를 로드한다. 필요 시 `./auto deploy up`으로 재기동한다.
+   - 최초 1회 인증서 발급: `./auto deploy tls issue --env prod --domain <도메인> --email <이메일>` (또는 `docker compose ... run --rm certbot ...`)
+   - 이후 갱신은 `./auto deploy tls renew --env prod`로 실행하면 `proxy` 컨테이너가 자동으로 새 인증서를 로드한다. 필요 시 `./auto deploy up --env prod`으로 재기동한다.
 
 ---
 
@@ -108,9 +99,9 @@
 ---
 
 ## 6. 배포 전 점검
-1. `./auto db migrate --info` (또는 `backend/scripts/flyway.sh deploy/.env.prod info`)
+1. `./auto db migrate --info --env prod` (또는 `backend/scripts/flyway.sh deploy/.env.prod info`)
 2. `./gradlew test`
 3. `./auto tests core --full-playwright` (프런트/관리자 E2E)
 4. `.env` 최신 여부, 비밀 만료일 확인
 
-위 절차 이후에만 `./auto deploy up --build` (또는 K8s 배포)을 진행한다. checksum 불일치가 발생하면 `./auto db migrate --repair` 후 다시 migrate 한다.
+위 절차 이후에만 `./auto deploy up --build --env prod` (또는 K8s 배포)을 진행한다. checksum 불일치가 발생하면 `./auto db migrate --repair --env prod` 후 다시 migrate 한다.
