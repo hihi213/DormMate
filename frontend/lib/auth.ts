@@ -1,3 +1,4 @@
+import { isFixtureMode } from "@/lib/fixture-mode"
 import { safeApiCall } from "@/lib/api-client"
 import { getDeviceId } from "@/lib/device-id"
 
@@ -351,10 +352,7 @@ export function redirectToLogin(
 ): string {
   const options = typeof arg0 === "string" ? { ...(maybeOptions ?? {}), reason: arg0 } : arg0 ?? {}
   const { redirect, reason, navigate = false, preserveSession = false } = options
-  if (
-    process.env.NEXT_PUBLIC_FIXTURE === "1" ||
-    (typeof window !== "undefined" && window.localStorage.getItem("dm.fixture") === "1")
-  ) {
+  if (isFixtureMode()) {
     return "/"
   }
   if (!preserveSession) {

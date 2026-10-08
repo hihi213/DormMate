@@ -1,5 +1,7 @@
 package com.dormmate.backend.modules.admin.presentation;
 
+import org.springframework.context.annotation.Profile;
+
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/admin/seed")
+@Profile("!prod")
 public class DemoSeedController {
 
     private final DemoSeedService demoSeedService;

@@ -1,5 +1,7 @@
 "use client"
 
+import { isFixtureMode } from "@/lib/fixture-mode"
+
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { ShieldAlert } from "lucide-react"
@@ -13,12 +15,6 @@ interface AdminGuardProps {
 }
 
 export default function AdminGuard({ children }: AdminGuardProps) {
-  const isFixtureEnv = process.env.NEXT_PUBLIC_FIXTURE === "1"
-  const isFixtureRuntime = typeof window !== "undefined" && window.localStorage.getItem("dm.fixture") === "1"
-  if (isFixtureEnv || isFixtureRuntime) {
-    return <>{children}</>
-  }
-
   const router = useRouter()
   const [user, setUser] = useState(getCurrentUser())
   const [mounted, setMounted] = useState(false)
@@ -29,6 +25,10 @@ export default function AdminGuard({ children }: AdminGuardProps) {
     setUser(getCurrentUser())
     return () => unsubscribe()
   }, [])
+
+  if (isFixtureMode()) {
+    return <>{children}</>
+  }
 
   if (!mounted) {
     return null

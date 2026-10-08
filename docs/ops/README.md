@@ -61,19 +61,32 @@
   - TLS: `ENABLE_TLS=true`, `SERVER_NAME`, `TLS_DOMAIN`, `TLS_EMAIL`, `TLS_SELF_SIGNED=false` 설정 후 한 번만 `./auto deploy tls issue --env prod --domain <도메인> --email <메일>`을 실행한다. 셀프사인(`TLS_SELF_SIGNED=true`)은 데모/로컬 전용.
   - 필수 보안 env: `JWT_SECRET`는 prod에서 반드시 지정(`application-prod.properties`는 미지정 시 실패), CORS 오리진(`CORS_ALLOWED_ORIGINS`), 관리자 계정/비밀번호.
 
-## 데모 데이터 초기화 (관리자 전용)
+## 데모 데이터 초기화 (수동·비운영 전용)
 
-> ⚠️ **운영 DB에서는 절대 호출 금지.** 이 절차는 냉장고/검사 관련 테이블을 모두 비운 뒤 데모 데이터를 다시 삽입한다.
+이 기능은 시연 중 쌓인 데이터를 정리하기 위한 임시 도구다. **운영 DB에서는 실행하지 않는다.**
+물품·포장뿐 아니라 검사 조치·세션·일정·벌점·라벨 시퀀스도 삭제하고 데모 데이터를 재구성한다.
 
-| 구분 | 내용 |
-| --- | --- |
-| 목적 | 시연 전에 냉장고/검사 데이터를 표준 데모 상태로 초기화하기 위함 |
-| 실행 효과 | 기존 사용자·포장·검사 데이터는 유지한 채, 전시 일정(11/12~11/20) 기준 물품 7건을 추가한다. 기존에 `item_name`이 `전시 데모:`로 시작하는 물품은 먼저 삭제한 뒤 다시 삽입한다. (SQL: `backend/src/main/resources/db/demo/fridge_exhibition_items.sql`) |
-| 실행 전 확인 | ① 대상 DB가 데모/스테이징 환경인지 확인 ② 기준 포장(앨리스·밥 등)과 기본 시드가 준비돼 있는지 확인 ③ 데모 진행자가 해당 물품 구성을 사용할지 재확인 |
-| 실행 절차 | 1. 관리자 계정으로 API 인증 토큰 발급<br>2. `POST /admin/seed/fridge-demo` 호출<br>3. 백엔드 로그에서 \"FRIDGE_DEMO_DATA_REFRESHED\" 응답과 함께 `inserted_count`가 7로 기록됐는지 확인 |
-| 실행 후 점검 | ① `/fridge/bundles` 또는 프런트 목록에서 `전시 데모:`로 시작하는 물품이 추가됐는지 확인 ② 필요한 경우 동일 API를 다시 호출해도 총 7건으로 유지되는지 검증 ③ 데모 시나리오에 맞는 임박/만료 일정(11/11~11/20)이 노출되는지 확인 |
+- 자동 Flyway 경로의 `R__demo_reset.sql`은 기존 적용 이력 식별자를 유지하며, 남아 있는
+  `fn_demo_reset_fridge()` 함수만 제거한다. 업무 데이터는 변경하지 않는다.
+- 초기화 함수 정의는 `backend/src/main/resources/db/demo/fridge_reset.sql`에 보관한다.
+- `fridge_exhibition_items.sql`이 함수를 호출한다. 두 파일 모두 운영 자동 마이그레이션에서 제외된다.
+- `prod` 프로필에서는 데모 API와 서비스가 등록되지 않는다.
+- 비운영 관리자 API `POST /admin/seed/fridge-demo`는 함수 설치와 초기화·감사 기록을
+  하나의 트랜잭션으로 실행한다. 자동화·예약 작업에는 넣지 않는다.
 
-> **주의**: API 대신 수동 SQL로 초기화해야 한다면 FK 참조를 거꾸로 타지 않도록 `inspection_action_item → inspection_action → penalty_history` 순으로 먼저 삭제한 뒤 `fridge_item`, `fridge_bundle`, `bundle_label_sequence`를 정리한다. 이 순서는 `AdminSeedIntegrationTest`에서도 검증되므로, 동일하게 따르면 `/admin/seed/fridge-demo` 실행 전 FK 오류를 예방할 수 있다.
+수동 실행이 필요하면 백업 후 대상이 폐기 가능한 데모 DB인지 확인하고, 저장소 루트에서
+데모 DB 연결 전용 환경변수 `DEMO_DATABASE_URL`을 설정한 뒤 다음을 실행한다.
+
+```bash
+psql "$DEMO_DATABASE_URL" -X --set=ON_ERROR_STOP=1 --single-transaction \
+  -f backend/src/main/resources/db/demo/fridge_reset.sql \
+  -f backend/src/main/resources/db/demo/fridge_exhibition_items.sql
+```
+
+기존 DB 업그레이드 시 `flyway repair`나 이력 삭제는 필요하지 않다. 변경된 repeatable이
+한 번 적용되어 기존 함수를 제거하며, 이후 변경이 없으면 재실행되지 않는다.
+다른 과거 버전 마이그레이션에 포함된 데모 시드까지 정리한 것은 아니므로, 신규 운영 DB의
+전체 초기화 경로 검증은 별도 배포 전제 조건으로 유지한다.
 
 ### 비상/경고 문구 표기 위치
 - 본 섹션 외에도 `docs/2.Demo_Scenario.md §2 사전 준비` 및 `docs/2.2.Status_Board.md`에 동일 경고를 반복 노출한다.

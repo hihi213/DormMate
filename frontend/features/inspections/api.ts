@@ -1,3 +1,4 @@
+import { isFixtureMode } from "@/lib/fixture-mode"
 import { safeApiCall } from "@/lib/api-client"
 import { mapBundleFromDto, toItems, toSlotLetter } from "@/features/fridge/utils/data-shaping"
 import type { Bundle, ItemUnit, Slot } from "@/features/fridge/types"
@@ -10,14 +11,6 @@ import type {
   InspectionSession,
   InspectionSubmitPayload,
 } from "@/features/inspections/types"
-
-const isFixtureEnabled = process.env.NEXT_PUBLIC_FIXTURE === "1"
-
-const isFixtureRuntime = () =>
-  typeof window !== "undefined" &&
-  (window.localStorage?.getItem("dm.fixture") === "1" || (window as any).__DM_FIXTURE__ === true)
-
-const isFixtureMode = () => isFixtureEnabled || isFixtureRuntime()
 
 async function fetchFixture<T>(resource: "slots" | "active" | "history" | "schedules"): Promise<T | undefined> {
   const response = await fetch(`/api/__fixtures__/fridge/inspections?resource=${resource}`)

@@ -84,7 +84,7 @@
 - [ ] DB/Redis는 사설 서브넷에 두고, 필요한 포트만 보안 그룹으로 허용
 - [ ] TLS(예: ALB, Nginx)로 외부 통신 암호화
 - [ ] Flyway 실행 권한은 CI/운영 계정으로 제한
-- [ ] 데모 시드 SQL(R__demo_reset.sql)은 운영 계정으로 실행되지 않도록 권한 분리
+- [ ] 데모 SQL(`db/demo/fridge_reset.sql`)은 운영 DB에서 실행 금지. 자동 마이그레이션의 `R__demo_reset.sql`은 기존 함수 제거만 수행
 
 ---
 

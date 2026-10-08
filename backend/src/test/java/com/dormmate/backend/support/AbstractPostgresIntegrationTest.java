@@ -87,6 +87,17 @@ public abstract class AbstractPostgresIntegrationTest {
                 .load();
         remainder.migrate();
 
+        // Fixtures are installed explicitly in the disposable test database only.
+        try (Connection connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())) {
+            ScriptUtils.executeSqlScript(connection, new org.springframework.core.io.support.EncodedResource(
+                    new ClassPathResource("db/demo/fridge_reset.sql"), java.nio.charset.StandardCharsets.UTF_8),
+                    false, false, "--", ScriptUtils.EOF_STATEMENT_SEPARATOR, "/*", "*/");
+            ScriptUtils.executeSqlScript(connection, new ClassPathResource("db/demo/fridge_exhibition_items.sql"));
+        } catch (SQLException | ScriptException ex) {
+            throw new IllegalStateException("Failed to install test demo fixtures", ex);
+        }
+
         ensureCompartmentAccessCoverage();
     }
 

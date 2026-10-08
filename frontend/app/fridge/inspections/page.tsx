@@ -1,5 +1,7 @@
 "use client"
 
+import { isFixtureMode } from "@/lib/fixture-mode"
+
 import { useCallback, useEffect, useMemo, useState } from "react"
 import dynamic from "next/dynamic"
 import Link from "next/link"
@@ -112,7 +114,7 @@ type ScheduleGroup = {
 }
 
 export default function InspectionsPage() {
-  if (process.env.NEXT_PUBLIC_FIXTURE === "1") {
+  if (isFixtureMode()) {
     return (
       <>
         <InspectionsInner />

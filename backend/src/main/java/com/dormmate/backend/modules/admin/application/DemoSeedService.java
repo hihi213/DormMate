@@ -1,5 +1,8 @@
 package com.dormmate.backend.modules.admin.application;
 
+import org.springframework.context.annotation.Profile;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.util.Map;
@@ -22,6 +25,7 @@ import com.dormmate.backend.global.security.SecurityUtils;
 import com.dormmate.backend.modules.audit.application.AuditLogService;
 
 @Service
+@Profile("!prod")
 public class DemoSeedService {
 
     private static final Logger log = LoggerFactory.getLogger(DemoSeedService.class);
@@ -36,10 +40,14 @@ public class DemoSeedService {
         this.auditLogService = auditLogService;
     }
 
+    @Transactional
     public void seedFridgeDemoData() {
         Resource resource = new ClassPathResource(FRIDGE_DEMO_SEED_SCRIPT);
         Connection connection = DataSourceUtils.getConnection(dataSource);
         try {
+            ScriptUtils.executeSqlScript(connection, new EncodedResource(
+                    new ClassPathResource("db/demo/fridge_reset.sql"), StandardCharsets.UTF_8),
+                    false, false, "--", ScriptUtils.EOF_STATEMENT_SEPARATOR, "/*", "*/");
             ScriptUtils.executeSqlScript(connection, new EncodedResource(resource, StandardCharsets.UTF_8));
             log.info("Fridge demo seed script executed successfully");
         } catch (ScriptException ex) {
