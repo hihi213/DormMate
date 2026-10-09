@@ -135,6 +135,8 @@ tasks.named('test') {
     // 'test'라는 이름의 Task를 찾아서 설정을 추가합니다.
     // JUnit 5를 테스트 프레임워크로 사용하도록 지정합니다.
     useJUnitPlatform()
+    environment 'DOCKER_API_VERSION', '1.44'
+    systemProperty 'api.version', '1.44'
 }
 
 tasks.withType(org.flywaydb.gradle.task.AbstractFlywayTask).configureEach {

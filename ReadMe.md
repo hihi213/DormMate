@@ -2,10 +2,15 @@
 
 > 신규 운영 DB는 `db/production` 경로로 초기화합니다. 데모 계정·물품은 생성하지 않으므로 초기 관리자 발급이 별도로 필요합니다. 기존 DB는 이력을 확인하기 전 재배포하지 마세요. [운영 DB 초기화 안내](docs/ops/README.md#신규-운영-db-초기화-2026-10-08-이후)를 따르며, 검증 오류를 `repair`로 우회하지 않습니다.
 
-DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위한 Spring Boot 기반 백엔드와 Next.js 프론트엔드 프로젝트입니다. 백엔드 우선 MVP를 목표로 하며, 운영 환경을 로컬에서 빠르게 재현할 수 있도록 Docker Compose·Flyway·자동화 스크립트를 제공합니다.
+DormMate는 **실제 280인 규모 기숙사의 4대 시설(냉장고, 세탁실, 스터디룸, 도서관) 운영 마찰과 행정 병목을 해결**하기 위한 Spring Boot 기반 백엔드와 Next.js 프론트엔드 프로젝트입니다. 층별 성별 분리, 1인실/3인실 구조, 냉장고 호실별 정수 균등 배분, 네이버 밴드 공지와 차별화된 1:1 휘발성 알림 등 **실제 기숙사 현장의 물리적 제약 조건(Physical Constraints)**을 소프트웨어 아키텍처로 풀어냈습니다.
 
 > 바로가기(문서 지도): 
-> - **ver1 핵심 스펙 (SSOT)**: `docs/specs/전체기능.md`(전체 기능 체계), `docs/specs/facility-contracts.md`(세 시설 계약서), `docs/specs/architecture-decisions.md`(설계 의사결정 기록 ADR), `docs/data-model.md`(엔터티)
+> - **ver1 핵심 스펙 (SSOT)**: 
+>   - [`docs/specs/domain-context.md`](docs/specs/domain-context.md) : **현실 기숙사 280인 환경 및 도메인 제약 분석서 (필독)**
+>   - [`docs/specs/전체기능.md`](docs/specs/전체기능.md) : 전체 기능 체계 (ver1 배포 중심)
+>   - [`docs/specs/facility-contracts.md`](docs/specs/facility-contracts.md) : 세 시설 확장 계약서
+>   - [`docs/specs/architecture-decisions.md`](docs/specs/architecture-decisions.md) : 설계 의사결정 기록 (ADR-001 ~ ADR-014 및 면접 Q&A)
+>   - [`docs/data-model.md`](docs/data-model.md) : 엔터티 데이터 모델
 > - **차기 로드맵 & 운영**: `docs/backlog/v2-v3-future-roadmap.md`(ver2/ver3 백로그), `docs/ops/README.md`(운영/배포), `docs/2.2.Status_Board.md`(진행 로그)
 > - **과거 기획 보관소**: `docs/archive/`(과거 초안/시나리오 아카이브)
 
