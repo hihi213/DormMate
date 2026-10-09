@@ -43,8 +43,10 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
                         || ((Number) rows.get(0).get("credential_version")).longValue() != parsed.credentialVersion()) {
                     reject(request, response, HttpStatus.UNAUTHORIZED, "CREDENTIALS_CHANGED"); return;
                 }
-                if (Boolean.TRUE.equals(rows.get(0).get("must_change_password"))
-                        && !("POST".equals(request.getMethod()) && "/auth/password".equals(request.getServletPath()))) {
+                String uri = request.getRequestURI();
+                boolean isPasswordChange = "POST".equalsIgnoreCase(request.getMethod())
+                        && (uri.equals("/auth/password") || uri.endsWith("/auth/password") || "/auth/password".equals(request.getServletPath()));
+                if (Boolean.TRUE.equals(rows.get(0).get("must_change_password")) && !isPasswordChange) {
                     reject(request, response, HttpStatus.FORBIDDEN, "PASSWORD_CHANGE_REQUIRED"); return;
                 }
                 List<String> roles = jdbc.queryForList("SELECT role_code FROM user_role WHERE dorm_user_id=? AND revoked_at IS NULL", String.class, parsed.userId());

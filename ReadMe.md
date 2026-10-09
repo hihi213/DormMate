@@ -4,20 +4,27 @@
 
 DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위한 Spring Boot 기반 백엔드와 Next.js 프론트엔드 프로젝트입니다. 백엔드 우선 MVP를 목표로 하며, 운영 환경을 로컬에서 빠르게 재현할 수 있도록 Docker Compose·Flyway·자동화 스크립트를 제공합니다.
 
-> 바로가기(문서 지도): `docs/1.Feature_Inventory.md`(정책 SSOT), `docs/2.Demo_Scenario.md`(데모/범위), `docs/2.1.Demo_Plan.md`(체크리스트), `docs/2.2.Status_Board.md`(진행 로그), `docs/ops/README.md`(운영/배포), `docs/tests/admin-playwright-plan.md`(관리자 E2E), `docs/data-model.md`(엔터티).
+> 바로가기(문서 지도): `전체기능.md`(전체 기능 체계), `docs/1.Feature_Inventory.md`(정책 SSOT), `docs/facility-contracts.md`(세 시설 계약서), `docs/data-model.md`(엔터티), `docs/2.Demo_Scenario.md`(데모/범위), `docs/2.1.Demo_Plan.md`(체크리스트), `docs/2.2.Status_Board.md`(진행 로그), `docs/ops/README.md`(운영/배포).
 
 ## 현재 구현된 핵심 기능 스냅샷
 
+- **호실 슬롯 및 계정 생애주기 관리 (Auth Lifecycle)**
+  - 공개 회원가입을 배제하고 `호실+개인번호` 기반 슬롯(`resident_account_slot`)을 사전 발급. 관리자가 입사(`check-in`) 배정 시 초기 비밀번호(`0000`) 발급.
+  - `0000` 최초 로그인 시 `must_change_password=true`로 보호되어 비밀번호 변경 전 타 서비스 접근 전면 차단(403). 관리자 초기화 시 기존 세션 전량 폐기.
+  - 퇴사(`check-out`) 시 계정 비활성화 및 세션 폐기. 차기 입주자에게 **신규 User UUID를 발급하여 이전 거주자 데이터 100% 영구 격리**.
 - **거주자 냉장고 관리**
   - 배정된 칸만 조회/등록 가능, 라벨 자동 발급 및 삭제 시 재사용, 임박/만료 배지 및 검색(라벨·호실·사용자) 제공.
 - **층별장 검사**
   - 세션 잠금/연장, 조치·벌점 기록, 제출 시 알림/감사 로그 발행. 제출 완료된 검사에 대해 ADMIN이 메모·조치를 정정(PATCH `/fridge/inspections/{id}`)하고 벌점/알림이 즉시 재계산된다.
-- **관리자 포털**
-  - `/admin/fridge`에서 칸 상태, 포장 CRUD, 검사 이력, 재배분, 데모 시드 실행을 통합 관리한다. 검사 정정은 서버 PATCH와 연동되어 있고, 알림 재발송은 버튼·토스트만 제공되며 재검 요청은 현재 UI에서 제거된 상태다.
+- **관리자 포털 & 거버넌스**
+  - `/admin/fridge`에서 칸 상태, 포장 CRUD, 검사 이력, 재배분, 데모 시드 실행을 통합 관리한다.
+  - `/admin/resident-slots`로 입·퇴사 및 비밀번호 초기화를 통제하고, 환경변수 기반 1회성 관리자 안전 부트스트랩(`InitialAdminService`)을 지원한다.
+- **세 시설 확장 계약 (Phase 2)**
+  - 세탁실(23대 기기 동시성 락/오차정정), 도서관(1권당 1명 대기열/연체벌점), 다목적실(주간 10분 단위 타임라인/노쇼벌점)의 DB·API·권한·중복 방지 공식 계약 구비 (`docs/facility-contracts.md`). 누적 벌점 10점 이상 시 세 시설 이용 자동 차단.
 - **알림/배치**
   - 사용자 알림 REST API(`GET /notifications`, `PATCH /notifications/{id}/read`, `GET/PATCH /notifications/preferences`)와 임박/만료 배치가 운영 중이며, 실패 로그는 `notification_dispatch_log`에 기록된다.
 - **감사/시드**
-  - 모든 관리자 액션(검사 제출·정정, 재배분, 데모 초기화 등)이 `audit_log`에 JSON 메타데이터로 기록된다. `/admin/seed/fridge-demo`는 전시용 포장/검사/벌점 데이터를 다시 삽입하므로 **운영 DB에서는 절대 실행하지 않는다.**
+  - 모든 관리자 액션(검사 제출·정정, 재배분, 슬롯 입/퇴사 등)이 `audit_log`에 JSON 메타데이터로 기록된다. `/admin/seed/fridge-demo`는 전시용 포장/검사/벌점 데이터를 다시 삽입하므로 **운영 DB에서는 절대 실행하지 않는다.**
 
 ## 주요 스택 & 권장 버전
 

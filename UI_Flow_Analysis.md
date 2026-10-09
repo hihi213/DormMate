@@ -48,27 +48,32 @@
 
 ---
 
-## 단계 2 (로그인/회원 시스템)
+## 단계 2 (로그인/회원 시스템) — 호실 슬롯 생애주기
 ### 핵심 화면
-- `/auth?mode=login`: 로그인 패널
-- `/auth?mode=signup`: 회원가입 패널 (현재 UI는 비활성 안내)
+- `/auth?mode=login`: 로그인 패널 (`호실-개인번호` 아이디 및 비밀번호 입력)
+- `/auth/change-password` (또는 강제 변경 모달): 최초 로그인(`0000`) 시 즉시 진입하는 필수 비밀번호 변경 화면
 - `/auth/logout`: 로그아웃 처리 페이지
-- `/auth/login`, `/auth/signup`: `/auth`로 리다이렉트
+- `/auth/signup`: 회원가입 비활성 안내 패널 (호실 슬롯 사전 발급 체계 안내)
 
 ### 사용자 흐름
-1) 보호된 페이지 진입 시 로그인 안내 → `/auth?mode=login`
-2) 로그인 성공 시 `redirect` 파라미터로 원래 화면 복귀
-3) 회원가입 화면은 안내만 제공 (관리자 발급 필요)
+1) 비로그인 상태로 보호 페이지 접근 시 `/auth?mode=login`으로 이동
+2) 관리자에게 안내받은 호실 계정(예: `205-1`)과 초기 비밀번호(`0000`)로 로그인
+3) `mustChangePassword=true` 감지 시:
+   - **모든 서비스 접근 차단 (HTTP 403 `PASSWORD_CHANGE_REQUIRED`)**
+   - 즉시 비밀번호 변경 화면(`/auth/change-password`)으로 강제 이동
+4) 신규 비밀번호 설정 완료 (`POST /auth/password`) ➔ `mustChangePassword=false` 해제
+5) 정식 서비스(냉장고, 세탁실 등) 정상 이용 가능
 
 ### 사용자 시나리오
-- 비로그인 사용자: 보호된 화면 접근 시 로그인 화면으로 이동해 인증을 완료한다.
-- 회원가입 화면은 실제 가입 폼이 아닌 안내 화면으로 제공된다.
+- 신규 입주자: 사감실에서 배정받은 `205-1` / `0000`으로 로그인 ➔ 비밀번호 변경 화면으로 즉시 이동 ➔ 본인만의 비밀번호 입력 후 완료 ➔ 냉장고 메인 진입.
 
 ### API 의존성
 - `POST /auth/login`
 - `POST /auth/refresh`
 - `POST /auth/logout`
+- `POST /auth/password` (신규 비밀번호 변경)
 - `GET /profile/me`
+
 
 ---
 
@@ -173,6 +178,10 @@
 - `POST /admin/users/{userId}/roles/floor-manager`
 - `DELETE /admin/users/{userId}/roles/floor-manager`
 - `PATCH /admin/users/{userId}/status`
+- `GET /admin/resident-slots` (호실 슬롯 및 입주자 현황 조회)
+- `POST /admin/resident-slots/{id}/check-in` (입사 배정 및 계정 활성화)
+- `POST /admin/resident-slots/{id}/check-out` (퇴사 처리 및 세션 폐기)
+- `POST /admin/resident-slots/{id}/reset-password` (비밀번호 0000 초기화)
 - `GET /admin/policies`
 - `PUT /admin/policies`
 - `GET /admin/fridge/compartments`
@@ -188,7 +197,14 @@
 
 ---
 
-## 범위 외(현재 UI는 안내 카드만 제공)
-- `/laundry`: 세탁실 모듈 (준비 중)
-- `/library`: 도서관 모듈 (준비 중)
-- `/study`: 다목적실 모듈 (준비 중)
+## 단계 6 (세 시설 확장 모듈 - Phase 2)
+*계약 문서: `docs/facility-contracts.md`*
+
+### 핵심 화면 (예정)
+- `/laundry`: 세탁실 현황 (기기 23대 상태 그리드, 실시간 타이머, ±10분 시간 정정, 수거 요청, 고장 신고)
+- `/library`: 도서관 포털 (도서 검색, 대출/반납 원스톱 팝업, 1권당 최대 1명 대기열 예약)
+- `/study`: 다목적실/스터디룸 (3개 룸 주간 10분 단위 타임라인 그리드, 합석 허용/단독 토글, 노쇼 신고)
+
+### 제재 연동
+- 누적 벌점 10점 이상 시 세 화면 진입/예약 시도 시 `403 FACILITY_ACCESS_SUSPENDED_BY_PENALTY` 차단 안내 팝업 노출.
+

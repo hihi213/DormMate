@@ -10,20 +10,22 @@
 ## 2. 모듈별 핵심 엔터티 개요
 | 모듈 | 엔터티 | 목적 |
 | --- | --- | --- |
-| 계정/권한 | `dorm_user`, `signup_request`, `room`, `room_assignment`, `role`, `user_role`, `user_session`, `admin_policy` | 사용자/호실/역할/세션 관리, 운영 정책(알림/벌점/배치 시각) 저장 |
+| 계정/권한 | `dorm_user`, `resident_account_slot`, `room`, `room_assignment`, `role`, `user_role`, `user_session`, `admin_policy` | 사용자/호실 슬롯/역할/세션 관리, 운영 정책(알림/벌점/배치 시각) 저장 |
 | 냉장고 | `fridge_unit`, `fridge_compartment`, `compartment_room_access`, `bundle_label_sequence`, `fridge_bundle`, `fridge_item` | 층별 냉장고/칸 자원, 호실-칸 배정, 포장/물품 등록·라벨 재사용 |
 | 검사·일정·벌점 | `inspection_session`, `inspection_participant`, `inspection_action`, `inspection_action_item`, `inspection_schedule`, `unregistered_item_event`, `penalty_history` | 칸 잠금이 걸린 검사 세션, 조치·스냅샷·미등록 물품 기록, 일정 관리, 벌점 누적 |
+| 세 시설 (확장) | `laundry_device`, `laundry_usage_log`, `laundry_message`, `laundry_maintenance_report`, `library_book`, `library_loan`, `library_reservation`, `study_room`, `study_room_reservation`, `study_room_report` | 세탁실 23대 기기/메시지, 도서관 대출/대기열, 다목적실 주간 타임라인/노쇼 관리 (상세: `docs/facility-contracts.md`) |
 | 알림 | `notification`, `notification_preference`, `notification_dispatch_log` | 알림 저장/TTL/dedupe, 사용자별 선호 설정, 발송 실패 로그 |
-| 감사 | `audit_log` | 민감 행위(검사 제출/정정, 시드 실행, 재배분 등) 추적 |
+| 감사 | `audit_log` | 민감 행위(검사 제출/정정, 시드 실행, 재배분, 슬롯 입/퇴사 등) 추적 |
 
 ## 3. 관계 개요
 ```mermaid
 erDiagram
     dorm_user ||--o{ user_role : has
     role ||--|{ user_role : defines
-    dorm_user ||--o{ room_assignment : occupies
+    room ||--o{ resident_account_slot : allocates
+    dorm_user ||--|| resident_account_slot : occupies_current
+    dorm_user ||--o{ room_assignment : history
     room ||--o{ room_assignment : contains
-    dorm_user ||--o{ signup_request : submitted
     dorm_user ||--o{ user_session : maintains
 
     fridge_unit ||--o{ fridge_compartment : has
@@ -44,6 +46,14 @@ erDiagram
     inspection_schedule }o--|| fridge_compartment : plans
     inspection_schedule ||--o{ inspection_session : links
 
+    laundry_device ||--o{ laundry_usage_log : logs
+    dorm_user ||--o{ laundry_usage_log : runs
+    library_book ||--o{ library_loan : borrows
+    dorm_user ||--o{ library_loan : loans
+    library_book ||--o{ library_reservation : reserves
+    study_room ||--o{ study_room_reservation : reserves
+    dorm_user ||--o{ study_room_reservation : books
+
     dorm_user ||--o{ notification : receives
     dorm_user ||--o{ notification_preference : configures
     notification ||--o{ notification_dispatch_log : logs
@@ -55,18 +65,19 @@ erDiagram
 ## 4. 엔터티 상세
 
 ### 4.1 계정 및 권한
-로그인/리프레시/로그아웃은 디바이스 ID까지 검증하며, 가입 요청은 PENDING→APPROVED/REJECTED로 흐른다. 비밀번호 변경 시 기존 세션은 폐기된다.
+공개 회원가입 대신 호실 슬롯(`resident_account_slot`)을 사전 발급하고 관리자가 입사(`check-in`) 배정한다. 초기 비밀번호(`0000`)로 로그인한 상태는 `must_change_password=true`로 보호되어 비밀번호 변경 전 타 API 호출이 차단(403)된다. 퇴사(`check-out`) 시 계정 비활성화 및 세션이 전량 폐기되며, 차기 입주자에게는 새 User UUID가 발급되어 이전 거주자 데이터가 100% 격리된다.
 
 | 엔터티 | 주요 필드 | 설명 |
 | --- | --- | --- |
-| `dorm_user` | `id`, `login_id`(소문자 유니크), `password_hash`, `full_name`, `email`, `status`(`PENDING`/`ACTIVE`/`INACTIVE`), `deactivated_at`, `created_at`, `updated_at` | 계정 상태 관리. 탈퇴/비활성화 시 `INACTIVE`·`deactivated_at` 설정 후 이력 보존. |
-| `signup_request` | `id`, `room_id`, `personal_no`, `login_id`, `email`, `status`(`PENDING`/`APPROVED`/`REJECTED`), `reviewed_by`, `reviewed_at`, `decision_note`, `submitted_at`, `created_at`, `updated_at` | 호실·개인 번호 기반 가입 요청 및 승인/반려 이력. |
+| `dorm_user` | `id`(UUID), `login_id`(소문자 유니크, `retired_at` 조건부), `password_hash`, `full_name`, `email`, `status`(`ACTIVE`/`INACTIVE`), `must_change_password`, `credential_version`, `retired_at`, `created_at`, `updated_at` | 계정 상태 관리. 퇴사 시 `retired_at` 설정 후 비활성화. 다음 입주자에게는 신규 UUID 발급. |
+| `resident_account_slot` | `id`(UUID), `room_id`, `personal_no`, `current_user_id`(유니크), `created_at` | 물리적 호실·침대와 현재 배정된 활성 사용자를 1:1로 연결하는 슬롯. |
 | `room` | `id`, `floor`, `room_number`, `room_type`(`SINGLE`/`TRIPLE`), `capacity`, `created_at`, `updated_at` | 호실 메타데이터. |
-| `room_assignment` | `id`, `room_id`, `dorm_user_id`, `personal_no`, `assigned_at`, `released_at`, `created_at`, `updated_at` | 호실 배정/퇴사 이력. |
+| `room_assignment` | `id`, `room_id`, `dorm_user_id`, `personal_no`, `assigned_at`, `released_at`, `created_at`, `updated_at` | 호실 배정 및 퇴사 이력 보존. |
 | `role` | `code`, `name`, `description`, `created_at`, `updated_at` | `RESIDENT`/`FLOOR_MANAGER`/`ADMIN` 기본 제공. |
 | `user_role` | `id`, `dorm_user_id`, `role_code`, `granted_at`, `granted_by`, `revoked_at`, `created_at`, `updated_at` | 역할 부여/회수 이력, 층별장 임명/해제 포함. |
-| `user_session` | `id`, `dorm_user_id`, `refresh_token_hash`, `device_id`, `issued_at`, `expires_at`, `revoked_at`, `revoked_reason`, `created_at`, `updated_at` | 리프레시 토큰 해시와 디바이스 ID로 세션 추적, 7일 TTL. |
+| `user_session` | `id`, `dorm_user_id`, `refresh_token_hash`, `device_id`, `credential_version`, `issued_at`, `expires_at`, `revoked_at`, `revoked_reason`, `created_at`, `updated_at` | 리프레시 토큰 해시와 디바이스 ID로 세션 추적, 7일 TTL. 비밀번호 변경/초기화 시 `credential_version` 불일치로 기존 세션 전량 무효화. |
 | `admin_policy` | `id`, `notification_batch_time`, `notification_daily_limit`, `notification_ttl_hours`, `penalty_limit`, `penalty_template`, `created_at`, `updated_at` | `/admin/policies`로 관리되는 운영 파라미터(임박 알림 배치 시각, 일일 발송 한도, TTL, 벌점 임계치·메시지 템플릿). |
+
 
 ### 4.2 냉장고 리소스 및 포장
 칸은 `slot_index`(0부터)로 식별하고 UI에서 문자 라벨로 변환한다. 라벨 번호는 칸별 3자리(001~999) 시퀀스를 사용하며, 삭제된 포장은 재사용 목록에서 꺼낸다. 검사 활동이 있을 때마다 잠금 만료(`locked_until`)가 30분 연장된다.
@@ -109,18 +120,37 @@ erDiagram
 ### 4.5 감사 로그
 | 엔터티 | 주요 필드 | 설명 |
 | --- | --- | --- |
-| `audit_log` | `id`, `action_type`, `resource_type`, `resource_key`, `actor_user_id`(nullable), `correlation_id`, `detail`(JSON), `created_at` | 검사 제출/정정, 데모 시드, 칸 재배분, 정책 변경 등 민감 이벤트 감사 기록. |
+| `audit_log` | `id`, `action_type`, `resource_type`, `resource_key`, `actor_user_id`(nullable), `correlation_id`, `detail`(JSON), `created_at` | 검사 제출/정정, 데모 시드, 칸 재배분, 슬롯 입/퇴사, 정책 변경 등 민감 이벤트 감사 기록. |
+
+### 4.6 세 시설 확장 모델 (Phase 2)
+*공식 스키마 및 제약조건 계약: `docs/facility-contracts.md`*
+
+| 모듈 | 엔터티 | 주요 필드 | 핵심 제약 및 동시성 보호 |
+| --- | --- | --- | --- |
+| **세탁실** | `laundry_device` | `id`, `device_code`(유니크), `display_name`, `facility_zone`(`MALE`/`FEMALE`/`COMMON`), `device_type`(`WASHER`/`DRYER`/`DUVET_DRYER`), `status`(`AVAILABLE`/`IN_USE`/`COMPLETED`/`MAINTENANCE`), `current_user_id`, `expected_end_at` | 23대 기기(남성 8, 여성 13, 공용 2). `status = 'AVAILABLE'` 조건부 원자적 갱신, 1인 동시 2대 제한 |
+| | `laundry_usage_log` | `id`, `device_id`, `dorm_user_id`, `duration_minutes`, `adjusted_minutes`, `status`, `started_at`, `ended_at` | 이용 완료 및 ±10분 오차 정정 이력 |
+| | `laundry_message` | `id`, `device_id`, `sender_id`, `recipient_id`, `message_type`, `content`, `is_read` | 수거 요청("기다리고 있어요", 5분 쿨다운) 및 세탁물 정리 알림 |
+| | `laundry_maintenance_report` | `id`, `device_id`, `reporter_id`, `issue_description`, `resolved`, `resolved_by` | 고장 신고 접수 및 기기 점검 전환 |
+| **도서관** | `library_book` | `id`, `isbn`, `title`, `author`, `call_number`(유니크), `total_copies`, `available_copies`, `status` | 도서 카탈로그 및 실시간 재고 |
+| | `library_loan` | `id`, `book_id`, `dorm_user_id`, `loan_date`, `due_date`, `returned_at`, `renewed_count`, `status` | 대출 이력 (기본 14일, 1회 연장 +7일, 1인 최대 3권) |
+| | `library_reservation` | `id`, `book_id`, `dorm_user_id`, `reserved_at`, `expires_at`, `status` | **도서 1권당 최대 1명 대기열** (`UNIQUE(book_id, status)`), 반납 후 5일 우선 대출 |
+| **다목적실** | `study_room` | `id`, `room_code`(유니크), `display_name`, `capacity`, `allow_co_use_default`, `status` | 3개 룸(Room A, B, C) 메타데이터 |
+| | `study_room_reservation` | `id`, `room_id`, `dorm_user_id`, `start_time`, `end_time`, `is_co_use_allowed`, `status` | **10분 단위 주간 타임라인**. 시간 범위 배제 제약조건(`tstzrange` Exclusion Constraint), 시작 1시간 전 취소 무료, 1시간 이내 취소 시 벌점 1점 |
+| | `study_room_report` | `id`, `reservation_id`, `reporter_id`, `report_type`(`NO_SHOW`), `status`, `penalty_applied` | 노쇼 신고 시 관리자 확인 후 벌점 2점 |
 
 ## 5. 동기화 체크리스트
-- [x] `user_session.device_id` 포함한 세션 구조 반영.
+- [x] 호실 슬롯 생애주기제(`resident_account_slot`, `must_change_password`, `retired_at`, `credential_version`) 반영.
+- [x] `user_session.device_id` 및 `credential_version` 포함한 세션 무효화 구조 반영.
+- [x] 세 시설 확장 스키마(`laundry_*`, `library_*`, `study_room_*`) 및 동시성 락/Unique 제약 계약 반영 (`docs/facility-contracts.md`).
 - [x] 알림 허용/백그라운드 필드(`notification.allow_background`, `notification_preference.allow_background`)·dedupe/TTL·dispatch 로그 상태 반영.
 - [x] 검사 조치 correlation → `inspection_action_item`/`penalty_history`/알림 연결 구조 반영.
 - [x] 칸 잠금(`is_locked`, `locked_until`)·용량(`max_bundle_count`)·라벨 재사용(`bundle_label_sequence`) 구조 반영.
-- [x] 일정-세션 연계(`inspection_schedule.inspection_session_id`) 및 상태 전이 반영.
 
 ## 6. 결정된 정책 및 향후 과제
+- 호실 슬롯 사전 발급 및 `0000` 강제 변경으로 가입 병목 제거 및 보안 강화. 퇴사 시 새 User UUID 발급으로 이전 거주자 데이터 100% 영구 격리.
+- 누적 유효 벌점 10점 이상 시 세 시설(세탁실, 도서관, 다목적실) 이용 자동 전면 차단 (`403 FACILITY_ACCESS_SUSPENDED_BY_PENALTY`). 냉장고는 필수 식생활 보호로 차단 제외.
 - 칸 허용량은 라벨 범위(001~999) 이내 값으로 관리하며, 관리자 조정 시 활성 포장 수보다 낮게 설정하면 422가 발생한다.
 - 검사 활동마다 잠금이 30분씩 연장되고, 만료된 잠금은 스케줄러가 정리한다. 제출/취소 시 잠금 해제.
 - 폐기/미등록 폐기 조치에 벌점 1점이 자동 누적되며 correlation으로 알림·조치와 묶인다.
-- 알림 dedupe 키로 중복 발송을 막고 TTL은 `admin_policy.notification_ttl_hours`를 따른다. 백그라운드 수신은 알림/선호 모두에서 플래그로 저장한다.
-- 향후 과제: 다중 검사자 실시간 동기화(SSE)와 알림 정책 테이블(런타임 TTL/배치 설정)을 도입할 때 본 문서를 추가 갱신한다.
+- 알림 dedupe 키로 중복 발송을 막고 TTL은 `admin_policy.notification_ttl_hours`를 따른다.
+
