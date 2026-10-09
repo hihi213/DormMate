@@ -46,6 +46,11 @@ public class UserSession extends AbstractTimestampedEntity {
     @Column(name = "device_id", length = 100)
     private String deviceId;
 
+    @Column(name = "credential_version", nullable = false)
+    private long credentialVersion;
+    public long getCredentialVersion() { return credentialVersion; }
+    public void setCredentialVersion(long value) { credentialVersion = value; }
+
     public UUID getId() {
         return id;
     }

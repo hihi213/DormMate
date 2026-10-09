@@ -26,6 +26,9 @@ public class JwtTokenProvider {
         } catch (IllegalArgumentException ex) {
             keyBytes = secretString.getBytes(StandardCharsets.UTF_8);
         }
+        if (keyBytes.length < 32) {
+            throw new IllegalArgumentException("JWT secret must contain at least 32 decoded bytes");
+        }
         this.secretKey = new SecretKeySpec(keyBytes, HMAC_SHA_256);
     }
 

@@ -1,0 +1,14 @@
+# 최초 관리자 발급 시에만 prod 설정 위에 추가한다.
+services:
+  app:
+    environment:
+      DORMMATE_BOOTSTRAP_ENABLED: "true"
+      DORMMATE_BOOTSTRAP_LOGIN_ID: ${DORMMATE_BOOTSTRAP_LOGIN_ID:?Set bootstrap login ID}
+      DORMMATE_BOOTSTRAP_NAME: ${DORMMATE_BOOTSTRAP_NAME:?Set bootstrap name}
+      DORMMATE_BOOTSTRAP_EMAIL: ${DORMMATE_BOOTSTRAP_EMAIL:?Set bootstrap email}
+      DORMMATE_BOOTSTRAP_PASSWORD_FILE: /run/secrets/admin_bootstrap_password
+    secrets:
+      - admin_bootstrap_password
+secrets:
+  admin_bootstrap_password:
+    file: ${ADMIN_BOOTSTRAP_PASSWORD_SOURCE:?Set absolute path to bootstrap password file}

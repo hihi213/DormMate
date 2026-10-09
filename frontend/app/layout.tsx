@@ -4,6 +4,7 @@ import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
 import "./globals.css"
 import { Toaster } from "@/components/ui/toaster"
+import PasswordChangeGate from "@/app/_components/password-change-gate"
 import SessionHeartbeat from "@/app/_components/session-heartbeat"
 
 export const metadata: Metadata = {
@@ -21,7 +22,7 @@ export default function RootLayout({
     <html lang="en" className={`${GeistSans.variable} ${GeistMono.variable}`}>
       <body className={GeistSans.className}>
         <SessionHeartbeat />
-        {children}
+        <PasswordChangeGate>{children}</PasswordChangeGate>
         <Toaster />
       </body>
     </html>

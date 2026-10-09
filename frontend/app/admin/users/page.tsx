@@ -459,6 +459,7 @@ export default function AdminUsersPage() {
                 권한·계정
               </Badge>
               <h1 className="text-2xl font-semibold text-slate-900">층별장 및 관리자 계정 관리</h1>
+              <Link href="/admin/residents" className="text-emerald-700 underline">입사·퇴사 및 초기 비밀번호 관리</Link>
               <p className="text-sm text-slate-600">
                 층별장 승격/복귀, 관리자 임명, 계정 비활성화를 처리합니다. 변경 이력은 감사 로그에서 추적하세요.
               </p>

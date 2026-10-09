@@ -1,5 +1,7 @@
 # DormMate
 
+> 신규 운영 DB는 `db/production` 경로로 초기화합니다. 데모 계정·물품은 생성하지 않으므로 초기 관리자 발급이 별도로 필요합니다. 기존 DB는 이력을 확인하기 전 재배포하지 마세요. [운영 DB 초기화 안내](docs/ops/README.md#신규-운영-db-초기화-2026-10-08-이후)를 따르며, 검증 오류를 `repair`로 우회하지 않습니다.
+
 DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위한 Spring Boot 기반 백엔드와 Next.js 프론트엔드 프로젝트입니다. 백엔드 우선 MVP를 목표로 하며, 운영 환경을 로컬에서 빠르게 재현할 수 있도록 Docker Compose·Flyway·자동화 스크립트를 제공합니다.
 
 > 바로가기(문서 지도): `docs/1.Feature_Inventory.md`(정책 SSOT), `docs/2.Demo_Scenario.md`(데모/범위), `docs/2.1.Demo_Plan.md`(체크리스트), `docs/2.2.Status_Board.md`(진행 로그), `docs/ops/README.md`(운영/배포), `docs/tests/admin-playwright-plan.md`(관리자 E2E), `docs/data-model.md`(엔터티).

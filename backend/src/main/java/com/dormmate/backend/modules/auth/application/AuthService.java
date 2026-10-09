@@ -93,7 +93,7 @@ public class AuthService {
         String refreshTokenHash = hashRefreshToken(refreshToken);
         String deviceId = normalizeDeviceId(request.deviceId());
 
-        TokenPairResponse tokens = jwtTokenService.issueTokenPair(user.getId(), user.getLoginId(), roleCodes, refreshToken);
+        TokenPairResponse tokens = jwtTokenService.issueTokenPair(user.getId(), user.getLoginId(), roleCodes, refreshToken, user.getCredentialVersion());
         persistSession(user, refreshTokenHash, tokens, deviceId);
 
         UserProfileResponse profile = buildUserProfile(user, roleCodes);
@@ -124,6 +124,10 @@ public class AuthService {
         }
 
         DormUser user = session.getDormUser();
+        if (session.getCredentialVersion() != user.getCredentialVersion() || user.getRetiredAt() != null) {
+            revokeSession(session, "CREDENTIALS_CHANGED");
+            throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "INVALID_REFRESH_TOKEN");
+        }
         if (user.getStatus() != DormUserStatus.ACTIVE) {
             revokeSession(session, REASON_USER_INACTIVE);
             throw new ResponseStatusException(HttpStatus.FORBIDDEN, "USER_INACTIVE");
@@ -139,7 +143,7 @@ public class AuthService {
         String refreshTokenHash = hashRefreshToken(refreshToken);
         String effectiveDeviceId = requestDeviceId != null ? requestDeviceId : sessionDeviceId;
 
-        TokenPairResponse tokens = jwtTokenService.issueTokenPair(user.getId(), user.getLoginId(), roleCodes, refreshToken);
+        TokenPairResponse tokens = jwtTokenService.issueTokenPair(user.getId(), user.getLoginId(), roleCodes, refreshToken, user.getCredentialVersion());
         persistSession(user, refreshTokenHash, tokens, effectiveDeviceId);
 
         UserProfileResponse profile = buildUserProfile(user, roleCodes);
@@ -204,6 +208,7 @@ public class AuthService {
                 roomResponse,
                 isFloorManager,
                 isAdmin,
+                user.isMustChangePassword(),
                 user.getCreatedAt(),
                 user.getUpdatedAt()
         );
@@ -219,6 +224,7 @@ public class AuthService {
         session.setIssuedAt(issuedAt);
         session.setExpiresAt(refreshExpiry);
         session.setDeviceId(deviceId);
+        session.setCredentialVersion(user.getCredentialVersion());
 
         userSessionRepository.save(session);
     }

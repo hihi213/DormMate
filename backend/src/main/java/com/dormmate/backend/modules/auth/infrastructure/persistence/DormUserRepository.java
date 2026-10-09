@@ -17,7 +17,7 @@ import org.springframework.data.repository.query.Param;
 
 public interface DormUserRepository extends JpaRepository<DormUser, UUID> {
 
-    @Query("select du from DormUser du where lower(du.loginId) = lower(:loginId)")
+    @Query("select du from DormUser du where lower(du.loginId) = lower(:loginId) and du.retiredAt is null")
     Optional<DormUser> findByLoginIdIgnoreCase(@Param("loginId") String loginId);
 
     @Query("""

@@ -37,6 +37,7 @@ export function LoginPanel({ redirectTo }: LoginPanelProps) {
 
   const resolveTarget = useCallback(
     (current: AuthUser | null) => {
+      if (current?.mustChangePassword) return "/auth/change-password"
       if (current?.isAdmin) {
         if (explicitRedirect && explicitRedirect.startsWith("/admin")) {
           return explicitRedirect
@@ -87,7 +88,7 @@ export function LoginPanel({ redirectTo }: LoginPanelProps) {
     setError("")
     startTransition(async () => {
       try {
-        const current = await loginWithCredentials({ id: loginId.trim(), password: password.trim() })
+        const current = await loginWithCredentials({ id: loginId.trim(), password })
         toast({
           title: "로그인 완료",
           description: "DormMate에 오신 것을 환영합니다.",

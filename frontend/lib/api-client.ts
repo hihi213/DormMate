@@ -118,6 +118,9 @@ export async function apiClient<T>(path: string, options: ApiRequestOptions = {}
 
   if (!response.ok) {
     const error = await resolveApiError(response, errorMessages, errorCodeMessages)
+    if (error.code === "PASSWORD_CHANGE_REQUIRED" && typeof window !== "undefined") {
+      window.location.assign("/auth/change-password")
+    }
     if (response.status === 401 && !skipAuth) {
       redirectToLogin({ reason: "sessionExpired", navigate: true })
     }

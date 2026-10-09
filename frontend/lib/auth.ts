@@ -20,6 +20,7 @@ export type AuthUser = {
   roomDetails?: RoomDetails | null
   roles: UserRole[]
   isFloorManager: boolean
+  mustChangePassword?: boolean
   isAdmin: boolean
 }
 
@@ -57,6 +58,7 @@ type UserProfile = {
   roles: UserRole[]
   primaryRoom?: RoomAssignment | null
   isFloorManager: boolean
+  mustChangePassword?: boolean
   isAdmin: boolean
   createdAt: string
   updatedAt: string
@@ -96,6 +98,7 @@ function mapUserProfile(profile: UserProfile): AuthUser {
     roles: profile.roles ?? [],
     isFloorManager: profile.isFloorManager,
     isAdmin: profile.isAdmin,
+    mustChangePassword: profile.mustChangePassword ?? false,
   }
 }
 
@@ -375,4 +378,12 @@ export function redirectToLogin(
 
 export async function registerUser(): Promise<AuthUser> {
   throw new Error("회원가입은 현재 관리자 승인 절차를 통해서만 가능합니다.")
+}
+
+export async function changePassword(currentPassword: string, newPassword: string) {
+  const { error } = await safeApiCall<void>("/auth/password", {
+    method: "POST", body: { currentPassword, newPassword }, parseResponseAs: "none",
+  })
+  if (error) throw new Error(error.message)
+  clearSession()
 }

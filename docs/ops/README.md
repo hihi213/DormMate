@@ -104,3 +104,50 @@ psql "$DEMO_DATABASE_URL" -X --set=ON_ERROR_STOP=1 --single-transaction \
 - **발송 실패 로그**: `notification_dispatch_log`에서 최근 알림 실패 건을 조회하고, `error_code`·`error_message`를 기반으로 재시도 또는 장애 전파가 가능한지 점검한다.
 - **검사 조치 감사**: `inspection_action_item`의 스냅샷 데이터를 점검해 폐기·경고 근거가 남아 있는지 확인하고, `unregistered_item_event`가 누락되지 않았는지 주기적으로 모니터링한다.
 - **DB 인덱스 점검**: Flyway `V18__add_fridge_search_indexes.sql`이 성공했는지 `pg_indexes`에서 `idx_room_assignment_user_released`, `idx_room_room_number_lower` 존재 여부를 확인하고, 관리자 검색이 느려질 경우 재적용 여부를 검토한다.
+
+## 신규 운영 DB 초기화 (2026-10-08 이후)
+
+- 신규 운영 기본 경로는 `db/production`이다. `V1`은 현재 스키마, `V2`는 역할·96개 호실·냉장고 시설 기준 데이터만 만든다.
+- 계정·비밀번호·호실 입주 배정·물품·검사·벌점은 생성하지 않는다. 초기 관리자 발급과 실제 입주자 등록은 별도 운영 준비가 필요하다.
+- Spring prod, Gradle Flyway 기본값과 prod Compose migrate 서비스는 이 경로를 사용한다.
+- 이력이 없지만 테이블이 있는 DB는 자동 baseline 하지 않고 실패한다. 기존 `db/migration` 이력이 있는 DB도 새 경로로 전환하면 검증이 실패한다. `repair`, 이력 삭제 또는 자동 baseline으로 우회하지 않는다.
+- 기존 DB 업그레이드는 백업 후 이력을 먼저 확인한다. 과거 시드가 아직 미적용이라면 계정 비밀번호 덮어쓰기가 가능하므로 원본 경로의 마이그레이션도 무조건 실행하지 않는다.
+- 기존 경로를 검증 목적으로 선택할 때 Spring은 `FLYWAY_LOCATIONS=classpath:db/migration`, Gradle은 `FLYWAY_LOCATIONS=filesystem:src/main/resources/db/migration`을 사용한다. 이는 신규 운영 설정이 아니다.
+- 향후 운영 스키마 변경은 `db/production/V3__...sql`부터 추가한다. 기존 `db/migration`은 과거 이력·데모 테스트 호환용으로 보존하며 두 경로를 한 DB에서 섞지 않는다.
+- 신규 스키마는 V1/V4/V8~V13/V17~V20/V22/V24~V26/V33~V35/V38~V41의 구조 변경과 진단 뷰를 통합했다. 버전이 붙은 기존 파일의 checksum은 수정하지 않았다.
+
+## 최초 관리자 발급
+
+신규 운영 DB의 관리자 발급은 기본적으로 비활성화되어 있다. `db/production` 경로를 사용하는 DB에서만 다음 절차를 수행한다.
+
+1. 운영 서버의 Git 저장소 밖에 소유자만 읽을 수 있는 비밀번호 파일(권한 `600`)을 준비한다. 비밀번호는 12자 이상, UTF-8 기준 72바이트 이하여야 한다. 파일 끝 공백/줄바꿈은 제거된다. 비밀번호를 명령 인수나 Git 파일에 넣지 않는다.
+2. `deploy/.env.prod`에 아래 설정을 넣는다. `ADMIN_BOOTSTRAP_PASSWORD_SOURCE`는 해당 서버의 절대 경로다. 공백이 포함된 이름은 따옴표로 감싼다.
+
+```dotenv
+DORMMATE_BOOTSTRAP_LOGIN_ID=initial-admin
+DORMMATE_BOOTSTRAP_NAME='System Administrator'
+DORMMATE_BOOTSTRAP_EMAIL=admin@example.com
+ADMIN_BOOTSTRAP_PASSWORD_SOURCE=/absolute/private/path/admin_password.txt
+```
+
+3. 저장소 루트에서 최초 발급용 설정을 추가해 기동한다.
+
+```bash
+docker compose --env-file deploy/.env.prod \
+  -f docker-compose.yml -f docker-compose.prod.yml -f docker-compose.bootstrap.yml \
+  up -d --build proxy
+```
+
+4. 발급 완료 로그와 실제 로그인을 확인한 뒤, 최초 발급 설정을 제외해 앱을 다시 만든다.
+
+```bash
+docker compose --env-file deploy/.env.prod \
+  -f docker-compose.yml -f docker-compose.prod.yml \
+  up -d --force-recreate app
+```
+
+5. 재기동과 로그인을 확인한 뒤 비밀번호 파일 및 부트스트랩 전용 환경값을 제거한다. 먼저 파일만 제거하고 발급용 설정으로 재시작하면 파일 읽기 오류로 기동이 실패한다.
+
+발급 작업은 계정·ADMIN 역할·감사 로그·완료 표식을 하나의 트랜잭션으로 저장한다. 동시 기동은 DB 트랜잭션 잠금으로 직렬화한다. 완료 후 재호출하거나 기존 관리자 역할 이력이 있으면 계정을 변경하지 않는다. 기존 거주자와 대소문자를 무시한 아이디 충돌이 있으면 승격하지 않고 실패한다. 완료 표식을 지워 비밀번호 복구에 재사용하지 않는다.
+
+운영 기동 검증은 `/healthz`(프로세스)와 `/readyz`(의존성 전체)를 구분한다. `/readyz`는 정상 시 200, 의존성 장애 또는 확인 실패 시 503을 반환한다. 운영 Compose의 Redis 연결은 `redis` 서비스로 지정한다. `JWT_SECRET`은 필수이며, Base64 키는 디코딩 후 32바이트 이상이어야 한다. 키 누락·길이 부족은 기동 실패로 처리한다.

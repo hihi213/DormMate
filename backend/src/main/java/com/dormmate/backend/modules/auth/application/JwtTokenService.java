@@ -39,6 +39,10 @@ public class JwtTokenService {
     }
 
     public TokenPairResponse issueTokenPair(UUID userId, String loginId, List<String> roles, String refreshToken) {
+        return issueTokenPair(userId, loginId, roles, refreshToken, 0);
+    }
+
+    public TokenPairResponse issueTokenPair(UUID userId, String loginId, List<String> roles, String refreshToken, long credentialVersion) {
         Instant now = clock.instant();
         OffsetDateTime issuedAt = OffsetDateTime.ofInstant(now, clock.getZone());
         Instant accessExpiry = now.plusMillis(accessTokenTtlMillis);
@@ -51,6 +55,7 @@ public class JwtTokenService {
                 .expiration(Date.from(accessExpiry))
                 .claim("loginId", loginId)
                 .claim("roles", roles)
+                .claim("credentialVersion", credentialVersion)
                 .signWith(key, Jwts.SIG.HS256)
                 .compact();
 
@@ -90,7 +95,8 @@ public class JwtTokenService {
                     loginId,
                     roles,
                     OffsetDateTime.ofInstant(issuedAt, clock.getZone()),
-                    OffsetDateTime.ofInstant(expiresAt, clock.getZone())
+                    OffsetDateTime.ofInstant(expiresAt, clock.getZone()),
+                    claims.get("credentialVersion", Long.class) == null ? 0 : claims.get("credentialVersion", Long.class)
             );
         } catch (JwtException | IllegalArgumentException e) {
             throw new InvalidTokenException("Invalid access token", e);
@@ -105,7 +111,7 @@ public class JwtTokenService {
         return refreshTokenTtlMillis;
     }
 
-    public record ParsedToken(UUID userId, String loginId, List<String> roles, OffsetDateTime issuedAt, OffsetDateTime expiresAt) {
+    public record ParsedToken(UUID userId, String loginId, List<String> roles, OffsetDateTime issuedAt, OffsetDateTime expiresAt, long credentialVersion) {
     }
 
     public static class InvalidTokenException extends RuntimeException {

@@ -31,7 +31,7 @@ public class DormUser extends AbstractTimestampedEntity {
     @Column(name = "id", nullable = false, updatable = false, columnDefinition = "uuid")
     private UUID id;
 
-    @Column(name = "login_id", nullable = false, unique = true, length = 50)
+    @Column(name = "login_id", nullable = false, length = 50)
     private String loginId;
 
     @Column(name = "password_hash", nullable = false, length = 255)
@@ -58,6 +58,17 @@ public class DormUser extends AbstractTimestampedEntity {
 
     @OneToMany(mappedBy = "dormUser", cascade = CascadeType.ALL, fetch = FetchType.LAZY, orphanRemoval = false)
     private List<RoomAssignment> roomAssignments = new ArrayList<>();
+
+    @Column(name = "must_change_password", nullable = false)
+    private boolean mustChangePassword;
+    @Column(name = "credential_version", nullable = false)
+    private long credentialVersion;
+    @Column(name = "retired_at")
+    private OffsetDateTime retiredAt;
+
+    public boolean isMustChangePassword() { return mustChangePassword; }
+    public long getCredentialVersion() { return credentialVersion; }
+    public OffsetDateTime getRetiredAt() { return retiredAt; }
 
     public UUID getId() {
         return id;

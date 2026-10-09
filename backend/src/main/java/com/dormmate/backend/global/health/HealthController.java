@@ -1,10 +1,9 @@
 package com.dormmate.backend.global.health;
 
 import java.time.Instant;
-import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthComponent;
 import org.springframework.boot.actuate.health.HealthEndpoint;
-import org.springframework.boot.actuate.health.CompositeHealth;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 /**
@@ -35,28 +34,16 @@ public class HealthController {
      * 레디니스 체크 - DB 연결 및 마이그레이션 버전 확인
      */
     @GetMapping("/readyz")
-    public HealthResponse readyz() {
+    public ResponseEntity<HealthResponse> readyz() {
+        String status;
         try {
-            HealthComponent healthComponent = healthEndpoint.health();
-            String status = healthComponent.getStatus().getCode();
-
-            if (healthComponent instanceof CompositeHealth composite) {
-                Object dbDetail = composite.getDetails().get("db");
-                if (dbDetail instanceof Health dbHealth) {
-                    status = dbHealth.getStatus().getCode();
-                }
-            }
-
-            return new HealthResponse(
-                status,
-                Instant.now().toString()
-            );
+            HealthComponent health = healthEndpoint.health();
+            status = health.getStatus().getCode();
         } catch (Exception e) {
-            return new HealthResponse(
-                "DOWN",
-                Instant.now().toString()
-            );
+            status = "DOWN";
         }
+        return ResponseEntity.status("UP".equals(status) ? 200 : 503)
+                .body(new HealthResponse(status, Instant.now().toString()));
     }
 
     /**

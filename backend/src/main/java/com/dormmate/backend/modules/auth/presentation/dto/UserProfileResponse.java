@@ -13,6 +13,7 @@ public record UserProfileResponse(
         RoomAssignmentResponse primaryRoom,
         boolean isFloorManager,
         boolean isAdmin,
+        boolean mustChangePassword,
         OffsetDateTime createdAt,
         OffsetDateTime updatedAt
 ) {

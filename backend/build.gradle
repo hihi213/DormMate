@@ -153,7 +153,7 @@ flyway {
     user = System.getenv('DB_USERNAME') ?: 'dormmate_user'
     password = System.getenv('DB_PASSWORD') ?: 'pleasesetup'
     schemas = ['public']
-    baselineOnMigrate = true
-    locations = ["filesystem:${projectDir}/src/main/resources/db/migration"]
+    baselineOnMigrate = false
+    locations = [(System.getenv('FLYWAY_LOCATIONS') ?: "filesystem:${projectDir}/src/main/resources/db/production")]
     configurations = ['flyway', 'runtimeClasspath'] as String[] // Flyway 태스크가 JDBC 드라이버 및 DB 플러그인을 인식하도록 Gradle configuration 지정
 }
