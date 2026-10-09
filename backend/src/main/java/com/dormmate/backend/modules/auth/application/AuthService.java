@@ -77,12 +77,12 @@ public class AuthService {
         DormUser user = dormUserRepository.findByLoginIdIgnoreCase(request.loginId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS"));
 
-        if (user.getStatus() != DormUserStatus.ACTIVE) {
-            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "USER_INACTIVE");
-        }
-
         if (!passwordEncoder.matches(request.password(), user.getPasswordHash())) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "INVALID_CREDENTIALS");
+        }
+
+        if (user.getStatus() != DormUserStatus.ACTIVE) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "USER_INACTIVE");
         }
 
         List<String> roleCodes = extractActiveRoleCodes(user.getId());

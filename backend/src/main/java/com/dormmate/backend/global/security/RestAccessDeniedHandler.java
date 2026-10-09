@@ -26,7 +26,7 @@ public class RestAccessDeniedHandler implements AccessDeniedHandler {
     @Override
     public void handle(HttpServletRequest request, HttpServletResponse response, AccessDeniedException accessDeniedException)
             throws IOException {
-        ProblemResponse body = ProblemResponse.of(HttpStatus.FORBIDDEN, "forbidden", accessDeniedException.getMessage(), request.getRequestURI());
+        ProblemResponse body = ProblemResponse.of(HttpStatus.FORBIDDEN, "FORBIDDEN", accessDeniedException.getMessage(), request.getRequestURI());
 
         response.setStatus(HttpStatus.FORBIDDEN.value());
         response.setContentType(MediaType.APPLICATION_PROBLEM_JSON_VALUE);

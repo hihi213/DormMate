@@ -24,82 +24,68 @@
 * **남녀 공용**: 대형 이불 건조기 2대 (`DUVET_DRYER_01`~`02`, 남성 세탁실 구역 위치)
 * **총 기기 수**: 23대
 
-### 2.2 DB 스키마 계약 (DDL)
+### 2.2 ver1 핵심 기능 명세
+*차기 확장(방치 알림, 시간 오차 정정)은 `docs/backlog/v2-v3-future-roadmap.md`로 분리 관리*
+
+* 기기 실시간 현황(23대) 조회
+* 기기 사용 시작 (`status = 'IN_USE'` 전환, 1인 동시 2대 제한)
+* **기종별 최근 사용 시간 자동 완성 (UX 디테일)**:
+  * 사용자가 특정 기종(`WASHER`, `DRYER`, `DUVET_DRYER`)에서 설정했던 직전 이용 시간을 **백엔드의 `laundry_usage_log` 최근 1건 조회(`ORDER BY started_at DESC LIMIT 1`)**를 통해 제공.
+  * 스마트폰↔노트북 기기 변경, 로그아웃, 브라우저 캐시 삭제와 무관하게 **어디서나 100% 본인의 최근 설정 시간 자동 완성**.
+* **종료 5분 전 자동 알림**: 사용자가 개별 타이머를 맞출 필요 없이 시스템이 `expected_end_at - 5분` 시점에 수거 준비 인앱 알림을 1회 자동 발행 (`dedupe_key`로 중복 방지).
+* **세탁물 수거 알림 (핵심 배려 인터랙션)**:
+  * 다음 사용자가 완료 세탁물을 바구니로 옮긴 후 전송하는 알림
+  * **최대 30자 메모 입력 가능** (예: `"3층 핑크색 바구니에 담아뒀어요"`, 미입력 시 디폴트 문구 발송)
+  * **발신자 호실 정보 노출 (`{floor}0{room}`호)**: 장난성 허위 알림 방지 및 책임감 부여, 프라이버시 보호(실명/개인번호 숨김).
+
+### 2.3 DB 스키마 계약 (DDL)
+
 ```sql
 -- 기기 정보 테이블
 CREATE TABLE laundry_device (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    device_code     VARCHAR(32) NOT NULL UNIQUE,       -- 예: WASHER_M01, DUVET_DRYER_01
-    display_name    VARCHAR(64) NOT NULL,              -- 예: 남성 세탁기 1호, 공용 이불 건조기 1호
+    device_code     VARCHAR(32) NOT NULL UNIQUE,       -- WASHER_M01, DUVET_DRYER_01 등
+    display_name    VARCHAR(64) NOT NULL,              -- 남성 세탁기 1호 등
     facility_zone   VARCHAR(16) NOT NULL,              -- MALE, FEMALE, COMMON
     device_type     VARCHAR(16) NOT NULL,              -- WASHER, DRYER, DUVET_DRYER
-    status          VARCHAR(16) NOT NULL DEFAULT 'AVAILABLE', -- AVAILABLE, IN_USE, COMPLETED, MAINTENANCE
-    default_duration_minutes INT NOT NULL DEFAULT 38,  -- 세탁기 기본 38분, 건조기 기본 50분
+    status          VARCHAR(16) NOT NULL DEFAULT 'AVAILABLE', -- AVAILABLE, IN_USE, MAINTENANCE
+    default_duration_minutes INT NOT NULL DEFAULT 38,  -- 기본 세탁 38분, 건조 50분
     current_user_id UUID REFERENCES dorm_user(id),
     started_at      TIMESTAMPTZ,
     expected_end_at TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    CONSTRAINT ck_laundry_device_status CHECK (status IN ('AVAILABLE', 'IN_USE', 'COMPLETED', 'MAINTENANCE')),
+    CONSTRAINT ck_laundry_device_status CHECK (status IN ('AVAILABLE', 'IN_USE', 'MAINTENANCE')),
     CONSTRAINT ck_laundry_device_zone CHECK (facility_zone IN ('MALE', 'FEMALE', 'COMMON')),
     CONSTRAINT ck_laundry_device_type CHECK (device_type IN ('WASHER', 'DRYER', 'DUVET_DRYER'))
 );
 
--- 이용 기록 및 감사 로그
+-- 이용 기록 로그
 CREATE TABLE laundry_usage_log (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     device_id       UUID NOT NULL REFERENCES laundry_device(id),
     dorm_user_id    UUID NOT NULL REFERENCES dorm_user(id),
     duration_minutes INT NOT NULL,
-    adjusted_minutes INT NOT NULL DEFAULT 0,          -- 오차 정정 누적 분 (±10분)
-    status          VARCHAR(16) NOT NULL,              -- RUNNING, FINISHED, FORCE_COMPLETED, CANCELLED
+    status          VARCHAR(16) NOT NULL,              -- RUNNING, FINISHED, CANCELLED
     started_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     ended_at        TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
-
--- 세탁실 메시지 (수거 요청, 빼놨어요 알림)
-CREATE TABLE laundry_message (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    device_id       UUID NOT NULL REFERENCES laundry_device(id),
-    sender_id       UUID NOT NULL REFERENCES dorm_user(id),
-    recipient_id    UUID NOT NULL REFERENCES dorm_user(id),
-    message_type    VARCHAR(32) NOT NULL,              -- WAITING_PICKUP, REMOVED_LAUNDRY, CUSTOM
-    content         VARCHAR(255) NOT NULL,
-    is_read         BOOLEAN NOT NULL DEFAULT FALSE,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
-
--- 고장 신고 내역
-CREATE TABLE laundry_maintenance_report (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    device_id       UUID NOT NULL REFERENCES laundry_device(id),
-    reporter_id     UUID NOT NULL REFERENCES dorm_user(id),
-    issue_description TEXT NOT NULL,
-    resolved        BOOLEAN NOT NULL DEFAULT FALSE,
-    resolved_by     UUID REFERENCES dorm_user(id),
-    resolved_at     TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
 ```
 
-### 2.3 API 계약
+### 2.4 API 계약 (ver1)
 | Method | Path | Request Body | Description | 에러 코드 |
 |---|---|---|---|---|
-| `GET` | `/laundry/devices` | Query: `zone`, `type` | 전체 세탁/건조 기기 목록 및 실시간 상태 조회 | - |
-| `POST` | `/laundry/devices/{id}/start` | `{ "durationMinutes": 38 }` | 기기 사용 시작 (상태 `IN_USE` 전환) | `DEVICE_ALREADY_IN_USE` (409), `MAX_CONCURRENT_DEVICES_EXCEEDED` (422), `ZONE_ACCESS_FORBIDDEN` (403) |
-| `PATCH` | `/laundry/devices/{id}/adjust-time` | `{ "deltaMinutes": 5, "reason": "거품 추가" }` | 남은 시간 정정 (±10분 범위, 타인일 경우 알림 전송) | `ADJUSTMENT_LIMIT_EXCEEDED` (422), `DEVICE_NOT_RUNNING` (409) |
-| `POST` | `/laundry/devices/{id}/messages` | `{ "messageType": "WAITING_PICKUP" }` | 미수거자에게 수거 요청 알림 전송 (완료 후 5분 경과 시) | `COOLDOWN_ACTIVE` (429), `NOT_COMPLETED` (409) |
-| `POST` | `/laundry/devices/{id}/force-release` | `{ "reason": "바구니 이동" }` | 세탁물 정리 후 기기 강제 사용 가능(`AVAILABLE`) 전환 | `DEVICE_NOT_COMPLETED` (409) |
-| `POST` | `/laundry/devices/{id}/reports` | `{ "description": "탈수 소음 심함" }` | 고장 신고 접수 및 기기 임시 차단 | - |
+| `GET` | `/laundry/devices` | Query: `zone`, `type` | 전체 23대 기기 목록 및 실시간 상태/잔여시간 조회 | - |
+| `POST` | `/laundry/devices/{id}/start` | `{ "durationMinutes": 38 }` | 기기 사용 시작 (`IN_USE` 전환) | `DEVICE_ALREADY_IN_USE` (409), `MAX_CONCURRENT_DEVICES_EXCEEDED` (422), `ZONE_ACCESS_FORBIDDEN` (403) |
+| `POST` | `/laundry/devices/{id}/pickup-notice` | `{ "customNote": "핑크 바구니 보관" }` | 세탁물 바구니 이동 후 직전 사용자에게 알림 전송 (최대 30자, 발신자 호실 '205호' 노출) | `DEVICE_NOT_IN_USE` (400), `NOTE_TOO_LONG` (400) |
+| `POST` | `/laundry/devices/{id}/reports` | `{ "description": "소음 심함" }` | 고장 신고 접수 및 기기 `MAINTENANCE` 전환 | - |
 
-### 2.4 권한 매트릭스 및 중복 방지 계약
-* **접근 구역 권한 (Zone Access)**:
-  * 남성 거주자: `MALE`, `COMMON` 접근 가능 / `FEMALE` 접근 시 `403 ZONE_ACCESS_FORBIDDEN`.
-  * 여성 거주자: `FEMALE`, `COMMON` 접근 가능 / `MALE` 접근 시 `403 ZONE_ACCESS_FORBIDDEN`.
-* **동시성 및 중복 방지 (Concurrency Contract)**:
-  1. **단일 기기 동시 선점 방지**: 기기 상태를 `AVAILABLE`에서 `IN_USE`로 변경할 때 조건부 원자적 갱신(`UPDATE laundry_device SET status='IN_USE' WHERE id=? AND status='AVAILABLE'`)을 강제하여 충돌 시 `409 DEVICE_ALREADY_IN_USE` 반환.
-  2. **1인 동시 보유 상한**: 1명의 사용자가 동시에 세탁기 1대 + 건조기 1대를 초과하여 선점할 수 없음 (동시 사용 중인 기기 수 2개 이상일 때 `422 MAX_CONCURRENT_DEVICES_EXCEEDED`).
+### 2.5 동시성 및 중복 방지 계약
+1. **단일 기기 동시 선점 방지**: `UPDATE laundry_device SET status='IN_USE' WHERE id=? AND status='AVAILABLE'` 조건부 원자적 갱신으로 경합 시 `409 DEVICE_ALREADY_IN_USE` 반환.
+2. **1인 동시 보유 상한**: 동시 활성 기기 수 2대 초과 선점 차단 (`422 MAX_CONCURRENT_DEVICES_EXCEEDED`).
+3. **접근 구역 권한 (Zone Access)**: 성별에 맞지 않는 세탁실 접근 시 `403 ZONE_ACCESS_FORBIDDEN`.
+
 
 ---
 
@@ -189,11 +175,22 @@ WHERE status IN ('WAITING', 'READY');
 
 ### 4.1 시설 기본 구성
 * 3개 스터디룸: `ROOM_A` (4인실), `ROOM_B` (6인실), `ROOM_C` (8인실).
-* 예약 단위: 10분 단위, 최소 30분 ~ 최대 3시간.
+* 예약 단위: **10분 단위**, 최소 30분 ~ 최대 3시간.
 * 주간 예약 범위: 오늘 기준 ~ 다음 주 일요일까지.
-* 합석(Co-use) 옵션 지원: 비합석 시 단독 배타적 사용, 합석 허용 시 정원 내 다중 예약 허용.
+* **이용 인원 수 기록**: 예약 시 실제 이용할 인원 수(`attendeeCount`) 필수 입력.
 
-### 4.2 DB 스키마 계약 (DDL)
+### 4.2 ver1 핵심 기능 명세
+*차기 확장('같이 이용', 노쇼 판정 큐)은 `docs/backlog/v2-v3-future-roadmap.md`로 분리 관리*
+
+* 10분 단위 주간 타임라인 예약 (최소 30분 ~ 최대 3시간)
+* **이용 인원 수(`attendeeCount`) 필수 기록**
+* **자원 독점 방지: 투명한 달력 UI를 통한 소셜 프레셔(Social Pressure)**:
+  * 복잡한 주당 예약 시간 쿼터제나 강제 벌점 알고리즘 대신, **달력 UI를 뒤로 넘겼을 때 과거/현재 누가 몇 시간 동안 방을 썼는지(호실 정보: 예 '205호')를 투명하게 공개**하여 공동체 평판 효과로 자발적 독점 자제 유도.
+* 예약 취소 (시작 전 무료 취소)
+* 관리자 시설 점검/행사 목적 강제 예약 차단
+
+### 4.3 DB 스키마 계약 (DDL)
+
 ```sql
 CREATE EXTENSION IF NOT EXISTS btree_gist;
 
@@ -201,7 +198,7 @@ CREATE EXTENSION IF NOT EXISTS btree_gist;
 CREATE TABLE study_room (
     id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     room_code       VARCHAR(16) NOT NULL UNIQUE,       -- ROOM_A, ROOM_B, ROOM_C
-    display_name    VARCHAR(64) NOT NULL,              -- 스터디룸 A (소회의실), 스터디룸 B 등
+    display_name    VARCHAR(64) NOT NULL,              -- 스터디룸 A (소회의실) 등
     capacity        INT NOT NULL DEFAULT 4,
     is_active       BOOLEAN NOT NULL DEFAULT TRUE,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -215,83 +212,63 @@ CREATE TABLE study_room_reservation (
     start_time      TIMESTAMPTZ NOT NULL,
     end_time        TIMESTAMPTZ NOT NULL,
     duration_minutes INT NOT NULL,                     -- 30 ~ 180분
-    allow_co_use    BOOLEAN NOT NULL DEFAULT FALSE,    -- 합석 허용 여부
-    attendee_count  INT NOT NULL DEFAULT 1,
-    status          VARCHAR(16) NOT NULL DEFAULT 'CONFIRMED', -- CONFIRMED, CANCELLED, NO_SHOW, COMPLETED
+    attendee_count  INT NOT NULL DEFAULT 1,            -- 실제 이용 인원 수
+    status          VARCHAR(16) NOT NULL DEFAULT 'CONFIRMED', -- CONFIRMED, CANCELLED, COMPLETED
     cancellation_reason TEXT,
     cancelled_at    TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT ck_study_reservation_time CHECK (end_time > start_time),
     CONSTRAINT ck_study_reservation_duration CHECK (duration_minutes >= 30 AND duration_minutes <= 180),
-    CONSTRAINT ck_study_reservation_status CHECK (status IN ('CONFIRMED', 'CANCELLED', 'NO_SHOW', 'COMPLETED'))
+    CONSTRAINT ck_study_reservation_status CHECK (status IN ('CONFIRMED', 'CANCELLED', 'COMPLETED'))
 );
 
--- 💡 핵심 계약: 비합석 단독 예약 시 동일 룸 시간대 겹침(Overlap) 차단 Exclusion Constraint
+-- 💡 핵심 동시성 제약: 동일 룸 시간대 겹침(Overlap) 차단 Exclusion Constraint
 ALTER TABLE study_room_reservation
-ADD CONSTRAINT exclude_overlapping_exclusive_reservation
+ADD CONSTRAINT exclude_overlapping_study_reservation
 EXCLUDE USING gist (
     room_id WITH =,
     tstzrange(start_time, end_time, '[)') WITH &&
 )
-WHERE (status = 'CONFIRMED' AND allow_co_use = FALSE);
+WHERE (status = 'CONFIRMED');
 
 -- 💡 1인 동시간대 다중 룸 중복 예약 차단
 ALTER TABLE study_room_reservation
-ADD CONSTRAINT exclude_user_concurrent_reservation
+ADD CONSTRAINT exclude_user_concurrent_study_reservation
 EXCLUDE USING gist (
     dorm_user_id WITH =,
     tstzrange(start_time, end_time, '[)') WITH &&
 )
 WHERE (status = 'CONFIRMED');
-
--- 노쇼 / 미등록 신고 테이블
-CREATE TABLE study_room_report (
-    id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    reservation_id  UUID NOT NULL REFERENCES study_room_reservation(id),
-    reporter_id     UUID NOT NULL REFERENCES dorm_user(id),
-    report_type     VARCHAR(16) NOT NULL,              -- NO_SHOW, UNREGISTERED_USE
-    status          VARCHAR(16) NOT NULL DEFAULT 'PENDING', -- PENDING, APPROVED, REJECTED
-    penalty_issued  BOOLEAN NOT NULL DEFAULT FALSE,
-    reviewed_by     UUID REFERENCES dorm_user(id),
-    reviewed_at     TIMESTAMPTZ,
-    created_at      TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP
-);
 ```
 
-### 4.3 API 계약
+### 4.4 API 계약 (ver1)
 | Method | Path | Request Body | Description | 에러 코드 |
 |---|---|---|---|---|
 | `GET` | `/study/rooms` | - | 전체 스터디룸 목록 및 기본 정원 조회 | - |
-| `GET` | `/study/timeline` | Query: `date`, `roomId` | 특정 일자/룸의 10분 단위 타임라인 예약 현황 조회 | - |
-| `POST` | `/study/reservations` | `{ "roomId": "...", "startTime": "...", "endTime": "...", "allowCoUse": false }` | 스터디룸 예약 생성 | `TIME_SLOT_OVERLAPPED` (409), `USER_ALREADY_RESERVED_TIME` (409), `INVALID_DURATION` (400), `ADVANCE_BOOKING_EXCEEDED` (422) |
-| `DELETE` | `/study/reservations/{id}` | `{ "reason": "개인 사정" }` | 예약 취소 (시작 1시간 전 무료, 1시간 이내 급작스런 취소 시 벌점 1점 자동 부과) | `RESERVATION_ALREADY_STARTED` (400), `UNAUTHORIZED_USER` (403) |
-| `POST` | `/study/reports` | `{ "reservationId": "...", "reportType": "NO_SHOW" }` | 노쇼 또는 미등록 이용 신고 접수 | `REPORT_COOLDOWN_ACTIVE` (429) |
-| `POST` | `/admin/study/reservations/block` | `{ "roomId": "...", "startTime": "...", "endTime": "...", "reason": "유지보수" }` | 관리자 강제 점유 / 일반 예약 차단 | - |
+| `GET` | `/study/timeline` | Query: `date`, `roomId` | 10분 단위 타임라인 및 예약자 호실(`205호`) 공개 현황 조회 | - |
+| `POST` | `/study/reservations` | `{ "roomId": "...", "startTime": "...", "endTime": "...", "attendeeCount": 3 }` | 스터디룸 예약 생성 (동일 룸 시간 겹침 원천 차단) | `TIME_SLOT_OVERLAPPED` (409), `USER_ALREADY_RESERVED_TIME` (409), `INVALID_DURATION` (400) |
+| `DELETE` | `/study/reservations/{id}` | `{ "reason": "일정 변경" }` | 예약 취소 | `RESERVATION_ALREADY_STARTED` (400), `UNAUTHORIZED_USER` (403) |
+| `POST` | `/admin/study/reservations/block` | `{ "roomId": "...", "startTime": "...", "endTime": "...", "reason": "시설 점검" }` | 관리자 강제 점유 / 일반 예약 차단 | - |
 
-### 4.4 권한 매트릭스 및 중복 방지 계약
-* **급작스런 취소 벌점 연동**:
-  * 예약 시작 시각 60분 이내 취소 시 `penalty_history`에 사유 `"다목적실 시작 1시간 이내 급작스러운 취소"`로 **벌점 1점 자동 부과**.
-  * 노쇼 신고 승인 시 사유 `"다목적실 예약 노쇼"`로 **벌점 2점 수동 부과**.
-* **동시성 및 중복 방지 (Concurrency Contract)**:
-  1. **동일 룸 시간대 충돌 방지**: PostgreSQL의 `EXCLUDE USING gist` 제약 조건으로 비합석 예약(`allow_co_use = FALSE`) 간 시간 범위(`tstzrange`) 겹침을 DB 엔진 수준에서 100% 차단 (`409 TIME_SLOT_OVERLAPPED`).
-  2. **1인 동시간 중복 예약 방지**: 동일 사용자가 동시간대에 서로 다른 룸 2개 이상을 예약하지 못하도록 `exclude_user_concurrent_reservation` 제약 조건으로 차단 (`409 USER_ALREADY_RESERVED_TIME`).
-  3. **비관적 락(SELECT FOR UPDATE)**: 예약 트랜잭션 시작 시 해당 일자/룸의 메타데이터 행을 선점하여 동시 요청 간의 정밀한 정원 초과 검증 보장.
+### 4.5 동시성 및 중복 방지 계약
+1. **동일 룸 시간대 충돌 방지**: PostgreSQL `EXCLUDE USING gist` 제약 조건으로 동일 룸의 예약 간 시간 범위(`tstzrange`) 겹침을 DB 엔진 수준에서 100% 차단 (`409 TIME_SLOT_OVERLAPPED`).
+2. **1인 동시간 중복 예약 방지**: 동일 사용자가 동시간대에 서로 다른 룸 2개 이상을 예약하지 못하도록 `exclude_user_concurrent_study_reservation` 제약 조건으로 차단 (`409 USER_ALREADY_RESERVED_TIME`).
+
 
 ---
 
-## 5. 종합 권한 매트릭스 (RBAC Matrix)
+## 5. 종합 권한 매트릭스 (RBAC Matrix - ver1)
 
 | 구분 | 일반 거주자 (`RESIDENT`) | 층별장 (`FLOOR_MANAGER`) | 관리자 (`ADMIN`) |
 |:---|:---:|:---:|:---:|
-| **세탁실 기기 사용 등록** | 본인 성별/공용 구역 허용 | 동일 | 전체 구역 강제 제어 |
-| **세탁실 시간 정정** | 본인 기기 무제한, 타인 기기 ±10분 | 동일 | 무제한 정정 |
-| **세탁실 고장 처리** | 신고만 가능 | 신고만 가능 | 기기 상태 수동 강제 전환 (`MAINTENANCE`) |
+| **세탁실 기기 사용 등록** | 본인 성별/공용 구역 허용 (최대 2대) | 동일 | 전체 구역 강제 제어 |
+| **세탁물 수거 알림 전송** | 가능 (최대 30자 메모, 본인 호실 노출) | 동일 | 가능 |
+| **세탁실 고장 신고** | 신고 접수 | 동일 | 기기 상태 수동 강제 전환 (`MAINTENANCE`) |
 | **도서 검색 / 대출 / 연장** | 최대 3권, 14일, 1회 연장 | 동일 | 대출 현황 전체 관제 |
 | **도서 등록 / 수정 / 폐기** | 불가 | 불가 | 전권 관리 가능 |
 | **도서 강제 반납 / 분실 처리** | 불가 | 불가 | 가능 (분실자 벌점 부과) |
-| **다목적실 타임라인 예약** | 주간 타임라인(30분~3시간) | 동일 | 기간 제한 없는 강제 예약/차단 |
-| **다목적실 시작 1시간 전 취소** | 패널티 없음 | 동일 | 관리자 사유 입력 취소 |
-| **다목적실 시작 1시간 내 취소** | **벌점 1점 자동 부과** | **벌점 1점 자동 부과** | 패널티 면제 |
-| **노쇼 신고 승인 및 벌점 부과** | 불가 (신고 접수만) | 불가 (신고 접수만) | 승인 시 **벌점 2점 부과** |
-| **벌점 10점 초과 시** | **세 시설 전체 이용 차단** | **세 시설 전체 이용 차단** | 면제 (시스템 관리자) |
+| **스터디룸 타임라인 예약** | 주간 타임라인(30분~3시간, 인원수 필수) | 동일 | 기간 제한 없는 강제 예약/차단 |
+| **스터디룸 예약 취소** | 시작 전 무료 취소 | 동일 | 사유 입력 강제 취소 |
+| **벌점 10점 이상 누적 시** | **세 시설 전체 이용 자동 차단** | **세 시설 전체 이용 자동 차단** | 면제 (시스템 관리자) |
+

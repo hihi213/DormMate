@@ -4,7 +4,10 @@
 
 DormMate는 기숙사 냉장고의 물품 관리와 층별 검사를 돕기 위한 Spring Boot 기반 백엔드와 Next.js 프론트엔드 프로젝트입니다. 백엔드 우선 MVP를 목표로 하며, 운영 환경을 로컬에서 빠르게 재현할 수 있도록 Docker Compose·Flyway·자동화 스크립트를 제공합니다.
 
-> 바로가기(문서 지도): `전체기능.md`(전체 기능 체계), `docs/1.Feature_Inventory.md`(정책 SSOT), `docs/facility-contracts.md`(세 시설 계약서), `docs/data-model.md`(엔터티), `docs/2.Demo_Scenario.md`(데모/범위), `docs/2.1.Demo_Plan.md`(체크리스트), `docs/2.2.Status_Board.md`(진행 로그), `docs/ops/README.md`(운영/배포).
+> 바로가기(문서 지도): 
+> - **ver1 핵심 스펙 (SSOT)**: `docs/specs/전체기능.md`(전체 기능 체계), `docs/specs/facility-contracts.md`(세 시설 계약서), `docs/specs/architecture-decisions.md`(설계 의사결정 기록 ADR), `docs/data-model.md`(엔터티)
+> - **차기 로드맵 & 운영**: `docs/backlog/v2-v3-future-roadmap.md`(ver2/ver3 백로그), `docs/ops/README.md`(운영/배포), `docs/2.2.Status_Board.md`(진행 로그)
+> - **과거 기획 보관소**: `docs/archive/`(과거 초안/시나리오 아카이브)
 
 ## 현재 구현된 핵심 기능 스냅샷
 

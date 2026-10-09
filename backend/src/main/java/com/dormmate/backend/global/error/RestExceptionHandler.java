@@ -41,14 +41,14 @@ public class RestExceptionHandler {
             sb.append(fieldError.getField()).append(": ").append(fieldError.getDefaultMessage()).append("; ");
         }
         String detail = sb.length() > 0 ? sb.substring(0, sb.length() - 2) : "Validation failed";
-        ProblemResponse body = ProblemResponse.of(status, "validation_error", detail, null);
+        ProblemResponse body = ProblemResponse.of(status, "VALIDATION_FAILED", detail, null);
         return ResponseEntity.status(status).body(body);
     }
 
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ProblemResponse> handleGenericException(Exception ex) {
         HttpStatus status = HttpStatus.INTERNAL_SERVER_ERROR;
-        ProblemResponse body = ProblemResponse.of(status, "internal_error", ex.getMessage(), null);
+        ProblemResponse body = ProblemResponse.of(status, "SERVER_ERROR", ex.getMessage(), null);
         return ResponseEntity.status(status).body(body);
     }
 }
