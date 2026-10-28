@@ -2,6 +2,8 @@ export function getAuthReasonMessage(reason: string | null): string {
   switch (reason) {
     case "sessionExpired":
       return "세션이 만료되었습니다. 다시 로그인해 주세요."
+    case "passwordChanged":
+      return "비밀번호가 변경되었습니다. 새 비밀번호로 다시 로그인해 주세요."
     case "logout":
       return "정상적으로 로그아웃되었습니다. 다시 로그인해 주세요."
     case "forbidden":

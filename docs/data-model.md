@@ -65,7 +65,7 @@ erDiagram
 ## 4. 엔터티 상세
 
 ### 4.1 계정 및 권한
-공개 회원가입 대신 호실 슬롯(`resident_account_slot`)을 사전 발급하고 관리자가 입사(`check-in`) 배정한다. 초기 비밀번호(`0000`)로 로그인한 상태는 `must_change_password=true`로 보호되어 비밀번호 변경 전 타 API 호출이 차단(403)된다. 퇴사(`check-out`) 시 계정 비활성화 및 세션이 전량 폐기되며, 차기 입주자에게는 새 User UUID가 발급되어 이전 거주자 데이터가 100% 격리된다.
+공개 회원가입 대신 호실 슬롯(`resident_account_slot`)을 사전 발급하고 관리자가 입사(`check-in`) 배정한다. 초기 비밀번호(`0000`)로 로그인한 상태는 `must_change_password=true`로 보호되어 비밀번호 변경 전 타 API 호출이 차단(403)된다. 퇴사(`check-out`) 시 계정 비활성화 및 세션이 전량 폐기되며, 차기 입주자에게는 새 User UUID가 발급되어 이전 거주자의 개인 내역이 새 계정에 승계되지 않는다.
 
 | 엔터티 | 주요 필드 | 설명 |
 | --- | --- | --- |
@@ -147,10 +147,14 @@ erDiagram
 - [x] 칸 잠금(`is_locked`, `locked_until`)·용량(`max_bundle_count`)·라벨 재사용(`bundle_label_sequence`) 구조 반영.
 
 ## 6. 결정된 정책 및 향후 과제
-- 호실 슬롯 사전 발급 및 `0000` 강제 변경으로 가입 병목 제거 및 보안 강화. 퇴사 시 새 User UUID 발급으로 이전 거주자 데이터 100% 영구 격리.
+- 호실 슬롯 사전 발급 및 `0000` 강제 변경으로 가입 병목 제거 및 보안 강화. 퇴사 시 새 User UUID 발급으로 이전 거주자의 개인 내역 승계 방지.
 - 누적 유효 벌점 10점 이상 시 세 시설(세탁실, 도서관, 다목적실) 이용 자동 전면 차단 (`403 FACILITY_ACCESS_SUSPENDED_BY_PENALTY`). 냉장고는 필수 식생활 보호로 차단 제외.
 - 칸 허용량은 라벨 범위(001~999) 이내 값으로 관리하며, 관리자 조정 시 활성 포장 수보다 낮게 설정하면 422가 발생한다.
 - 검사 활동마다 잠금이 30분씩 연장되고, 만료된 잠금은 스케줄러가 정리한다. 제출/취소 시 잠금 해제.
 - 폐기/미등록 폐기 조치에 벌점 1점이 자동 누적되며 correlation으로 알림·조치와 묶인다.
 - 알림 dedupe 키로 중복 발송을 막고 TTL은 `admin_policy.notification_ttl_hours`를 따른다.
 
+
+### 계정 슬롯과 인증 버전
+
+`resident_account_slot`은 `(room_id, personal_no)`를 고유하게 유지하고 `current_user_id`로 현재 계정을 가리킨다. 퇴사한 `dorm_user`에는 `retired_at`을 기록하며, 로그인 아이디의 대소문자 무시 고유 제약은 미퇴사 계정에만 적용한다. `must_change_password`는 초기 비밀번호 변경 여부, `credential_version`은 발급 토큰 및 세션의 유효성 판단에 사용한다. 초기화·비밀번호 변경·퇴사 시 버전을 증가시키고 세션을 폐기한다. 상세 계약은 [계정 생애주기](specs/account-lifecycle.md)를 따른다.

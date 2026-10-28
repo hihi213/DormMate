@@ -58,19 +58,30 @@
           "resident-lifecycle-controller"
         ],
         "operationId": "listResidentSlots",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "responses": {
           "200": {
-            "description": "OK",
+            "description": "Current resident slots (ADMIN only)",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "array",
                   "items": {
-                    "type": "object"
+                    "$ref": "#/components/schemas/ResidentSlotResponse"
                   }
                 }
               }
             }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "ADMIN required"
           }
         }
       }
@@ -81,6 +92,44 @@
           "resident-lifecycle-controller"
         ],
         "operationId": "checkInResidentSlot",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CheckInRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Updated; password changes invalidate existing sessions"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required or credentials changed"
+          },
+          "403": {
+            "description": "Insufficient permission or current password mismatch"
+          },
+          "404": {
+            "description": "Slot or user not found"
+          },
+          "409": {
+            "description": "Resident state conflict"
+          },
+          "422": {
+            "description": "Policy validation failed"
+          }
+        },
         "parameters": [
           {
             "name": "id",
@@ -91,22 +140,7 @@
               "format": "uuid"
             }
           }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/CheckInRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "No Content"
-          }
-        }
+        ]
       }
     },
     "/admin/resident-slots/{id}/check-out": {
@@ -115,6 +149,44 @@
           "resident-lifecycle-controller"
         ],
         "operationId": "checkOutResidentSlot",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlotActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Updated; password changes invalidate existing sessions"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required or credentials changed"
+          },
+          "403": {
+            "description": "Insufficient permission or current password mismatch"
+          },
+          "404": {
+            "description": "Slot or user not found"
+          },
+          "409": {
+            "description": "Resident state conflict"
+          },
+          "422": {
+            "description": "Policy validation failed"
+          }
+        },
         "parameters": [
           {
             "name": "id",
@@ -125,22 +197,7 @@
               "format": "uuid"
             }
           }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SlotActionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "No Content"
-          }
-        }
+        ]
       }
     },
     "/admin/resident-slots/{id}/reset-password": {
@@ -149,6 +206,44 @@
           "resident-lifecycle-controller"
         ],
         "operationId": "resetResidentSlotPassword",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SlotActionRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "204": {
+            "description": "Updated; password changes invalidate existing sessions"
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "401": {
+            "description": "Authentication required or credentials changed"
+          },
+          "403": {
+            "description": "Insufficient permission or current password mismatch"
+          },
+          "404": {
+            "description": "Slot or user not found"
+          },
+          "409": {
+            "description": "Resident state conflict"
+          },
+          "422": {
+            "description": "Policy validation failed"
+          }
+        },
         "parameters": [
           {
             "name": "id",
@@ -159,22 +254,7 @@
               "format": "uuid"
             }
           }
-        ],
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/SlotActionRequest"
-              }
-            }
-          },
-          "required": true
-        },
-        "responses": {
-          "204": {
-            "description": "No Content"
-          }
-        }
+        ]
       }
     },
     "/fridge/inspections": {
@@ -673,25 +753,42 @@
           "password-controller"
         ],
         "operationId": "changePassword",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
         "requestBody": {
+          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "$ref": "#/components/schemas/PasswordChangeRequest"
               }
             }
-          },
-          "required": true
+          }
         },
         "responses": {
           "204": {
-            "description": "No Content"
+            "description": "Updated; password changes invalidate existing sessions"
           },
           "400": {
-            "description": "Bad Request"
+            "description": "Invalid request"
           },
           "401": {
-            "description": "Unauthorized"
+            "description": "Authentication required or credentials changed"
+          },
+          "403": {
+            "description": "Insufficient permission or current password mismatch"
+          },
+          "404": {
+            "description": "Slot or user not found"
+          },
+          "409": {
+            "description": "Resident state conflict"
+          },
+          "422": {
+            "description": "Policy validation failed"
           }
         }
       }
@@ -2656,6 +2753,9 @@
           "updatedAt": {
             "type": "string",
             "format": "date-time"
+          },
+          "mustChangePassword": {
+            "type": "boolean"
           }
         }
       },
@@ -3640,12 +3740,14 @@
         "properties": {
           "currentPassword": {
             "type": "string",
+            "minLength": 1,
             "maxLength": 100
           },
           "newPassword": {
             "type": "string",
             "minLength": 8,
-            "maxLength": 72
+            "maxLength": 72,
+            "description": "UTF-8 encoding must not exceed 72 bytes; must differ from current password."
           }
         }
       },
@@ -3658,6 +3760,7 @@
         "properties": {
           "name": {
             "type": "string",
+            "minLength": 1,
             "maxLength": 100
           },
           "email": {
@@ -3666,6 +3769,7 @@
           },
           "reason": {
             "type": "string",
+            "minLength": 1,
             "maxLength": 500
           }
         }
@@ -3683,9 +3787,54 @@
           },
           "reason": {
             "type": "string",
+            "minLength": 1,
             "maxLength": 500
           }
         }
+      },
+      "ResidentSlotResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "floor": {
+            "type": "integer"
+          },
+          "roomNumber": {
+            "type": "string"
+          },
+          "personalNo": {
+            "type": "integer"
+          },
+          "userId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "loginId": {
+            "type": "string"
+          },
+          "displayName": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "mustChangePassword": {
+            "type": "boolean"
+          },
+          "occupied": {
+            "type": "boolean"
+          }
+        }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
       }
     }
   }

@@ -74,7 +74,7 @@ function AuthPortalContent() {
   const activeDescription =
     mode === "login"
       ? "기숙사 공용 시설 관리를 한곳에서."
-      : "온라인 회원가입은 일시 중단되었습니다. 관리자에게 문의해 주세요."
+      : "입사 시 안내받은 호실·개인번호 계정으로 이용하세요."
 
   return (
     <div className="relative w-full max-w-[440px]">
@@ -90,7 +90,7 @@ function AuthPortalContent() {
                 DormMate
               </span>
               <h1 className="text-2xl font-semibold text-gray-900">
-                {mode === "login" ? "로그인" : "회원가입"}
+                {mode === "login" ? "로그인" : "입사 계정 안내"}
               </h1>
               <p className="text-sm text-gray-500">{activeDescription}</p>
             </div>
@@ -128,11 +128,11 @@ function SignupDisabledPanel({ onBackToLogin }: SignupDisabledPanelProps) {
   return (
     <div className="flex h-full flex-col justify-between rounded-2xl border border-dashed border-emerald-200 bg-emerald-50/70 px-6 py-8 text-center text-sm text-emerald-900">
       <div className="space-y-3">
-        <p className="text-base font-semibold text-emerald-800">온라인 회원가입 준비 중</p>
+        <p className="text-base font-semibold text-emerald-800">별도 회원가입 없이 로그인</p>
         <p className="text-sm leading-relaxed text-emerald-700">
-          DormMate 계정 발급은 현재 기숙사 행정실을 통해서만 처리됩니다.
+          관리자의 입사 처리 후, 안내받은 아이디(예: 201-1)와 초기 비밀번호 0000으로 로그인하세요.
           <br />
-          관리자에게 문의해 계정을 발급받은 뒤 로그인해 주세요.
+          첫 로그인 시 본인만의 비밀번호로 변경해야 시설을 이용할 수 있습니다.
         </p>
       </div>
       <Button
